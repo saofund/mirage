@@ -22,10 +22,23 @@ pip install -e .
 python examples/falling_box.py
 ```
 
-Run the MCP server (for Claude Code or any MCP client):
+## Use with Claude Code
+
+This repo ships a **project-scoped** MCP config (`.mcp.json`), so Claude Code
+picks Mirage up automatically when you open this folder as the workspace:
 
 ```bash
-pip install -e ".[mcp]"
+pip install -e ".[mcp]"   # installs the 'mirage' package + the 'mcp' dependency
+cd mirage                 # the project root, where .mcp.json lives
+claude                    # approve the 'mirage' MCP server when prompted
+```
+
+Then `/mcp` shows `mirage` connected and the agent can call `reset_scene`,
+`add_box`, `add_camera`, `add_light`, `step`, `render`, and `get_scene`.
+
+Run the server standalone (for any other MCP client):
+
+```bash
 python -m mirage.mcp_server
 ```
 
