@@ -28,8 +28,8 @@ class Engine:
         return self.time
 
     def render(self, camera_name: str) -> RenderResult:
-        if camera_name not in self.scene.cameras:
+        if camera_name not in self.scene.camera_names():
             raise KeyError(
-                f"no camera named '{camera_name}' (have: {list(self.scene.cameras)})"
+                f"no camera named '{camera_name}' (have: {self.scene.camera_names()})"
             )
-        return self.renderer.render(self.scene, self.scene.cameras[camera_name])
+        return self.renderer.render(self.scene, self.scene.get_camera(camera_name))

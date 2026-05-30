@@ -1,8 +1,8 @@
-"""Minimal end-to-end loop on the dependency-free null backends.
+"""Minimal end-to-end loop on the dependency-free null backends, over a USD scene.
 
-    python examples/falling_box.py
+    uv run python examples/falling_box.py
 
-(Run after ``pip install -e .``, or with ``src/`` on PYTHONPATH.)
+(Requires the [usd] extra: ``uv pip install -e ".[usd]"``.)
 """
 from mirage import Engine, Scene, Entity, Transform, Geometry, PhysicsBody, Camera, Light
 
@@ -30,10 +30,12 @@ def main() -> None:
     engine = Engine(scene=scene)
     for _ in range(5):
         engine.step(dt=0.1, steps=1)
-        z = scene.entities["box"].transform.position[2]
+        z = scene.get_position("box")[2]
         print(f"t={engine.time:.1f}s  box.z={z:.3f}")
 
     print(engine.render("cam").summary)
+    print("\n--- scene.usda (first 24 lines) ---")
+    print("\n".join(scene.to_usda().splitlines()[:24]))
 
 
 if __name__ == "__main__":

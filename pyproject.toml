@@ -21,8 +21,12 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+usd = ["usd-core>=24.0"]
+mujoco = ["mujoco>=3.0"]
 mcp = ["mcp>=1.2.0"]
 dev = ["pytest>=7"]
+demos = ["imageio>=2.30", "pillow>=10", "matplotlib>=3.7", "robot_descriptions>=1.9"]
+all = ["mirage[usd,mujoco,mcp]"]
 
 [project.scripts]
 mirage-mcp = "mirage.mcp_server:main"

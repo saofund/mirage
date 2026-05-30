@@ -28,7 +28,11 @@ secrets.*
 .DS_Store
 Thumbs.db
 
+# Git identities (do not commit)
+git_identities.json
+
 # Rendered output
 *.exr
 out/
 renders/
+examples/cases/outputs/

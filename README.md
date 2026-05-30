@@ -2,7 +2,7 @@
 
 **An AI-native 3D renderer + lightweight physics simulator** — built to be driven by coding agents (e.g. Claude Code via [MCP](https://modelcontextprotocol.io)), aimed at robotics and synthetic-data use cases.
 
-> **Status:** 🌱 early scaffold (`v0.0.1`). The architecture and the AI-native control surface are in place with dependency-free *null* backends; real rendering/physics backends are on the roadmap.
+> **Status:** 🌱 early scaffold (`v0.0.1`), now pivoting. The data model and AI-native control surface are in place on dependency-free *null* backends; the v0.1 direction — **OpenUSD as the scene source of truth, with real engines (MuJoCo/Newton physics, Hydra/Cycles rendering) behind small interfaces** — is specced in [docs/design.md](docs/design.md).
 
 ## Why
 
@@ -11,7 +11,7 @@ Powerful DCC tools (Blender, …) have large, stateful automation surfaces that 
 - **Scene = plain data.** The whole world is one serializable object (JSON today, USD later). An agent can read it, diff it, edit it, and reproduce it deterministically.
 - **Tiny, swappable backends.** A backend just consumes a `Scene`: `render(scene, camera)` or `step(scene, dt)`. Start with zero-dependency null backends; plug in a real renderer (Cycles/Embree/OIDN — all permissively licensed) or physics (e.g. MuJoCo) behind the same interface.
 - **AI-native control surface.** A first-class MCP server exposes the build/step/render loop as a handful of orthogonal tools, so Claude Code can drive Mirage out of the box.
-- **Light, fast, permissive.** Pure-Python core, zero required dependencies, Apache-2.0, no GPL entanglement.
+- **Light, fast, permissive.** A Python-orchestrated core does the conducting; heavy lifting goes to native engines (OpenUSD, MuJoCo, Hydra/Cycles) behind small interfaces. Apache-2.0, no GPL entanglement.
 
 ## Quickstart
 
@@ -28,13 +28,18 @@ This repo ships a **project-scoped** MCP config (`.mcp.json`), so Claude Code
 picks Mirage up automatically when you open this folder as the workspace:
 
 ```bash
-pip install -e ".[mcp]"   # installs the 'mirage' package + the 'mcp' dependency
+pip install -e ".[usd,mujoco,mcp,demos]"   # full surface: USD scene + MuJoCo physics/render + MCP
 cd mirage                 # the project root, where .mcp.json lives
 claude                    # approve the 'mirage' MCP server when prompted
 ```
 
-Then `/mcp` shows `mirage` connected and the agent can call `reset_scene`,
-`add_box`, `add_camera`, `add_light`, `step`, `render`, and `get_scene`.
+Then `/mcp` shows `mirage` connected. The agent can **author** (`add_box`,
+`add_sphere`, `add_cylinder`, `add_plane`, `add_camera`, `add_light`), **edit**
+(`move`, `set_transform`, `set_material`, `set_velocity`, `remove`, `rename`),
+**inspect & reproduce** (`get`, `list_objects`, `get_scene`, `set_scene`,
+`diff_scene`, `save_scene`, `load_scene`, `get_log`, `replay_log`), and
+**simulate & see** (`step`, `render`). Every tool returns structured JSON;
+`render` returns a PNG the agent can look at.
 
 Run the server standalone (for any other MCP client):
 
@@ -44,7 +49,7 @@ python -m mirage.mcp_server
 
 ## Architecture
 
-See [docs/architecture.md](docs/architecture.md). In one diagram:
+See [docs/design.md](docs/design.md) for the v0.1 design & roadmap (and [docs/architecture.md](docs/architecture.md) for the current scaffold). In one diagram:
 
 ```
           agent (Claude Code)

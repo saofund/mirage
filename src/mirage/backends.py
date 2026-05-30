@@ -1,10 +1,10 @@
 """Backend interfaces and reference *null* implementations.
 
-Mirage separates the *scene* (data) from *backends* (behavior). A backend is
-anything that consumes a ``Scene`` and does work: rendering it through a camera,
-or advancing its physics. The null backends below have zero heavy dependencies
-so the full agent loop runs anywhere; real backends (e.g. a Cycles/Embree
-renderer, a MuJoCo physics step) implement the same tiny interface.
+Mirage separates the *scene* (a USD stage) from *backends* (behavior). A backend
+consumes a ``Scene`` and does work: rendering it through a camera, or advancing
+its physics. The null backends below have zero heavy dependencies so the full
+agent loop runs anywhere; real backends (MuJoCo/Newton physics, a Hydra/Cycles
+renderer) implement the same tiny interface and read/write the same stage.
 """
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ class PhysicsBackend(ABC):
 
 
 class NullRenderer(RenderBackend):
-    """Produces no pixels — only a structured description of what *would*
-    render. Lets the agent loop, MCP tools, and tests run before a real
-    renderer is plugged in."""
+    """Produces no pixels — only a structured description of what *would* render.
+    Lets the agent loop, MCP tools, and tests run before a real renderer (Hydra /
+    Cycles, MuJoCo's renderer) is plugged in behind the same interface."""
 
     name = "null"
 
@@ -54,29 +54,27 @@ class NullRenderer(RenderBackend):
             height=camera.height,
             modalities=list(camera.modalities),
             summary=(
-                f"[null] would render {len(scene.entities)} entities and "
-                f"{len(scene.lights)} lights through camera '{camera.name}' "
+                f"[null] would render {len(scene.entity_names())} entities and "
+                f"{len(scene.light_names())} lights through camera '{camera.name}' "
                 f"at {camera.width}x{camera.height}"
             ),
         )
 
 
 class NullPhysics(PhysicsBackend):
-    """Gravity-only, collision-free explicit integrator. Deterministic and
-    dependency-free — enough to validate the step/render loop. Replace with a
-    real engine behind the same ``step`` interface."""
+    """Gravity-only, collision-free explicit integrator operating on the USD
+    stage. Deterministic and dependency-free — enough to validate the step/render
+    loop until a real engine (MuJoCo) lands behind the same ``step`` interface."""
 
     name = "null"
 
     def step(self, scene: Scene, dt: float) -> None:
         gx, gy, gz = scene.gravity
-        for entity in scene.entities.values():
-            body = entity.physics
-            if body is None or body.kind != "dynamic":
+        for name in scene.entity_names():
+            if scene.physics_kind(name) != "dynamic":
                 continue
-            body.linear_velocity[0] += gx * dt
-            body.linear_velocity[1] += gy * dt
-            body.linear_velocity[2] += gz * dt
-            entity.transform.position[0] += body.linear_velocity[0] * dt
-            entity.transform.position[1] += body.linear_velocity[1] * dt
-            entity.transform.position[2] += body.linear_velocity[2] * dt
+            vx, vy, vz = scene.get_linear_velocity(name)
+            vx, vy, vz = vx + gx * dt, vy + gy * dt, vz + gz * dt
+            scene.set_linear_velocity(name, [vx, vy, vz])
+            px, py, pz = scene.get_position(name)
+            scene.set_position(name, [px + vx * dt, py + vy * dt, pz + vz * dt])

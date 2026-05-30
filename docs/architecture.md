@@ -69,7 +69,14 @@ backends are planned on permissively-licensed components rather than GPL ones:
 
 We deliberately avoid linking Blender's GPL application layer (e.g. `bpy`).
 
-## Roadmap (indicative)
+## Roadmap
+
+> **Superseded.** The forward-looking design and roadmap now live in
+> [docs/design.md](design.md) (v0.1, post-pivot: **OpenUSD as the scene source of
+> truth**, Python orchestration over native engines — MuJoCo/Newton physics,
+> Hydra/Cycles rendering). This file documents the *current* v0.0.1 scaffold.
+
+Original indicative roadmap (kept for history):
 
 1. ✅ Scene model, null backends, engine loop, MCP server, tests.
 2. Scene I/O: glTF import, USD round-trip.
