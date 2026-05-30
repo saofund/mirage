@@ -214,6 +214,69 @@ def render(width: int = 640, height: int = 480, azimuth: Optional[float] = None,
 
 
 # --------------------------------------------------------------------------- #
+# Spatial layer — relations, grounding, intent-level placement
+# --------------------------------------------------------------------------- #
+def _view(lookat, azimuth, elevation, distance) -> dict:
+    return {"lookat": lookat or [0, 0, 0.2], "azimuth": azimuth if azimuth is not None else 90,
+            "elevation": elevation if elevation is not None else -20, "distance": distance or 3.0}
+
+
+@mcp.tool()
+def relations(lookat: Optional[list[float]] = None, azimuth: Optional[float] = None,
+              elevation: Optional[float] = None, distance: Optional[float] = None) -> dict:
+    """Spatial scene graph: what is on/in/next-to/left-of/aligned-with what, in the
+    viewer frame matching `ground`. This is the representation to reason over."""
+    return _session.relations(view=_view(lookat, azimuth, elevation, distance))
+
+
+@mcp.tool()
+def place_on(a: str, b: str) -> dict:
+    """Rest object a on top of object b (intent -> precise pose)."""
+    return _session.place_on(a, b)
+
+
+@mcp.tool()
+def place_beside(a: str, b: str, side: str = "left", gap: float = 0.04) -> dict:
+    """Place a beside b. side = left | right | front | back."""
+    return _session.place_beside(a, b, side=side, gap=gap)
+
+
+@mcp.tool()
+def place_inside(a: str, b: str) -> dict:
+    """Place a inside b."""
+    return _session.place_inside(a, b)
+
+
+@mcp.tool()
+def align_tops(names: list[str]) -> dict:
+    """Lift the named objects so their tops are level."""
+    return _session.align_tops(names)
+
+
+@mcp.tool()
+def stack(names: list[str], base: str) -> dict:
+    """Stack the named objects in order on top of base."""
+    return _session.stack(names, base)
+
+
+@mcp.tool()
+def ground(width: int = 720, height: int = 540, azimuth: Optional[float] = None,
+           elevation: Optional[float] = None, distance: Optional[float] = None,
+           lookat: Optional[list[float]] = None):
+    """Set-of-Mark grounding render: the scene with each object tagged by its id, so
+    the agent can link what it sees to the relation graph. Returns a PNG."""
+    try:
+        img, _ = _session.set_of_mark(view=_view(lookat, azimuth, elevation, distance), width=width, height=height)
+    except Exception as exc:  # mujoco/demos extra missing
+        return {"error": str(exc)}
+    import numpy as np
+    from PIL import Image as PILImage
+    buf = io.BytesIO()
+    PILImage.fromarray(np.asarray(img).astype("uint8")).save(buf, format="PNG")
+    return Image(data=buf.getvalue(), format="png")
+
+
+# --------------------------------------------------------------------------- #
 # Command log (reproducibility)
 # --------------------------------------------------------------------------- #
 @mcp.tool()

@@ -249,6 +249,52 @@ class Session:
                           lookat=lookat, distance=distance, azimuth=azimuth, elevation=elevation)
         return {"data": imgs, "width": width, "height": height, "modalities": list(modalities)}
 
+    # -- spatial relations (the AI-native scene layer) ----------------------- #
+    def relations(self, view: Optional[dict] = None) -> dict:
+        """Spatial scene graph: what is on / in / next-to / left-of / aligned-with what."""
+        from .relations import extract_relations
+        return extract_relations(self.scene, view=view)
+
+    def set_of_mark(self, view: Optional[dict] = None, width: int = 720, height: int = 540):
+        """Grounding render with object-id overlays. Returns ``(image, boxes)``."""
+        from .grounding import set_of_mark
+        return set_of_mark(self.scene, view=view, width=width, height=height)
+
+    def place_on(self, a: str, b: str) -> dict:
+        from .relations import place_on
+        self._record("place_on", a=a, b=b)
+        place_on(self.scene, a, b)
+        self._invalidate()
+        return self._entity(a)
+
+    def place_beside(self, a: str, b: str, side: str = "left", gap: float = 0.04) -> dict:
+        from .relations import place_beside
+        self._record("place_beside", a=a, b=b, side=side, gap=gap)
+        place_beside(self.scene, a, b, side=side, gap=gap)
+        self._invalidate()
+        return self._entity(a)
+
+    def place_inside(self, a: str, b: str) -> dict:
+        from .relations import place_inside
+        self._record("place_inside", a=a, b=b)
+        place_inside(self.scene, a, b)
+        self._invalidate()
+        return self._entity(a)
+
+    def align_tops(self, names) -> dict:
+        from .relations import align_tops
+        self._record("align_tops", names=list(names))
+        align_tops(self.scene, names)
+        self._invalidate()
+        return {"aligned": list(names)}
+
+    def stack(self, names, base: str) -> dict:
+        from .relations import stack
+        self._record("stack", names=list(names), base=base)
+        stack(self.scene, names, base)
+        self._invalidate()
+        return {"stacked": list(names), "base": base}
+
     # -- command log --------------------------------------------------------- #
     def get_log(self) -> list:
         return list(self._log)
