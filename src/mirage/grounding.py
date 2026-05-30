@@ -25,7 +25,7 @@ def _geom_to_entity(model, gid: int):
     return name[:-2] if name.endswith("_g") else name
 
 
-def set_of_mark(scene: Scene, view: dict | None = None, width: int = 720, height: int = 540):
+def set_of_mark(scene: Scene, view: dict | None = None, width: int = 720, height: int = 540, quality: str = "basic"):
     """Render the scene and overlay each object's 2D bbox + id. Returns
     ``(image, boxes)`` where boxes maps id -> (x0, y0, x1, y1). Ground planes are
     skipped (they're the floor, not objects)."""
@@ -35,7 +35,7 @@ def set_of_mark(scene: Scene, view: dict | None = None, width: int = 720, height
     skip = {n for n in scene.entity_names()
             if scene.get_entity(n).geometry and scene.get_entity(n).geometry.kind == "plane"}
 
-    sim = MujocoSim.from_scene(scene)
+    sim = MujocoSim.from_scene(scene, quality=quality)
     imgs = sim.render(width, height, modalities=("rgb", "segmentation"), **view)
     rgb, ids = imgs["rgb"], seg_ids(imgs["segmentation"])
 

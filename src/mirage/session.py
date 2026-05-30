@@ -275,10 +275,16 @@ class Session:
         from .relations import extract_relations
         return extract_relations(self.scene, view=view)
 
-    def set_of_mark(self, view: Optional[dict] = None, width: int = 720, height: int = 540):
+    def set_of_mark(self, view: Optional[dict] = None, width: int = 720, height: int = 540, quality: str = "basic"):
         """Grounding render with object-id overlays. Returns ``(image, boxes)``."""
         from .grounding import set_of_mark
-        return set_of_mark(self.scene, view=view, width=width, height=height)
+        return set_of_mark(self.scene, view=view, width=width, height=height, quality=quality)
+
+    def render_studio(self, view: Optional[dict] = None, width: int = 960, height: int = 720):
+        """A clean studio-quality render: sky, soft shadows, reflective floor, glossy materials."""
+        from .mujoco_backend import MujocoSim
+        view = view or {"lookat": [0, 0, 0.2], "distance": 3.0, "azimuth": 120, "elevation": -20}
+        return MujocoSim.from_scene(self.scene, quality="studio").render(width=width, height=height, **view)["rgb"]
 
     def place_on(self, a: str, b: str) -> dict:
         from .relations import place_on

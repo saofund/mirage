@@ -57,26 +57,39 @@ def _geom_size_attr(kind: str, params: dict) -> str:
     return 'size="0.5 0.5 0.5"'
 
 
-def scene_to_mjcf(scene: Scene) -> str:
-    """Translate a Mirage scene of primitives (and OBJ/STL mesh assets) into MJCF."""
-    lights = []
-    for ln in scene.light_names():
-        L = scene.get_light(ln)
-        p = L.transform.position
-        directional = ' directional="true"' if L.kind == "sun" else ""
-        lights.append(f'<light name="{ln}"{directional} pos="{_fmt(p)}" dir="0 0 -1" diffuse="{_fmt(L.color)}"/>')
-    if not lights:
-        lights.append('<light name="key" directional="true" pos="0 0 4" dir="0 0 -1"/>')
+def _studio_material(en, mat) -> str:
+    """Map a Mirage PBR material (base_color/metallic/roughness) to a MuJoCo
+    material (rgba/specular/shininess/reflectance) for the studio preset."""
+    base = _fmt(mat.base_color) if mat else "0.7 0.7 0.75 1"
+    metallic = float(mat.metallic) if mat else 0.0
+    rough = float(mat.roughness) if mat else 0.5
+    spec = round(0.3 + 0.6 * metallic, 3)
+    shin = round(min(0.95, max(0.0, 1.0 - 0.7 * rough)), 3)
+    refl = round(0.45 * metallic, 3)
+    return f'<material name="{en}_mat" rgba="{base}" specular="{spec}" shininess="{shin}" reflectance="{refl}"/>'
 
-    mesh_assets, items = [], []
+
+def scene_to_mjcf(scene: Scene, quality: str = "basic") -> str:
+    """Translate a Mirage scene (primitives + OBJ/STL meshes) into MJCF.
+
+    ``quality='studio'`` adds a sky gradient, soft shadows, a reflective floor,
+    glossy materials derived from metallic/roughness, and MSAA — a much nicer
+    render preset (visual only; physics is unchanged)."""
+    studio = quality == "studio"
+    mesh_assets, mat_assets, items = [], [], []
     for en in scene.entity_names():
         E = scene.get_entity(en)
         if E.geometry is None:
             continue
         kind = E.geometry.kind
         params = E.geometry.params or {}
-        rgba = _fmt(E.material.base_color) if E.material else "0.7 0.7 0.75 1"
-        appearance = 'material="grid"' if kind == "plane" else f'rgba="{rgba}"'
+        if kind == "plane":
+            appearance = 'material="floor"'
+        elif studio:
+            mat_assets.append(_studio_material(en, E.material))
+            appearance = f'material="{en}_mat"'
+        else:
+            appearance = f'rgba="{_fmt(E.material.base_color) if E.material else "0.7 0.7 0.75 1"}"'
         if kind == "mesh":
             scale = params.get("scale", [1.0, 1.0, 1.0])
             mesh_assets.append(f'<mesh name="{en}_mesh" file="{params["path"]}" scale="{_fmt(scale)}"/>')
@@ -87,20 +100,42 @@ def scene_to_mjcf(scene: Scene) -> str:
         is_dynamic = E.physics is not None and E.physics.kind == "dynamic" and kind != "plane"
         if is_dynamic:
             mass = f' mass="{E.physics.mass}"' if E.physics.mass else ""
-            items.append(
-                f'<body name="{en}" pos="{_fmt(pos)}" quat="{_fmt(quat)}">'
-                f'<freejoint name="{en}"/><geom name="{en}_g" {geom_def} {appearance}{mass}/></body>'
-            )
+            items.append(f'<body name="{en}" pos="{_fmt(pos)}" quat="{_fmt(quat)}">'
+                         f'<freejoint name="{en}"/><geom name="{en}_g" {geom_def} {appearance}{mass}/></body>')
         else:
             items.append(f'<geom name="{en}" {geom_def} pos="{_fmt(pos)}" quat="{_fmt(quat)}" {appearance}/>')
+
+    if studio:
+        lights = [
+            '<light name="key" directional="true" pos="3 -3 5" dir="-0.5 0.5 -1" diffuse="0.9 0.88 0.85" specular="0.5 0.5 0.5" castshadow="true"/>',
+            '<light name="fill" directional="true" pos="-4 -1 3" dir="0.7 0.2 -1" diffuse="0.25 0.28 0.34" castshadow="false"/>',
+        ]
+        visual = ('<visual><global offwidth="1920" offheight="1080"/>'
+                  '<quality shadowsize="4096" numslices="28" offsamples="8"/>'
+                  '<headlight ambient="0.32 0.32 0.35" diffuse="0.3 0.3 0.3" specular="0.3 0.3 0.3"/>'
+                  '<map shadowclip="6"/></visual>')
+        assets = ('<texture name="sky" type="skybox" builtin="gradient" rgb1="0.55 0.72 0.95" rgb2="0.08 0.11 0.2" width="256" height="512"/>'
+                  '<texture name="grid" type="2d" builtin="checker" rgb1="0.32 0.34 0.38" rgb2="0.38 0.40 0.45" width="512" height="512" mark="edge" markrgb="0.5 0.5 0.55"/>'
+                  '<material name="floor" texture="grid" texrepeat="10 10" reflectance="0.3" specular="0.5" shininess="0.6"/>')
+    else:
+        scene_lights = []
+        for ln in scene.light_names():
+            L = scene.get_light(ln)
+            p = L.transform.position
+            d = ' directional="true"' if L.kind == "sun" else ""
+            scene_lights.append(f'<light name="{ln}"{d} pos="{_fmt(p)}" dir="0 0 -1" diffuse="{_fmt(L.color)}"/>')
+        lights = scene_lights or ['<light name="key" directional="true" pos="0 0 4" dir="0 0 -1"/>']
+        visual = '<visual><global offwidth="1920" offheight="1080"/></visual>'
+        assets = ('<texture name="grid" type="2d" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.25 0.35 0.45" width="300" height="300"/>'
+                  '<material name="floor" texture="grid" texrepeat="8 8" reflectance="0.1"/>')
 
     return f"""<mujoco model="{scene.name}">
   <compiler angle="radian"/>
   <option gravity="{_fmt(scene.gravity)}"/>
-  <visual><global offwidth="1920" offheight="1080"/></visual>
+  {visual}
   <asset>
-    <texture name="grid" type="2d" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.25 0.35 0.45" width="300" height="300"/>
-    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.1"/>
+    {assets}
+    {chr(10).join('    ' + a for a in mat_assets)}
     {chr(10).join('    ' + a for a in mesh_assets)}
   </asset>
   <worldbody>
@@ -144,8 +179,8 @@ class MujocoSim:
         return cls(mujoco.MjModel.from_xml_path(src))
 
     @classmethod
-    def from_scene(cls, scene: Scene) -> "MujocoSim":
-        sim = cls.from_mjcf(scene_to_mjcf(scene))
+    def from_scene(cls, scene: Scene, quality: str = "basic") -> "MujocoSim":
+        sim = cls.from_mjcf(scene_to_mjcf(scene, quality=quality))
         for en in scene.entity_names():  # honor initial velocities authored in the scene
             E = scene.get_entity(en)
             if E.physics and E.physics.kind == "dynamic":

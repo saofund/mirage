@@ -71,3 +71,13 @@ def test_replay_with_step_is_deterministic():
     z2 = s.replay().scene.get_position("b")[2]
     assert z1 < 1.5                       # it fell
     assert z2 == pytest.approx(z1, abs=1e-6)  # replay is bit-reproducible
+
+
+def test_studio_render():
+    pytest.importorskip("mujoco")
+    s = Session(name="q")
+    s.add_plane("g", size=[4, 4])
+    s.add_box("b", position=[0, 0, 0.3], color=[0.8, 0.2, 0.2])
+    s.set_material("b", metallic=0.8, roughness=0.2)
+    img = s.render_studio(width=160, height=120)
+    assert img.shape == (120, 160, 3) and img.mean() > 1
