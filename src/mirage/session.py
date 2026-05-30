@@ -108,6 +108,26 @@ class Session:
         self._record("add_mesh", name=name, path=path, position=position, scale=scale, color=color, mass=mass, dynamic=dynamic)
         return self._add_body(name, Geometry("mesh", {"path": abspath, "scale": scale}), position, color, mass, dynamic)
 
+    def add_part(self, name, part=None, features=None, position=None, color=None, scale=None, dynamic=False) -> dict:
+        """Add a parametric `modeling.Part` as a meshed scene entity (CSG -> OBJ -> mesh)."""
+        import os
+        import tempfile
+        from .modeling import Part
+        if part is None:
+            part = Part.from_features(features or [], name=name)
+        cache = os.path.join(tempfile.gettempdir(), "mirage_parts")
+        os.makedirs(cache, exist_ok=True)
+        path = os.path.join(cache, f"{name}.obj").replace("\\", "/")
+        mesh = part.build()
+        mesh.export(path)
+        lo, hi = mesh.bounds
+        sc = [float(v) for v in (scale or [1.0, 1.0, 1.0])]
+        self._record("add_part", name=name, features=part.features, position=position, color=color, scale=sc, dynamic=dynamic)
+        return self._add_body(name, Geometry("mesh", {
+            "path": path, "scale": sc,
+            "bbox_lo": [float(v) for v in lo], "bbox_hi": [float(v) for v in hi],
+        }), position, color, 1.0, dynamic)
+
     def add_plane(self, name="ground", position=None, size=None, color=None) -> dict:
         size = [float(v) for v in (size or [10.0, 10.0])]
         self._record("add_plane", name=name, position=position, size=size, color=color)

@@ -61,15 +61,23 @@ def _local_half(geom) -> np.ndarray:
     return np.array([0.25, 0.25, 0.25])  # mesh / unknown fallback
 
 
+def _local_bounds(geom):
+    p = (geom.params if geom else {}) or {}
+    if geom and geom.kind == "mesh" and "bbox_lo" in p:  # real mesh bounds baked by add_part
+        return np.array(p["bbox_lo"], float), np.array(p["bbox_hi"], float)
+    half = _local_half(geom)
+    return -half, half
+
+
 def world_aabb(entity):
     """World-space axis-aligned bounding box (lo, hi) of an entity."""
-    half = _local_half(entity.geometry)
+    lo_l, hi_l = _local_bounds(entity.geometry)
     R = _quat_matrix(entity.transform.rotation)
     s = np.array([float(v) for v in entity.transform.scale])
     p = np.array([float(v) for v in entity.transform.position])
     corners = np.array([
-        p + R @ (half * np.array([sx, sy, sz]) * s)
-        for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)
+        p + R @ (np.array([cx, cy, cz]) * s)
+        for cx in (lo_l[0], hi_l[0]) for cy in (lo_l[1], hi_l[1]) for cz in (lo_l[2], hi_l[2])
     ])
     return corners.min(0), corners.max(0)
 
