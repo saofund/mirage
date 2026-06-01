@@ -297,29 +297,80 @@ def new_model(primitive: Optional[dict] = None) -> dict:
 
 
 @mcp.tool()
-def apply_mesh_op(command: dict) -> dict:
+def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
     """Append ONE meshlang op and rebuild. command = {op, on:<selector>, ...params, mark?}.
     Ops: cube/cylinder (primitive); extrude{on,distance}; inset{on,thickness};
     subdivide{levels}; tag{on,name}; scale/translate{on,by}; assert{closed_manifold,euler}.
     Selectors (the `on` value): {"by":"normal","axis":"z","sign":1} | {"by":"tag","name":..} |
     {"by":"extreme","axis":"z","which":"max"} | {"by":"last_created"} | {"by":"all"} |
-    {"and":[..]} / {"or":[..]} / {"not":..}. Returns the new state, or {ok:false, error}
-    with the bad op rolled back so you can retry."""
+    {"and":[..]} / {"or":[..]} / {"not":..}.
+
+    On success returns the new state (with `warnings` from the lint pass). On failure,
+    if auto_repair is on a high-confidence, intent-preserving fix (a tag typo, a
+    too-tight tol, a scalar scale, a numeric string, ...) is applied automatically and
+    reported in `repaired`/`applied`; otherwise the op is rolled back and a structured
+    `diagnostic` + ranked `suggestions` (intent-changing fixes for YOU to choose) are
+    returned."""
+    from .repair import repair_program, lint_program
     _model.ops.append(command)
     try:
-        return {"ok": True, **_model.get_state()}
+        return {"ok": True, "repaired": False, "warnings": lint_program(_model), **_model.get_state()}
     except Exception as exc:
+        if auto_repair:
+            res = repair_program(_model.ops)
+            if res.repaired:
+                _model.ops[:] = res.program
+                return {"ok": True, "repaired": True, "applied": res.applied, "original": command,
+                        "warnings": lint_program(_model), **_model.get_state()}
+            _model.ops.pop()
+            return {"ok": False, "repaired": False, "error": str(exc),
+                    "diagnostic": res.diagnostic, "suggestions": res.suggestions}
         _model.ops.pop()
         return {"ok": False, "error": str(exc)}
 
 
 @mcp.tool()
 def get_mesh_state() -> dict:
-    """The AI-legible model state: op program + invariants/size/bbox + normal groups + tags."""
+    """The AI-legible model state: op program + invariants/size/bbox + normal groups +
+    tags, plus `warnings` (lint of silent traps that build cleanly but lose intent)."""
+    from .repair import lint_program
     try:
-        return {"ok": True, **_model.get_state()}
+        return {"ok": True, "warnings": lint_program(_model), **_model.get_state()}
     except Exception as exc:
         return {"ok": False, "error": str(exc), "program": _model.ops}
+
+
+@mcp.tool()
+def diagnose_mesh_op(command: dict) -> dict:
+    """Dry-run an op WITHOUT changing the model: would it build? would auto-repair fix
+    it (and how)? what are the ranked suggestions? Use before apply_mesh_op when unsure."""
+    from .repair import repair_program
+    res = repair_program([*_model.ops, command])
+    return {"ok": res.ok, "would_auto_repair": res.repaired, "applied": res.applied,
+            "diagnostic": res.diagnostic, "suggestions": res.suggestions, "attempts": res.attempts}
+
+
+@mcp.tool()
+def lint_mesh_program() -> dict:
+    """Static check for silent traps (zero-distance extrude, clamped inset thickness,
+    which!='max' silently meaning min, last_created==whole-surface) that build cleanly
+    but discard intent — build() cannot catch these."""
+    from .repair import lint_program
+    return {"warnings": lint_program(_model)}
+
+
+@mcp.tool()
+def repair_mesh_geometry(eps: float = 1e-6) -> dict:
+    """Geometry-level cleanup of the current built mesh: weld coincident verts, drop
+    zero-area faces + orphan verts, detect (NOT delete) non-manifold edges. Returns the
+    report. (Op-log programs are always clean; this is for imported/freeform meshes.)"""
+    from .repair import repair_mesh
+    try:
+        mesh = _model.build()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    _cleaned, report = repair_mesh(mesh, eps=eps)
+    return {"ok": True, "report": report}
 
 
 @mcp.tool()
