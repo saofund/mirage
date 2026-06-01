@@ -24,6 +24,15 @@ from __future__ import annotations
 from typing import Iterator, Optional
 
 
+def _copy_attrs(attrs, add_tag=None):
+    """Copy a face's attrs (the 'tags' list is copied, not shared); optionally append
+    a tag — the durable handle that survives an operator's mesh rebuild."""
+    out = {k: (list(v) if isinstance(v, list) else v) for k, v in attrs.items()}
+    if add_tag is not None:
+        out.setdefault("tags", []).append(add_tag)
+    return out
+
+
 class Vert:
     __slots__ = ("id", "co", "loop")
 
@@ -143,7 +152,7 @@ class Mesh:
 
     def copy(self) -> "Mesh":
         faces = [[lp.vert.id for lp in self.face_loops(f)] for f in self.faces]
-        attrs = [dict(f.attrs) for f in self.faces]
+        attrs = [_copy_attrs(f.attrs) for f in self.faces]
         return Mesh.from_pydata([list(v.co) for v in self.verts], faces, attrs)
 
     # -- traversal ----------------------------------------------------------- #
@@ -290,11 +299,12 @@ def catmull_clark(mesh: Mesh) -> Mesh:
     for f in face_list:
         jf[f] = add(fp[f])
 
-    new_faces = []
+    new_faces, new_attrs = [], []
     for f in face_list:
-        for lp in mesh.face_loops(f):  # one quad per corner
+        for lp in mesh.face_loops(f):  # one quad per corner; child inherits parent face's tags
             new_faces.append([iv[lp.vert], ie[lp.edge], jf[f], ie[lp.prev.edge]])
-    return Mesh.from_pydata(out_pos, new_faces)
+            new_attrs.append(_copy_attrs(f.attrs))
+    return Mesh.from_pydata(out_pos, new_faces, new_attrs)
 
 
 def face_normal(mesh: Mesh, f: Face):
@@ -323,7 +333,7 @@ def _compact(positions, faces):
     return [positions[i] for i in used], [[remap[i] for i in f] for f in faces]
 
 
-def extrude_faces(mesh: Mesh, faces, distance: float = 0.5) -> Mesh:
+def extrude_faces(mesh: Mesh, faces, distance: float = 0.5, mark: str | None = None) -> Mesh:
     """Extrude a region of faces. Each region vertex moves along the average of its
     incident region-face normals (so opposite/symmetric selections don't cancel),
     side walls bridge the boundary (edges with one region face), and orphaned
@@ -350,21 +360,21 @@ def extrude_faces(mesh: Mesh, faces, distance: float = 0.5) -> Mesh:
     new_faces, new_attrs = [], []
     for f in mesh.faces:  # untouched faces
         if f not in region:
-            new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(dict(f.attrs))
+            new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs))
     for e in mesh.edges:  # side walls
         adj = [f for f in mesh.edge_faces(e) if f in region]
         if len(adj) == 1:
             lp = next(l for l in mesh.face_loops(adj[0]) if l.edge is e)
             a, b = lp.vert.id, lp.next.vert.id
-            new_faces.append([a, b, newid[b], newid[a]]); new_attrs.append(dict(adj[0].attrs))
-    for f in region:  # lifted caps
-        new_faces.append([newid[lp.vert.id] for lp in mesh.face_loops(f)]); new_attrs.append(dict(f.attrs))
+            new_faces.append([a, b, newid[b], newid[a]]); new_attrs.append(_copy_attrs(adj[0].attrs))
+    for f in region:  # lifted caps, tagged with `mark` (the durable handle for the next op)
+        new_faces.append([newid[lp.vert.id] for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))
 
     new_pos, new_faces = _compact(new_pos, new_faces)
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
-def inset_faces(mesh: Mesh, faces, thickness: float = 0.3) -> Mesh:
+def inset_faces(mesh: Mesh, faces, thickness: float = 0.3, mark: str | None = None) -> Mesh:
     """Inset each face: a smaller copy inside, ringed by border quads. ``thickness``
     is a centroid-proportional inset, clamped to the open interval (0, 1) to avoid
     the degenerate (t<=0/t>=1) and self-intersecting (bowtie) cases. The inner face
@@ -378,7 +388,7 @@ def inset_faces(mesh: Mesh, faces, thickness: float = 0.3) -> Mesh:
     new_faces, new_attrs = [], []
     for f in mesh.faces:
         if f not in region:
-            new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(dict(f.attrs))
+            new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs))
     for f in region:
         vids = [lp.vert.id for lp in mesh.face_loops(f)]
         centroid = np.mean([new_pos[i] for i in vids], axis=0)
@@ -390,8 +400,8 @@ def inset_faces(mesh: Mesh, faces, thickness: float = 0.3) -> Mesh:
             new_pos.append([float(ip[0]), float(ip[1]), float(ip[2])])
         n = len(vids)
         for k in range(n):
-            new_faces.append([vids[k], vids[(k + 1) % n], inner[(k + 1) % n], inner[k]]); new_attrs.append(dict(f.attrs))
-        new_faces.append(inner); new_attrs.append(dict(f.attrs))
+            new_faces.append([vids[k], vids[(k + 1) % n], inner[(k + 1) % n], inner[k]]); new_attrs.append(_copy_attrs(f.attrs))
+        new_faces.append(inner); new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))  # inner face tagged
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
@@ -402,3 +412,19 @@ def make_cube(size: float = 1.0) -> Mesh:
     f = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4],
          [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]  # outward-facing quads
     return Mesh.from_pydata(p, f)
+
+
+def make_cylinder_ngon(sides: int = 24, radius: float = 0.5, height: float = 1.0) -> Mesh:
+    """An n-gon prism (bottom cap, top cap, side quads) — a closed manifold."""
+    import math
+    half = height / 2.0
+    ring = [(radius * math.cos(2 * math.pi * i / sides), radius * math.sin(2 * math.pi * i / sides)) for i in range(sides)]
+    m = Mesh()
+    vb = [m.add_vert((x, y, -half)) for x, y in ring]
+    vt = [m.add_vert((x, y, half)) for x, y in ring]
+    m.add_face(list(reversed(vb)))           # bottom cap (normal -z)
+    m.add_face(vt)                           # top cap (normal +z)
+    for i in range(sides):
+        j = (i + 1) % sides
+        m.add_face([vb[i], vb[j], vt[j], vt[i]])  # side quad
+    return m

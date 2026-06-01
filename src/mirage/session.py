@@ -128,6 +128,25 @@ class Session:
             "bbox_lo": [float(v) for v in lo], "bbox_hi": [float(v) for v in hi],
         }), position, color, 1.0, dynamic)
 
+    def add_mesh_program(self, name, program, position=None, color=None, scale=None, dynamic=False) -> dict:
+        """Build a meshlang op-log program into a mesh and add it as a scene entity
+        (replays deterministically; logged so the whole session reproduces)."""
+        import os
+        import tempfile
+        from .meshlang import MeshProgram
+        prog = program if hasattr(program, "build") else MeshProgram(program)
+        mesh = prog.build()
+        cache = os.path.join(tempfile.gettempdir(), "mirage_parts")
+        os.makedirs(cache, exist_ok=True)
+        path = os.path.join(cache, f"{name}.obj").replace("\\", "/")
+        mesh.export_obj(path)
+        lo = [min(v.co[k] for v in mesh.verts) for k in range(3)]
+        hi = [max(v.co[k] for v in mesh.verts) for k in range(3)]
+        sc = [float(v) for v in (scale or [1.0, 1.0, 1.0])]
+        self._record("add_mesh_program", name=name, program=prog.ops, position=position, color=color, scale=sc, dynamic=dynamic)
+        return self._add_body(name, Geometry("mesh", {"path": path, "scale": sc, "bbox_lo": lo, "bbox_hi": hi}),
+                              position, color, 1.0, dynamic)
+
     def add_plane(self, name="ground", position=None, size=None, color=None) -> dict:
         size = [float(v) for v in (size or [10.0, 10.0])]
         self._record("add_plane", name=name, position=position, size=size, color=color)

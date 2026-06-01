@@ -1,0 +1,265 @@
+"""meshlang — the AI-facing modeling language over the mesh kernel.
+
+The model an LLM reads/edits is an **op-log program**: an ordered list of
+``{op, on:<selector>, ...params, mark}`` commands. ``.build()`` replays it
+deterministically into a ``kernel.Mesh`` (like ``Session.replay`` / ``Part.features``).
+The LLM NEVER touches a vertex/face index — because kernel operators rebuild the
+mesh and renumber every element (the Topological Naming Problem), a stored index
+dies after one op. Instead:
+
+* **Selection is a re-evaluable query** resolved against the *live* mesh:
+  ``{by: normal|tag|extreme|side|all|last_created}`` composable with ``and/or/not``.
+  The grammar has no field for a raw index, so fragile indexing is unrepresentable.
+* **Durable handles are tags** (``mark``), carried in ``Face.attrs`` across rebuilds.
+* **Every step is validated**, so a bad command localises to its op instead of
+  silently corrupting the mesh.
+
+This is the layer an LLM (or the MCP server) drives.
+"""
+from __future__ import annotations
+
+import json
+
+from .kernel import (
+    Mesh, make_cube, make_cylinder_ngon, face_normal, faces_by_normal,
+    extrude_faces, inset_faces, catmull_clark,
+)
+
+
+class SelectorEmpty(Exception):
+    """A selector matched zero faces — carries diagnostics so the agent self-corrects."""
+    def __init__(self, sel, diagnostics):
+        super().__init__(f"selector matched 0 faces: {sel} | available: {diagnostics}")
+        self.sel = sel
+        self.diagnostics = diagnostics
+
+
+class MeshLangError(Exception):
+    pass
+
+
+# --------------------------------------------------------------------------- #
+# Selectors (declarative, re-runnable against the live mesh)
+# --------------------------------------------------------------------------- #
+def _centroid(mesh, f):
+    vs = mesh.face_verts(f)
+    n = len(vs)
+    return [sum(v.co[k] for v in vs) / n for k in range(3)]
+
+
+def _bbox(mesh):
+    cs = [v.co for v in mesh.verts]
+    return [min(c[k] for c in cs) for k in range(3)], [max(c[k] for c in cs) for k in range(3)]
+
+
+def _tags(f):
+    return f.attrs.get("tags", [])
+
+
+def _diagnostics(mesh):
+    lo, hi = _bbox(mesh)
+    tags = sorted({t for f in mesh.faces for t in _tags(f) if not t.startswith("__")})
+    hist = {}
+    for f in mesh.faces:
+        n = face_normal(mesh, f)
+        for k, ax in enumerate("xyz"):
+            if n[k] > 0.5:
+                hist[f"+{ax}"] = hist.get(f"+{ax}", 0) + 1
+            elif n[k] < -0.5:
+                hist[f"-{ax}"] = hist.get(f"-{ax}", 0) + 1
+    return {"faces": len(mesh.faces), "bbox": [lo, hi], "tags": tags, "normal_histogram": hist}
+
+
+def resolve(mesh: Mesh, sel: dict, last_tag=None) -> list:
+    """Resolve a selector to a list of Faces. Raises SelectorEmpty on no match."""
+    faces = _resolve(mesh, sel, last_tag)
+    seen, out = set(), []
+    for f in faces:
+        if id(f) not in seen:
+            seen.add(id(f)); out.append(f)
+    if not out:
+        raise SelectorEmpty(sel, _diagnostics(mesh))
+    return out
+
+
+def _resolve(mesh, sel, last_tag):
+    if not isinstance(sel, dict):
+        raise MeshLangError(f"selector must be a dict, got {sel!r}")
+    if "and" in sel:
+        sets = [set(map(id, _resolve(mesh, s, last_tag))) for s in sel["and"]]
+        keep = set.intersection(*sets) if sets else set()
+        return [f for f in mesh.faces if id(f) in keep]
+    if "or" in sel:
+        keep = set()
+        for s in sel["or"]:
+            keep |= set(map(id, _resolve(mesh, s, last_tag)))
+        return [f for f in mesh.faces if id(f) in keep]
+    if "not" in sel:
+        excl = set(map(id, _resolve(mesh, sel["not"], last_tag)))
+        return [f for f in mesh.faces if id(f) not in excl]
+    by = sel.get("by")
+    if by == "all":
+        return list(mesh.faces)
+    if by == "normal":
+        if "dir" in sel:
+            d = sel["dir"]
+            m = (d[0] ** 2 + d[1] ** 2 + d[2] ** 2) ** 0.5 or 1.0
+            d = [c / m for c in d]
+            tol = sel.get("tol", 0.5)
+            return [f for f in mesh.faces if sum(face_normal(mesh, f)[k] * d[k] for k in range(3)) > 1 - tol]
+        return faces_by_normal(mesh, sel.get("axis", "z"), sel.get("sign", 1.0), sel.get("tol", 0.5))
+    if by == "tag":
+        name = sel["name"]
+        return [f for f in mesh.faces if name in _tags(f)]
+    if by == "last_created":
+        return [] if last_tag is None else [f for f in mesh.faces if last_tag in _tags(f)]
+    if by == "extreme":
+        ax = "xyz".index(sel.get("axis", "z"))
+        lo, hi = _bbox(mesh)
+        tol = sel.get("tol", 0.02) * ((hi[ax] - lo[ax]) or 1.0)
+        cents = [(_centroid(mesh, f)[ax], f) for f in mesh.faces]
+        target = max(c for c, _ in cents) if sel.get("which", "max") == "max" else min(c for c, _ in cents)
+        return [f for c, f in cents if abs(c - target) <= tol]
+    if by == "side":
+        ax = "xyz".index(sel.get("axis", "x"))
+        lo, hi = _bbox(mesh)
+        mid = (lo[ax] + hi[ax]) / 2
+        return [f for f in mesh.faces if (_centroid(mesh, f)[ax] - mid) * sel.get("sign", 1.0) > 0]
+    raise MeshLangError(f"unknown selector {sel!r}")
+
+
+class Sel:
+    """Python sugar for selector dicts (an LLM emits the dicts directly)."""
+    normal = staticmethod(lambda axis="z", sign=1.0, tol=0.5: {"by": "normal", "axis": axis, "sign": sign, "tol": tol})
+    dir = staticmethod(lambda d, tol=0.5: {"by": "normal", "dir": list(d), "tol": tol})
+    tag = staticmethod(lambda name: {"by": "tag", "name": name})
+    extreme = staticmethod(lambda axis="z", which="max": {"by": "extreme", "axis": axis, "which": which})
+    side = staticmethod(lambda axis="x", sign=1.0: {"by": "side", "axis": axis, "sign": sign})
+    all = staticmethod(lambda: {"by": "all"})
+    last = staticmethod(lambda: {"by": "last_created"})
+    AND = staticmethod(lambda *s: {"and": list(s)})
+    OR = staticmethod(lambda *s: {"or": list(s)})
+    NOT = staticmethod(lambda s: {"not": s})
+
+
+# --------------------------------------------------------------------------- #
+# Region transforms (edit the selected verts in place; no rebuild)
+# --------------------------------------------------------------------------- #
+def _transform(mesh, faces, op, by):
+    verts = list({v.id: v for f in faces for v in mesh.face_verts(f)}.values())
+    if op == "translate":
+        for v in verts:
+            v.co = (v.co[0] + by[0], v.co[1] + by[1], v.co[2] + by[2])
+    elif op == "scale":
+        c = [sum(v.co[k] for v in verts) / len(verts) for k in range(3)]
+        for v in verts:
+            v.co = tuple(c[k] + (v.co[k] - c[k]) * by[k] for k in range(3))
+
+
+def _check_assert(mesh, cmd):
+    if cmd.get("closed_manifold") and not mesh.is_closed_manifold():
+        raise MeshLangError("assert closed_manifold failed")
+    if "euler" in cmd and mesh.euler() != cmd["euler"]:
+        raise MeshLangError(f"assert euler={cmd['euler']} failed (got {mesh.euler()})")
+
+
+def _cmd(op, on=None, mark=None, **params):
+    c = {"op": op}
+    if on is not None:
+        c["on"] = on
+    c.update(params)
+    if mark is not None:
+        c["mark"] = mark
+    return c
+
+
+# --------------------------------------------------------------------------- #
+# The program (op-log) — the canonical, replayable model
+# --------------------------------------------------------------------------- #
+class MeshProgram:
+    def __init__(self, ops=None):
+        self.ops = [dict(o) for o in (ops or [])]
+
+    # -- log editing --------------------------------------------------------- #
+    def add(self, **cmd): self.ops.append(cmd); return self
+    def insert(self, i, cmd): self.ops.insert(i, dict(cmd)); return self
+    def replace(self, i, cmd): self.ops[i] = dict(cmd); return self
+    def delete(self, i): del self.ops[i]; return self
+    def to_json(self, indent=2): return json.dumps(self.ops, indent=indent)
+
+    @classmethod
+    def from_json(cls, s): return cls(json.loads(s))
+
+    # -- fluent builders (sugar; an LLM just emits the op dicts) -------------- #
+    def cube(self, size=1.0, mark=None): return self.add(**_cmd("cube", mark=mark, size=size))
+    def cylinder(self, sides=24, radius=0.5, height=1.0, mark=None):
+        return self.add(**_cmd("cylinder", mark=mark, sides=sides, radius=radius, height=height))
+    def extrude(self, on, distance=0.5, mark=None): return self.add(**_cmd("extrude", on=on, mark=mark, distance=distance))
+    def inset(self, on, thickness=0.3, mark=None): return self.add(**_cmd("inset", on=on, mark=mark, thickness=thickness))
+    def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
+    def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
+    def translate(self, on, by): return self.add(**_cmd("translate", on=on, by=list(by)))
+    def scale(self, on, by): return self.add(**_cmd("scale", on=on, by=list(by)))
+    def assert_(self, **kw): return self.add(**_cmd("assert", **kw))
+
+    # -- replay -------------------------------------------------------------- #
+    def build(self) -> Mesh:
+        """Replay the program into a fresh, validated mesh."""
+        mesh, last_tag = None, None
+        for i, cmd in enumerate(self.ops):
+            op = cmd.get("op")
+            out_tag = f"__out{i}"
+            try:
+                if op == "cube":
+                    mesh = make_cube(cmd.get("size", 1.0)); outs = list(mesh.faces)
+                elif op == "cylinder":
+                    mesh = make_cylinder_ngon(cmd.get("sides", 24), cmd.get("radius", 0.5), cmd.get("height", 1.0))
+                    outs = list(mesh.faces)
+                elif mesh is None:
+                    raise MeshLangError(f"op '{op}' before any primitive")
+                elif op == "extrude":
+                    sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
+                    mesh = extrude_faces(mesh, sel, cmd.get("distance", 0.5), mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "inset":
+                    sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
+                    mesh = inset_faces(mesh, sel, cmd.get("thickness", 0.3), mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "subdivide":
+                    for _ in range(cmd.get("levels", 1)):
+                        mesh = catmull_clark(mesh)
+                    outs = []  # global op — last_created is undefined afterward
+                elif op == "tag":
+                    sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
+                    for f in sel:
+                        f.attrs.setdefault("tags", []).append(cmd["name"])
+                    outs = sel
+                elif op in ("translate", "scale"):
+                    sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
+                    _transform(mesh, sel, op, cmd.get("by", [1, 1, 1] if op == "scale" else [0, 0, 0]))
+                    outs = sel
+                elif op == "assert":
+                    _check_assert(mesh, cmd); outs = []
+                else:
+                    raise MeshLangError(f"unknown op '{op}'")
+            except (SelectorEmpty, MeshLangError):
+                raise
+            except Exception as e:  # localise any kernel error to its op
+                raise MeshLangError(f"op #{i} '{op}': {type(e).__name__}: {e}") from e
+
+            mark = cmd.get("mark")
+            if mark and outs:
+                for f in outs:
+                    f.attrs.setdefault("tags", []).append(mark)
+            if outs:
+                last_tag = out_tag
+            try:
+                mesh.validate()  # guardrail: every step keeps the mesh valid
+            except AssertionError as e:
+                raise MeshLangError(f"op #{i} '{op}' produced an invalid mesh: {e}") from e
+        if mesh is None:
+            raise MeshLangError("empty program")
+        return mesh
+
+    def stats(self) -> dict:
+        return self.build().stats()
