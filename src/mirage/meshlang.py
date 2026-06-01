@@ -142,6 +142,31 @@ class Sel:
     NOT = staticmethod(lambda s: {"not": s})
 
 
+def describe(mesh: Mesh) -> dict:
+    """A compact, AI-legible state summary (no vertex soup): invariants, size, the
+    named tag groups, and how many faces point along each axis (so the agent knows
+    what it can select next)."""
+    lo, hi = _bbox(mesh)
+    groups = {}
+    for k, ax in enumerate("xyz"):
+        for sign, lbl in ((1.0, "+"), (-1.0, "-")):
+            cnt = sum(1 for f in mesh.faces if face_normal(mesh, f)[k] * sign > 0.5)
+            if cnt:
+                groups[f"{lbl}{ax}"] = cnt
+    tags = {}
+    for f in mesh.faces:
+        for t in _tags(f):
+            if not t.startswith("__"):
+                tags[t] = tags.get(t, 0) + 1
+    return {
+        "stats": mesh.stats(),
+        "size": [round(hi[k] - lo[k], 3) for k in range(3)],
+        "bbox": [[round(x, 3) for x in lo], [round(x, 3) for x in hi]],
+        "normal_groups": groups,
+        "tags": tags,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Region transforms (edit the selected verts in place; no rebuild)
 # --------------------------------------------------------------------------- #
@@ -263,3 +288,7 @@ class MeshProgram:
 
     def stats(self) -> dict:
         return self.build().stats()
+
+    def get_state(self) -> dict:
+        """The AI-legible state: the op program + a semantic summary of the result."""
+        return {"program": self.ops, **describe(self.build())}
