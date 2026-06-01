@@ -272,6 +272,10 @@ class MeshProgram:
             except Exception as e:  # localise any kernel error to its op
                 raise MeshLangError(f"op #{i} '{op}': {type(e).__name__}: {e}") from e
 
+            for f in outs:   # stamp the step's out tag so `last_created` resolves after ANY op
+                tags = f.attrs.setdefault("tags", [])
+                if out_tag not in tags:          # extrude/inset already stamped it via the kernel
+                    tags.append(out_tag)
             mark = cmd.get("mark")
             if mark and outs:
                 for f in outs:

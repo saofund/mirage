@@ -277,6 +277,117 @@ def ground(width: int = 720, height: int = 540, azimuth: Optional[float] = None,
 
 
 # --------------------------------------------------------------------------- #
+# Mesh modeling (meshlang) — an LLM models by emitting op-log commands; the model
+# is built on Mirage's own topological kernel (no trimesh), never by index.
+# --------------------------------------------------------------------------- #
+from .meshlang import MeshProgram  # noqa: E402
+
+_model = MeshProgram()
+
+
+@mcp.tool()
+def new_model(primitive: Optional[dict] = None) -> dict:
+    """Start a fresh mesh program. Optionally seed a primitive, e.g.
+    {"op":"cube","size":1.0} or {"op":"cylinder","sides":24,"radius":0.5,"height":1.0}."""
+    global _model
+    _model = MeshProgram()
+    if primitive:
+        return apply_mesh_op(primitive)
+    return {"ok": True, "program": []}
+
+
+@mcp.tool()
+def apply_mesh_op(command: dict) -> dict:
+    """Append ONE meshlang op and rebuild. command = {op, on:<selector>, ...params, mark?}.
+    Ops: cube/cylinder (primitive); extrude{on,distance}; inset{on,thickness};
+    subdivide{levels}; tag{on,name}; scale/translate{on,by}; assert{closed_manifold,euler}.
+    Selectors (the `on` value): {"by":"normal","axis":"z","sign":1} | {"by":"tag","name":..} |
+    {"by":"extreme","axis":"z","which":"max"} | {"by":"last_created"} | {"by":"all"} |
+    {"and":[..]} / {"or":[..]} / {"not":..}. Returns the new state, or {ok:false, error}
+    with the bad op rolled back so you can retry."""
+    _model.ops.append(command)
+    try:
+        return {"ok": True, **_model.get_state()}
+    except Exception as exc:
+        _model.ops.pop()
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def get_mesh_state() -> dict:
+    """The AI-legible model state: op program + invariants/size/bbox + normal groups + tags."""
+    try:
+        return {"ok": True, **_model.get_state()}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "program": _model.ops}
+
+
+@mcp.tool()
+def get_mesh_program() -> list:
+    """The current op-log program (the canonical model)."""
+    return _model.ops
+
+
+@mcp.tool()
+def undo_mesh_op() -> dict:
+    """Drop the last op."""
+    if _model.ops:
+        _model.ops.pop()
+    return get_mesh_state()
+
+
+def _render_mesh_png(marked: bool, width: int, height: int, **view) -> Optional[bytes]:
+    import numpy as np
+    from PIL import Image as PILImage
+    mesh = _model.build()
+    if marked:
+        from .grounding import set_of_mark_mesh
+        rgb, _ = set_of_mark_mesh(mesh, view=view, width=width, height=height)
+    else:
+        import os
+        import tempfile
+        from .session import Session
+        from .mujoco_backend import MujocoSim
+        cache = os.path.join(tempfile.gettempdir(), "mirage_grounding")
+        os.makedirs(cache, exist_ok=True)
+        path = os.path.join(cache, "_model.obj").replace("\\", "/")
+        mesh.export_obj(path)
+        minz = min(v.co[2] for v in mesh.verts)
+        s = Session(name="model")
+        s.add_plane("ground", size=[8, 8])
+        s.add_mesh("model", path, position=[0, 0, -minz + 0.001], color=[0.82, 0.8, 0.74], dynamic=False)
+        s.set_material("model", roughness=0.6)
+        rgb = MujocoSim.from_scene(s.scene, quality="studio").render(width, height, **view)["rgb"]
+    buf = io.BytesIO()
+    PILImage.fromarray(np.asarray(rgb).astype("uint8")).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@mcp.tool()
+def render_model(azimuth: float = 128, elevation: float = -15, distance: float = 4.0,
+                 lookat: Optional[list[float]] = None, width: int = 720, height: int = 560):
+    """Studio render of the current model (returns a PNG to look at)."""
+    try:
+        png = _render_mesh_png(False, width, height, lookat=lookat or [0, 0, 0.4],
+                               azimuth=azimuth, elevation=elevation, distance=distance)
+    except Exception as exc:
+        return {"error": str(exc)}
+    return Image(data=png, format="png")
+
+
+@mcp.tool()
+def render_mesh_marked(azimuth: float = 128, elevation: float = -15, distance: float = 3.2,
+                       lookat: Optional[list[float]] = None, width: int = 800, height: int = 620):
+    """Set-of-Mark render: the model with each visible face tagged F{id} (returns a PNG)."""
+    try:
+        png = _render_mesh_png(True, width, height, lookat=lookat or [0, 0, 0.4],
+                               azimuth=azimuth, elevation=elevation, distance=distance)
+    except Exception as exc:
+        return {"error": str(exc)}
+    return Image(data=png, format="png")
+
+
+# --------------------------------------------------------------------------- #
 # Command log (reproducibility)
 # --------------------------------------------------------------------------- #
 @mcp.tool()

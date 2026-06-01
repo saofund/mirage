@@ -63,3 +63,15 @@ def test_tags_survive_subdivision():
 
 def test_selector_extreme_picks_top_face():
     assert len(resolve(make_cube(1.0), Sel.extreme("z", "max"))) == 1
+
+
+def test_last_created_after_scale():
+    # regression: scale/translate/tag set last_tag but never stamped it onto the
+    # faces, so `last_created` on the NEXT op matched 0 (goblet-flare repro).
+    m = (MeshProgram().cylinder(sides=8, radius=0.5, height=0.4)
+         .extrude(on=Sel.extreme("z", "max"), distance=0.2)
+         .scale(on=Sel.last(), by=[2, 2, 1])
+         .extrude(on=Sel.last(), distance=0.2)        # was SelectorEmpty before the fix
+         .assert_(closed_manifold=True, euler=2)).build()
+    m.validate()
+    assert m.is_closed_manifold() and m.euler() == 2
