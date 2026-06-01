@@ -41,9 +41,27 @@ def blocks() -> MujocoSim:
     return MujocoSim.from_scene(s.scene)
 
 
+def studio() -> MujocoSim:
+    from mirage import Session
+    from mirage.modeling import flanged_pipe
+    s = Session(name="studio")
+    s.add_plane("ground", size=[5, 5])
+    s.add_box("red_box", position=[-0.5, 0.1, 0.2], size=[0.4, 0.4, 0.4], color=[0.85, 0.2, 0.18])
+    s.set_material("red_box", roughness=0.7)
+    s.add_sphere("steel_ball", position=[0.25, 0.2, 0.2], radius=0.2, color=[0.75, 0.77, 0.82])
+    s.set_material("steel_ball", metallic=0.95, roughness=0.12)
+    s.add_cylinder("gold_can", position=[0.55, -0.25, 0.2], radius=0.13, height=0.4, color=[0.95, 0.78, 0.25])
+    s.set_material("gold_can", metallic=0.9, roughness=0.25)
+    s.add_box("blue_box", position=[-0.12, -0.45, 0.12], size=[0.24, 0.24, 0.24], color=[0.2, 0.55, 0.85])
+    s.set_material("blue_box", roughness=0.5)
+    s.add_part("pipe", flanged_pipe(), position=[-0.78, -0.5, 0.0], color=[0.6, 0.65, 0.72])
+    s.set_material("pipe", metallic=0.8, roughness=0.25)
+    return MujocoSim.from_scene(s.scene, quality="studio")
+
+
 def main() -> None:
     which = sys.argv[1] if len(sys.argv) > 1 else "panda"
-    sim = {"panda": panda, "blocks": blocks}.get(which, panda)()
+    sim = {"panda": panda, "blocks": blocks, "studio": studio}.get(which, panda)()
     import mujoco.viewer
     print(f"launching native MuJoCo viewer: '{which}' (nq={sim.model.nq}) — close the window to exit")
     mujoco.viewer.launch(sim.model, sim.data)
