@@ -2,8 +2,8 @@
   "mcpServers": {
     "mirage": {
       "type": "stdio",
-      "command": "python",
-      "args": ["-m", "mirage.mcp_server"],
+      "command": "uv",
+      "args": ["run", "python", "-m", "mirage.mcp_server"],
       "env": {}
     }
   }
