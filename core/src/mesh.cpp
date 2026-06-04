@@ -1,8 +1,10 @@
 #include "mirage/mesh.hpp"
 
+#include <cmath>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 namespace mirage {
 
@@ -168,6 +170,152 @@ Mesh make_cube(double size) {
     m.add_face({v[2], v[3], v[7], v[6]});  // +y (back)
     m.add_face({v[3], v[0], v[4], v[7]});  // -x (left)
     return m;
+}
+
+std::vector<Face*> Mesh::edge_faces(const Edge* e) const {
+    std::vector<Face*> out;
+    for (Loop* lp : edge_loops(e)) out.push_back(lp->face);
+    return out;
+}
+
+Mesh Mesh::from_pydata(const std::vector<std::array<double, 3>>& positions,
+                       const std::vector<std::vector<int>>& faces) {
+    Mesh m;
+    std::vector<Vert*> vs;
+    vs.reserve(positions.size());
+    for (const auto& p : positions) vs.push_back(m.add_vert(p[0], p[1], p[2]));
+    for (const auto& f : faces) {
+        std::vector<Vert*> fv;
+        fv.reserve(f.size());
+        for (int idx : f) fv.push_back(vs[idx]);
+        m.add_face(fv);
+    }
+    return m;
+}
+
+std::array<double, 3> face_normal(const Mesh& m, const Face* f) {
+    std::vector<Vert*> vs = m.face_verts(f);
+    double nx = 0, ny = 0, nz = 0;
+    const std::size_t n = vs.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto& a = vs[i]->co;
+        const auto& b = vs[(i + 1) % n]->co;
+        nx += (a[1] - b[1]) * (a[2] + b[2]);
+        ny += (a[2] - b[2]) * (a[0] + b[0]);
+        nz += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    double mag = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (mag == 0.0) mag = 1.0;
+    return {nx / mag, ny / mag, nz / mag};
+}
+
+Mesh make_cylinder(int sides, double radius, double height) {
+    constexpr double PI = 3.14159265358979323846;
+    std::vector<std::array<double, 3>> pos;
+    const double h = height / 2.0;
+    for (int i = 0; i < sides; ++i) {  // interleaved per ring vertex: bottom = 2i, top = 2i+1
+        const double a = 2.0 * PI * i / sides;
+        const double x = radius * std::cos(a), y = radius * std::sin(a);
+        pos.push_back({x, y, -h});
+        pos.push_back({x, y, h});
+    }
+    std::vector<std::vector<int>> faces;
+    std::vector<int> bot, top;
+    for (int i = 0; i < sides; ++i) {
+        bot.push_back(2 * i);
+        top.push_back(2 * i + 1);
+    }
+    faces.emplace_back(bot.rbegin(), bot.rend());  // -z cap (reversed for outward normal)
+    faces.push_back(top);                          // +z cap
+    for (int i = 0; i < sides; ++i) {              // side quads (outward)
+        const int j = (i + 1) % sides;
+        faces.push_back({2 * i, 2 * j, 2 * j + 1, 2 * i + 1});
+    }
+    return Mesh::from_pydata(pos, faces);
+}
+
+// ---------------------------------------------------------------------------
+// Operators
+// ---------------------------------------------------------------------------
+namespace {
+using A3 = std::array<double, 3>;
+A3 a3add(const A3& a, const A3& b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
+A3 a3scale(const A3& a, double s) { return {a[0] * s, a[1] * s, a[2] * s}; }
+}  // namespace
+
+Mesh catmull_clark(const Mesh& mesh) {
+    if (mesh.faces().empty()) return Mesh();
+
+    // face points = face centroids
+    std::unordered_map<const Face*, A3> fp;
+    for (const auto& f : mesh.faces()) {
+        A3 c{0, 0, 0};
+        std::vector<Vert*> vs = mesh.face_verts(f.get());
+        for (Vert* v : vs) c = a3add(c, v->co);
+        fp[f.get()] = a3scale(c, 1.0 / static_cast<double>(vs.size()));
+    }
+
+    // edge midpoints, edge points, edge->faces adjacency
+    std::unordered_map<const Edge*, A3> emid, ept;
+    std::unordered_map<const Edge*, std::vector<Face*>> eadj;
+    for (const auto& e : mesh.edges()) {
+        std::vector<Face*> fs = mesh.edge_faces(e.get());
+        eadj[e.get()] = fs;
+        A3 mid = a3scale(a3add(e->v1->co, e->v2->co), 0.5);
+        emid[e.get()] = mid;
+        if (fs.size() == 2)
+            ept[e.get()] = a3scale(a3add(a3add(e->v1->co, e->v2->co), a3add(fp[fs[0]], fp[fs[1]])), 0.25);
+        else
+            ept[e.get()] = mid;  // boundary edge
+    }
+
+    // per-vertex incident edges / faces
+    std::unordered_map<const Vert*, std::vector<const Edge*>> ve;
+    std::unordered_map<const Vert*, std::vector<const Face*>> vf;
+    for (const auto& v : mesh.verts()) { ve[v.get()]; vf[v.get()]; }
+    for (const auto& e : mesh.edges()) { ve[e->v1].push_back(e.get()); ve[e->v2].push_back(e.get()); }
+    for (const auto& f : mesh.faces())
+        for (Loop* lp : mesh.face_loops(f.get())) vf[lp->vert].push_back(f.get());
+
+    // re-weighted vertex points
+    std::unordered_map<const Vert*, A3> nv;
+    for (const auto& vp : mesh.verts()) {
+        const Vert* v = vp.get();
+        const A3 P = v->co;
+        std::vector<const Edge*> boundary;
+        for (const Edge* e : ve[v]) if (eadj[e].size() < 2) boundary.push_back(e);
+        if (!boundary.empty()) {  // standard cubic B-spline boundary rule: (6P + sum nb)/(6+k)
+            A3 s = a3scale(P, 6.0);
+            for (const Edge* e : boundary) s = a3add(s, e->other(v)->co);
+            nv[v] = a3scale(s, 1.0 / (6.0 + static_cast<double>(boundary.size())));
+        } else {
+            const double n = static_cast<double>(ve[v].size());
+            A3 F{0, 0, 0};
+            for (const Face* f : vf[v]) F = a3add(F, fp[f]);
+            F = a3scale(F, 1.0 / static_cast<double>(vf[v].size()));
+            A3 R{0, 0, 0};
+            for (const Edge* e : ve[v]) R = a3add(R, emid[e]);
+            R = a3scale(R, 1.0 / static_cast<double>(ve[v].size()));
+            nv[v] = a3scale(a3add(a3add(F, a3scale(R, 2.0)), a3scale(P, n - 3.0)), 1.0 / n);
+        }
+    }
+
+    // assemble new mesh: vertex-points, then edge-points, then face-points; each
+    // original corner becomes a quad [vertexPt, edgePt, facePt, prevEdgePt].
+    std::vector<A3> pos;
+    std::unordered_map<const Vert*, int> iv;
+    std::unordered_map<const Edge*, int> ie;
+    std::unordered_map<const Face*, int> jf;
+    for (const auto& v : mesh.verts()) { iv[v.get()] = static_cast<int>(pos.size()); pos.push_back(nv[v.get()]); }
+    for (const auto& e : mesh.edges()) { ie[e.get()] = static_cast<int>(pos.size()); pos.push_back(ept[e.get()]); }
+    for (const auto& f : mesh.faces()) { jf[f.get()] = static_cast<int>(pos.size()); pos.push_back(fp[f.get()]); }
+
+    std::vector<std::vector<int>> quads;
+    for (const auto& f : mesh.faces())
+        for (Loop* lp : mesh.face_loops(f.get()))
+            quads.push_back({iv[lp->vert], ie[lp->edge], jf[f.get()], ie[lp->prev->edge]});
+
+    return Mesh::from_pydata(pos, quads);
 }
 
 }  // namespace mirage

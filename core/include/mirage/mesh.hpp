@@ -67,6 +67,12 @@ public:
     std::vector<Loop*> face_loops(const Face* f) const;
     std::vector<Vert*> face_verts(const Face* f) const;
     std::vector<Loop*> edge_loops(const Edge* e) const;
+    std::vector<Face*> edge_faces(const Edge* e) const;
+
+    // Rebuild a mesh from positions + ngon face index lists (mirrors the Python
+    // Mesh.from_pydata; the building block operators use to emit a fresh mesh).
+    static Mesh from_pydata(const std::vector<std::array<double, 3>>& positions,
+                            const std::vector<std::vector<int>>& faces);
 
     // Invariants
     int euler() const {
@@ -80,6 +86,7 @@ public:
     std::size_t num_edges() const { return edges_.size(); }
     std::size_t num_faces() const { return faces_.size(); }
     const std::vector<std::unique_ptr<Vert>>& verts() const { return verts_; }
+    const std::vector<std::unique_ptr<Edge>>& edges() const { return edges_; }
     const std::vector<std::unique_ptr<Face>>& faces() const { return faces_; }
 
 private:
@@ -94,8 +101,19 @@ private:
     int loop_id_ = 0;
 };
 
-// Unit-ish primitive: an axis-aligned cube of the given edge length, centered at
-// the origin, with outward-consistent winding (a closed 2-manifold, euler == 2).
+// Unit face normal via Newell's method (robust for non-planar polygons).
+std::array<double, 3> face_normal(const Mesh& m, const Face* f);
+
+// Primitives.
+// Cube: axis-aligned, centered at origin, outward-consistent winding (euler == 2).
 Mesh make_cube(double size = 1.0);
+// Cylinder: an n-gon prism (two `sides`-vertex rings + caps); a closed 2-manifold.
+Mesh make_cylinder(int sides = 24, double radius = 0.5, double height = 1.0);
+
+// Operators (built on the owned topology).
+// One level of Catmull-Clark subdivision — the classic test that a radial-edge
+// kernel actually works (face/edge/vertex points + the standard boundary rule,
+// found by walking the topology, then rebuilt as quads).
+Mesh catmull_clark(const Mesh& mesh);
 
 }  // namespace mirage
