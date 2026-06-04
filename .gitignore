@@ -36,3 +36,6 @@ git_identities.json
 out/
 renders/
 examples/cases/outputs/
+
+# C++ engine build artifacts
+core/build/
