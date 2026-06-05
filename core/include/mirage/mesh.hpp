@@ -73,6 +73,8 @@ public:
     // Mesh.from_pydata; the building block operators use to emit a fresh mesh).
     static Mesh from_pydata(const std::vector<std::array<double, 3>>& positions,
                             const std::vector<std::vector<int>>& faces);
+    // A fresh, equivalent mesh (this type is move-only, so this is the deep copy).
+    Mesh copy() const;
 
     // Invariants
     int euler() const {
@@ -115,5 +117,13 @@ Mesh make_cylinder(int sides = 24, double radius = 0.5, double height = 1.0);
 // kernel actually works (face/edge/vertex points + the standard boundary rule,
 // found by walking the topology, then rebuilt as quads).
 Mesh catmull_clark(const Mesh& mesh);
+
+// Region operators (emit a fresh mesh; durable tags / op-log live in the layer
+// above). extrude: each region vertex moves along the average of its incident
+// region-face normals, side walls bridge boundary edges, orphaned interior verts
+// are compacted away. inset: a centroid-proportional smaller copy of each face,
+// ringed by border quads (thickness clamped to (0,1)).
+Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region, double distance = 0.5);
+Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region, double thickness = 0.3);
 
 }  // namespace mirage

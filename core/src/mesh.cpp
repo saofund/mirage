@@ -1,5 +1,6 @@
 #include "mirage/mesh.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <stdexcept>
@@ -213,23 +214,22 @@ Mesh make_cylinder(int sides, double radius, double height) {
     constexpr double PI = 3.14159265358979323846;
     std::vector<std::array<double, 3>> pos;
     const double h = height / 2.0;
-    for (int i = 0; i < sides; ++i) {  // interleaved per ring vertex: bottom = 2i, top = 2i+1
+    for (int i = 0; i < sides; ++i) {  // bottom ring: indices 0 .. sides-1 (matches Python)
         const double a = 2.0 * PI * i / sides;
-        const double x = radius * std::cos(a), y = radius * std::sin(a);
-        pos.push_back({x, y, -h});
-        pos.push_back({x, y, h});
+        pos.push_back({radius * std::cos(a), radius * std::sin(a), -h});
+    }
+    for (int i = 0; i < sides; ++i) {  // top ring: indices sides .. 2*sides-1
+        const double a = 2.0 * PI * i / sides;
+        pos.push_back({radius * std::cos(a), radius * std::sin(a), h});
     }
     std::vector<std::vector<int>> faces;
     std::vector<int> bot, top;
-    for (int i = 0; i < sides; ++i) {
-        bot.push_back(2 * i);
-        top.push_back(2 * i + 1);
-    }
+    for (int i = 0; i < sides; ++i) { bot.push_back(i); top.push_back(sides + i); }
     faces.emplace_back(bot.rbegin(), bot.rend());  // -z cap (reversed for outward normal)
     faces.push_back(top);                          // +z cap
     for (int i = 0; i < sides; ++i) {              // side quads (outward)
         const int j = (i + 1) % sides;
-        faces.push_back({2 * i, 2 * j, 2 * j + 1, 2 * i + 1});
+        faces.push_back({i, j, sides + j, sides + i});
     }
     return Mesh::from_pydata(pos, faces);
 }
@@ -241,6 +241,27 @@ namespace {
 using A3 = std::array<double, 3>;
 A3 a3add(const A3& a, const A3& b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
 A3 a3scale(const A3& a, double s) { return {a[0] * s, a[1] * s, a[2] * s}; }
+
+// Drop positions referenced by no face and remap indices (mirrors Python _compact),
+// then rebuild — used by operators that orphan interior verts (extrude).
+Mesh build_compact(const std::vector<A3>& pos, const std::vector<std::vector<int>>& faces) {
+    std::set<int> used;
+    for (const auto& f : faces)
+        for (int i : f) used.insert(i);
+    std::unordered_map<int, int> remap;
+    std::vector<A3> np;
+    np.reserve(used.size());
+    for (int old_i : used) { remap[old_i] = static_cast<int>(np.size()); np.push_back(pos[old_i]); }
+    std::vector<std::vector<int>> nf;
+    nf.reserve(faces.size());
+    for (const auto& f : faces) {
+        std::vector<int> g;
+        g.reserve(f.size());
+        for (int i : f) g.push_back(remap[i]);
+        nf.push_back(g);
+    }
+    return Mesh::from_pydata(np, nf);
+}
 }  // namespace
 
 Mesh catmull_clark(const Mesh& mesh) {
@@ -316,6 +337,111 @@ Mesh catmull_clark(const Mesh& mesh) {
             quads.push_back({iv[lp->vert], ie[lp->edge], jf[f.get()], ie[lp->prev->edge]});
 
     return Mesh::from_pydata(pos, quads);
+}
+
+Mesh Mesh::copy() const {
+    std::vector<A3> pos;
+    pos.reserve(verts_.size());
+    for (const auto& v : verts_) pos.push_back(v->co);
+    std::vector<std::vector<int>> faces;
+    faces.reserve(faces_.size());
+    for (const auto& f : faces_) {
+        std::vector<int> fv;
+        for (Loop* lp : face_loops(f.get())) fv.push_back(lp->vert->id);
+        faces.push_back(fv);
+    }
+    return from_pydata(pos, faces);
+}
+
+Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double distance) {
+    std::set<const Face*> region(region_v.begin(), region_v.end());
+    if (region.empty() || std::abs(distance) < 1e-9) return mesh.copy();
+
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+
+    // each region vertex accumulates the normals of its incident region faces
+    std::unordered_map<const Face*, A3> fn;
+    for (const Face* f : region) fn[f] = face_normal(mesh, f);
+    std::unordered_map<int, A3> vacc;
+    for (const Face* f : region)
+        for (Vert* v : mesh.face_verts(f)) {
+            auto it = vacc.find(v->id);
+            vacc[v->id] = (it == vacc.end()) ? fn[f] : a3add(it->second, fn[f]);
+        }
+
+    std::vector<A3> new_pos = pos;
+    std::unordered_map<int, int> newid;
+    std::vector<int> vids;
+    for (const auto& kv : vacc) vids.push_back(kv.first);
+    std::sort(vids.begin(), vids.end());  // deterministic new-vertex ordering (matches Python)
+    for (int vid : vids) {
+        const A3 n = vacc[vid];
+        const double nl = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        const A3 d = nl > 1e-9 ? a3scale(n, distance / nl) : A3{0, 0, 0};
+        newid[vid] = static_cast<int>(new_pos.size());
+        new_pos.push_back({pos[vid][0] + d[0], pos[vid][1] + d[1], pos[vid][2] + d[2]});
+    }
+
+    std::vector<std::vector<int>> new_faces;
+    for (const auto& f : mesh.faces())  // untouched faces
+        if (!region.count(f.get())) {
+            std::vector<int> fv;
+            for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+            new_faces.push_back(fv);
+        }
+    for (const auto& e : mesh.edges()) {  // side walls bridge edges with one region face
+        std::vector<Face*> adj;
+        for (Face* f : mesh.edge_faces(e.get())) if (region.count(f)) adj.push_back(f);
+        if (adj.size() == 1) {
+            Loop* lp = nullptr;
+            for (Loop* l : mesh.face_loops(adj[0])) if (l->edge == e.get()) { lp = l; break; }
+            const int a = lp->vert->id, b = lp->next->vert->id;
+            new_faces.push_back({a, b, newid[b], newid[a]});
+        }
+    }
+    for (const Face* f : region) {  // lifted caps
+        std::vector<int> cap;
+        for (Loop* lp : mesh.face_loops(f)) cap.push_back(newid[lp->vert->id]);
+        new_faces.push_back(cap);
+    }
+    return build_compact(new_pos, new_faces);
+}
+
+Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double thickness) {
+    std::set<const Face*> region(region_v.begin(), region_v.end());
+    if (region.empty()) return mesh.copy();
+    thickness = std::min(std::max(thickness, 1e-3), 0.999);  // avoid degenerate / bowtie
+
+    std::vector<A3> new_pos;
+    for (const auto& v : mesh.verts()) new_pos.push_back(v->co);
+    std::vector<std::vector<int>> new_faces;
+    for (const auto& f : mesh.faces())  // untouched faces
+        if (!region.count(f.get())) {
+            std::vector<int> fv;
+            for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+            new_faces.push_back(fv);
+        }
+    for (const Face* f : region) {
+        std::vector<int> vids;
+        for (Loop* lp : mesh.face_loops(f)) vids.push_back(lp->vert->id);
+        A3 c{0, 0, 0};
+        for (int i : vids) c = a3add(c, new_pos[i]);
+        c = a3scale(c, 1.0 / static_cast<double>(vids.size()));
+        std::vector<int> inner;
+        for (int i : vids) {
+            const A3 p = new_pos[i];  // copy (push_back below may reallocate)
+            inner.push_back(static_cast<int>(new_pos.size()));
+            new_pos.push_back({p[0] + (c[0] - p[0]) * thickness,
+                               p[1] + (c[1] - p[1]) * thickness,
+                               p[2] + (c[2] - p[2]) * thickness});
+        }
+        const int n = static_cast<int>(vids.size());
+        for (int k = 0; k < n; ++k)  // border quads
+            new_faces.push_back({vids[k], vids[(k + 1) % n], inner[(k + 1) % n], inner[k]});
+        new_faces.push_back(inner);  // inner face (mesh.faces().back() after a single-face inset)
+    }
+    return Mesh::from_pydata(new_pos, new_faces);
 }
 
 }  // namespace mirage
