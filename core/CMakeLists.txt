@@ -20,3 +20,15 @@ target_include_directories(mirage_core PUBLIC include)
 
 add_executable(mirage_stats src/main.cpp)
 target_link_libraries(mirage_stats PRIVATE mirage_core)
+
+# Optional pybind11 module — built when configured with -Dpybind11_DIR=... and
+# -DPython_EXECUTABLE=... (see tests/test_cpp_core.py, the differential harness).
+find_package(Python COMPONENTS Interpreter Development.Module QUIET)
+find_package(pybind11 CONFIG QUIET)
+if(pybind11_FOUND)
+  pybind11_add_module(_mirage_core src/bindings.cpp)
+  target_link_libraries(_mirage_core PRIVATE mirage_core)
+  message(STATUS "mirage: building pybind11 module _mirage_core")
+else()
+  message(STATUS "mirage: pybind11 not found — skipping _mirage_core (native lib/exe only)")
+endif()

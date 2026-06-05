@@ -42,3 +42,8 @@ packages = ["src/mirage"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pybind11>=3.0.4",
+]
