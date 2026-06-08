@@ -32,3 +32,22 @@ if(pybind11_FOUND)
 else()
   message(STATUS "mirage: pybind11 not found — skipping _mirage_core (native lib/exe only)")
 endif()
+
+# Native GL viewport (.exe). Off by default (pulls GLFW + glad via FetchContent);
+# enable with -DMIRAGE_BUILD_VIEWER=ON.
+option(MIRAGE_BUILD_VIEWER "Build the native GL viewport (mirage_viewer.exe)" OFF)
+if(MIRAGE_BUILD_VIEWER)
+  include(FetchContent)
+  set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+  set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(glfw GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG 3.4)
+  FetchContent_MakeAvailable(glfw)
+  FetchContent_Declare(glad2 GIT_REPOSITORY https://github.com/Dav1dde/glad.git GIT_TAG v2.0.8
+                       SOURCE_SUBDIR cmake)
+  FetchContent_MakeAvailable(glad2)
+  glad_add_library(glad_gl STATIC API gl:core=3.3)
+  add_executable(mirage_viewer viewer/viewer.cpp)
+  target_link_libraries(mirage_viewer PRIVATE mirage_core glfw glad_gl)
+  message(STATUS "mirage: building native viewer (mirage_viewer)")
+endif()

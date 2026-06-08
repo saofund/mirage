@@ -39,3 +39,4 @@ examples/cases/outputs/
 
 # C++ engine build artifacts
 core/build/
+*.ppm

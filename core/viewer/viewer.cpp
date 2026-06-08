@@ -1,0 +1,235 @@
+// mirage_viewer — the native viewport (.exe): a real GL 3.3 window that renders
+// the live mirage_core kernel mesh with smooth shading and an orbit camera. The
+// first piece of the human-operable GUI. `--screenshot out.ppm` renders one frame
+// to a hidden window and exits (used to verify rendering headlessly).
+#include <glad/gl.h>
+//
+#include <GLFW/glfw3.h>
+
+#include <array>
+#include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include "mirage/mesh.hpp"
+
+using namespace mirage;
+using Mat4 = std::array<float, 16>;  // column-major (OpenGL)
+using V3 = std::array<float, 3>;
+
+// --- tiny matrix/vector math (no GLM dependency) ---------------------------
+static Mat4 identity() { Mat4 m{}; m[0] = m[5] = m[10] = m[15] = 1; return m; }
+static Mat4 mul(const Mat4& a, const Mat4& b) {
+    Mat4 r{};
+    for (int c = 0; c < 4; ++c)
+        for (int row = 0; row < 4; ++row) {
+            float s = 0;
+            for (int k = 0; k < 4; ++k) s += a[k * 4 + row] * b[c * 4 + k];
+            r[c * 4 + row] = s;
+        }
+    return r;
+}
+static Mat4 perspective(float fovy, float asp, float n, float f) {
+    const float t = 1.0f / std::tan(fovy * 0.5f);
+    Mat4 m{};
+    m[0] = t / asp; m[5] = t; m[10] = (f + n) / (n - f); m[11] = -1; m[14] = (2 * f * n) / (n - f);
+    return m;
+}
+static V3 sub(V3 a, V3 b) { return {a[0] - b[0], a[1] - b[1], a[2] - b[2]}; }
+static V3 cross(V3 a, V3 b) { return {a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]}; }
+static float dot(V3 a, V3 b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+static V3 norm(V3 a) { float l = std::sqrt(dot(a, a)); if (l == 0) l = 1; return {a[0]/l, a[1]/l, a[2]/l}; }
+static Mat4 look_at(V3 eye, V3 c, V3 up) {
+    V3 f = norm(sub(c, eye)), s = norm(cross(f, up)), u = cross(s, f);
+    Mat4 m = identity();
+    m[0]=s[0]; m[4]=s[1]; m[8]=s[2];  m[1]=u[0]; m[5]=u[1]; m[9]=u[2];
+    m[2]=-f[0]; m[6]=-f[1]; m[10]=-f[2];
+    m[12]=-dot(s, eye); m[13]=-dot(u, eye); m[14]=dot(f, eye);
+    return m;
+}
+
+// --- the model + its GPU geometry ------------------------------------------
+static const Face* top_face(const Mesh& m) {
+    const Face* best = nullptr; double bz = -1e30;
+    for (const auto& f : m.faces()) {
+        auto vs = m.face_verts(f.get());
+        double cz = 0; for (Vert* v : vs) cz += v->co[2]; cz /= static_cast<double>(vs.size());
+        if (cz > bz) { bz = cz; best = f.get(); }
+    }
+    return best;
+}
+
+struct Gpu { std::vector<float> data; int verts = 0; V3 center{0,0,0}; float radius = 1; };
+
+static Gpu build_gpu(const Mesh& m) {
+    std::unordered_map<const Vert*, V3> vn;  // smooth per-vertex normals
+    for (const auto& v : m.verts()) vn[v.get()] = {0, 0, 0};
+    for (const auto& f : m.faces()) {
+        auto fnv = face_normal(m, f.get());
+        V3 fn{(float)fnv[0], (float)fnv[1], (float)fnv[2]};
+        for (Vert* v : m.face_verts(f.get())) { auto& a = vn[v]; a[0]+=fn[0]; a[1]+=fn[1]; a[2]+=fn[2]; }
+    }
+    for (auto& kv : vn) kv.second = norm(kv.second);
+
+    V3 lo{1e9f,1e9f,1e9f}, hi{-1e9f,-1e9f,-1e9f};
+    for (const auto& v : m.verts())
+        for (int k = 0; k < 3; ++k) { float c = (float)v->co[k]; lo[k] = std::min(lo[k], c); hi[k] = std::max(hi[k], c); }
+    Gpu g;
+    g.center = {(lo[0]+hi[0])*0.5f, (lo[1]+hi[1])*0.5f, (lo[2]+hi[2])*0.5f};
+    g.radius = 0.5f * std::sqrt((hi[0]-lo[0])*(hi[0]-lo[0]) + (hi[1]-lo[1])*(hi[1]-lo[1]) + (hi[2]-lo[2])*(hi[2]-lo[2]));
+    if (g.radius < 1e-3f) g.radius = 1;
+    for (const auto& f : m.faces()) {  // fan-triangulate
+        auto vs = m.face_verts(f.get());
+        for (size_t i = 1; i + 1 < vs.size(); ++i) {
+            Vert* tri[3] = {vs[0], vs[i], vs[i + 1]};
+            for (Vert* v : tri) {
+                V3 n = vn[v];
+                g.data.insert(g.data.end(), {(float)v->co[0], (float)v->co[1], (float)v->co[2], n[0], n[1], n[2]});
+                g.verts++;
+            }
+        }
+    }
+    return g;
+}
+
+// --- GL helpers ------------------------------------------------------------
+static GLuint compile(GLenum type, const char* src) {
+    GLuint s = glCreateShader(type);
+    glShaderSource(s, 1, &src, nullptr);
+    glCompileShader(s);
+    GLint ok = 0; glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+    if (!ok) { char log[1024]; glGetShaderInfoLog(s, 1024, nullptr, log); std::fprintf(stderr, "shader: %s\n", log); }
+    return s;
+}
+
+static const char* VERT = R"(#version 330 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+uniform mat4 uMVP;
+out vec3 vN;
+void main(){ gl_Position = uMVP * vec4(aPos,1.0); vN = aNormal; }
+)";
+static const char* FRAG = R"(#version 330 core
+in vec3 vN; out vec4 frag;
+uniform vec3 uColor;
+void main(){
+  vec3 n = normalize(vN);
+  vec3 L = normalize(vec3(0.35,0.5,0.8));
+  float d = max(dot(n,L),0.0);
+  vec3 c = uColor*(0.28 + 0.72*d);
+  frag = vec4(pow(c, vec3(0.4545)), 1.0);
+}
+)";
+
+// orbit state
+static float g_yaw = 2.3f, g_pitch = 0.35f, g_dist = 3.0f;
+static double g_lx = 0, g_ly = 0; static bool g_drag = false;
+
+static void on_mouse(GLFWwindow*, int button, int action, int) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT) g_drag = (action == GLFW_PRESS);
+}
+static void on_cursor(GLFWwindow*, double x, double y) {
+    if (g_drag) { g_yaw += float(x - g_lx) * 0.01f; g_pitch += float(y - g_ly) * 0.01f;
+        if (g_pitch > 1.5f) g_pitch = 1.5f; if (g_pitch < -1.5f) g_pitch = -1.5f; }
+    g_lx = x; g_ly = y;
+}
+static void on_scroll(GLFWwindow*, double, double dy) {
+    g_dist *= (1.0f - 0.12f * float(dy)); if (g_dist < 0.2f) g_dist = 0.2f;
+}
+
+static void write_ppm(const std::string& path, int W, int H) {
+    std::vector<unsigned char> px(size_t(W) * H * 3);
+    glReadPixels(0, 0, W, H, GL_RGB, GL_UNSIGNED_BYTE, px.data());
+    std::ofstream f(path, std::ios::binary);
+    f << "P6\n" << W << " " << H << "\n255\n";
+    for (int y = H - 1; y >= 0; --y) f.write(reinterpret_cast<char*>(&px[size_t(y) * W * 3]), W * 3);
+}
+
+int main(int argc, char** argv) {
+    std::string shot;
+    for (int i = 1; i < argc; ++i)
+        if (std::string(argv[i]) == "--screenshot" && i + 1 < argc) shot = argv[++i];
+
+    // the model: cube -> inset top -> extrude (boss) -> 2x Catmull-Clark (smooth)
+    Mesh cube = make_cube(1.0);
+    Mesh a = inset(cube, {top_face(cube)}, 0.3);
+    Mesh b = extrude(a, {a.faces().back().get()}, 0.6);
+    Mesh model = catmull_clark(catmull_clark(b));
+    Gpu g = build_gpu(model);
+    g_dist = g.radius * 3.0f;
+
+    if (!glfwInit()) { std::fprintf(stderr, "glfwInit failed\n"); return 1; }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    if (!shot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    int W = 960, H = 720;
+    GLFWwindow* win = glfwCreateWindow(W, H, "Mirage — native viewport", nullptr, nullptr);
+    if (!win) { std::fprintf(stderr, "window/context creation failed\n"); glfwTerminate(); return 1; }
+    glfwMakeContextCurrent(win);
+    if (!gladLoadGL(reinterpret_cast<GLADloadfunc>(glfwGetProcAddress))) {
+        std::fprintf(stderr, "glad load failed\n"); return 1;
+    }
+    glfwSetMouseButtonCallback(win, on_mouse);
+    glfwSetCursorPosCallback(win, on_cursor);
+    glfwSetScrollCallback(win, on_scroll);
+    glEnable(GL_DEPTH_TEST);
+
+    GLuint prog = glCreateProgram();
+    GLuint vs = compile(GL_VERTEX_SHADER, VERT), fs = compile(GL_FRAGMENT_SHADER, FRAG);
+    glAttachShader(prog, vs); glAttachShader(prog, fs); glLinkProgram(prog);
+
+    GLuint vao, vbo;
+    glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(g.data.size() * sizeof(float)), g.data.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    const GLint locMVP = glGetUniformLocation(prog, "uMVP");
+    const GLint locColor = glGetUniformLocation(prog, "uColor");
+
+    auto draw = [&]() {
+        int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
+        glViewport(0, 0, fw, fh);
+        glClearColor(0.10f, 0.11f, 0.13f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        V3 c = g.center;
+        V3 eye{c[0] + g_dist * std::cos(g_pitch) * std::sin(g_yaw),
+               c[1] - g_dist * std::cos(g_pitch) * std::cos(g_yaw),
+               c[2] + g_dist * std::sin(g_pitch)};
+        Mat4 mvp = mul(perspective(0.9f, float(fw) / float(fh ? fh : 1), 0.05f, 100.0f),
+                       look_at(eye, c, {0, 0, 1}));
+        glUseProgram(prog);
+        glUniformMatrix4fv(locMVP, 1, GL_FALSE, mvp.data());
+        glUniform3f(locColor, 0.82f, 0.80f, 0.74f);
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLES, 0, g.verts);
+    };
+
+    if (!shot.empty()) {
+        draw();
+        glFinish();
+        int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
+        write_ppm(shot, fw, fh);
+        std::printf("wrote %s (%dx%d, %d tris)\n", shot.c_str(), fw, fh, g.verts / 3);
+        glfwTerminate();
+        return 0;
+    }
+
+    std::printf("Mirage native viewport — drag to orbit, scroll to zoom, Esc to quit. (%d tris)\n", g.verts / 3);
+    while (!glfwWindowShouldClose(win)) {
+        if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) break;
+        draw();
+        glfwSwapBuffers(win);
+        glfwPollEvents();
+    }
+    glfwTerminate();
+    return 0;
+}
