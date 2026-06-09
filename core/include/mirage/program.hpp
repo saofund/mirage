@@ -20,6 +20,8 @@ enum class OpKind { Cube, Cylinder, Inset, Extrude, Subdivide };
 struct Op {
     OpKind kind;
     double a = 0, b = 0, c = 0;  // params: cube{size}; cylinder{sides,r,h}; inset{t}; extrude{d}; subdivide{levels}
+    bool has_target = false;     // inset/extrude: act on the face nearest `target`
+    std::array<double, 3> target{0, 0, 0};
 };
 
 class Program {
@@ -28,6 +30,8 @@ public:
     void cylinder(int sides = 24, double radius = 0.5, double height = 1.0);
     void inset(double thickness = 0.3);
     void extrude(double distance = 0.5);
+    void inset_at(const std::array<double, 3>& p, double thickness = 0.3);     // picked-face inset
+    void extrude_at(const std::array<double, 3>& p, double distance = 0.5);    // picked-face extrude
     void subdivide(int levels = 1);
     void undo();
     void clear();

@@ -120,20 +120,52 @@ void main(){
 }
 )";
 
-// orbit state
+// camera / interaction state
 static bool g_imgui = false;
 static float g_yaw = 2.3f, g_pitch = 0.35f, g_dist = 3.0f;
-static double g_lx = 0, g_ly = 0; static bool g_drag = false;
+static double g_lx = 0, g_ly = 0;
+static bool g_drag = false, g_moved = false;
+static double g_press_x = 0, g_press_y = 0;
+static bool g_pick_request = false; static double g_px = 0, g_py = 0;  // a click to resolve into a face
+static bool g_has_sel = false; static std::array<double, 3> g_sel{0, 0, 0};  // selected face centroid
+
+static V3 orbit_eye(V3 c) {
+    return {c[0] + g_dist * std::cos(g_pitch) * std::sin(g_yaw),
+            c[1] - g_dist * std::cos(g_pitch) * std::cos(g_yaw),
+            c[2] + g_dist * std::sin(g_pitch)};
+}
+static bool ray_tri(V3 o, V3 d, V3 a, V3 b, V3 c, float& t) {  // Moller-Trumbore
+    V3 e1 = sub(b, a), e2 = sub(c, a), p = cross(d, e2);
+    float det = dot(e1, p);
+    if (std::fabs(det) < 1e-8f) return false;
+    float inv = 1.0f / det;
+    V3 tv = sub(o, a);
+    float u = dot(tv, p) * inv; if (u < 0 || u > 1) return false;
+    V3 q = cross(tv, e1);
+    float v = dot(d, q) * inv; if (v < 0 || u + v > 1) return false;
+    t = dot(e2, q) * inv;
+    return t > 1e-4f;
+}
 
 static bool ui_wants_mouse() { return g_imgui && ImGui::GetIO().WantCaptureMouse; }
-static void on_mouse(GLFWwindow*, int button, int action, int) {
-    if (ui_wants_mouse()) { g_drag = false; return; }
-    if (button == GLFW_MOUSE_BUTTON_LEFT) g_drag = (action == GLFW_PRESS);
+static void on_mouse(GLFWwindow* w, int button, int action, int) {
+    if (button != GLFW_MOUSE_BUTTON_LEFT) return;
+    if (action == GLFW_PRESS) {
+        if (ui_wants_mouse()) { g_drag = false; return; }
+        g_drag = true; g_moved = false;
+        glfwGetCursorPos(w, &g_press_x, &g_press_y); g_lx = g_press_x; g_ly = g_press_y;
+    } else {  // release: a press+release that didn't drag is a pick
+        if (g_drag && !g_moved) { glfwGetCursorPos(w, &g_px, &g_py); g_pick_request = true; }
+        g_drag = false;
+    }
 }
 static void on_cursor(GLFWwindow*, double x, double y) {
     if (g_drag && !ui_wants_mouse()) {
-        g_yaw += float(x - g_lx) * 0.01f; g_pitch += float(y - g_ly) * 0.01f;
-        if (g_pitch > 1.5f) g_pitch = 1.5f; if (g_pitch < -1.5f) g_pitch = -1.5f;
+        if (std::fabs(x - g_press_x) + std::fabs(y - g_press_y) > 4.0) g_moved = true;
+        if (g_moved) {  // drag past a small threshold -> orbit
+            g_yaw += float(x - g_lx) * 0.01f; g_pitch += float(y - g_ly) * 0.01f;
+            if (g_pitch > 1.5f) g_pitch = 1.5f; if (g_pitch < -1.5f) g_pitch = -1.5f;
+        }
     }
     g_lx = x; g_ly = y;
 }
@@ -157,8 +189,8 @@ int main(int argc, char** argv) {
 
     Program prog;
     prog.cube(1.0);
-    if (!shot.empty()) {  // a richer default for the headless verification image
-        prog.inset(0.3); prog.extrude(0.6); prog.subdivide(1); prog.subdivide(1);
+    if (!shot.empty()) {  // a faceted default for the headless image (big faces show the pick highlight)
+        prog.inset(0.3); prog.extrude(0.6);
     }
 
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit failed\n"); return 1; }
@@ -196,6 +228,15 @@ int main(int argc, char** argv) {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+    GLuint hvao, hvbo; int hl_verts = 0;  // selection highlight geometry
+    glGenVertexArrays(1, &hvao); glGenBuffers(1, &hvbo);
+    glBindVertexArray(hvao);
+    glBindBuffer(GL_ARRAY_BUFFER, hvbo);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
     Mesh model = prog.build();
     Gpu g = build_gpu(model);
     g_dist = g.radius * 3.0f;
@@ -206,16 +247,59 @@ int main(int argc, char** argv) {
     };
     upload();
 
+    // resolve the picked point to a face and upload its triangles as the highlight
+    auto rebuild_highlight = [&]() {
+        hl_verts = 0;
+        if (!g_has_sel || model.num_faces() == 0) return;
+        const Face* f = nearest_face(model, g_sel);
+        if (!f) return;
+        auto fnv = face_normal(model, f);
+        V3 n{(float)fnv[0], (float)fnv[1], (float)fnv[2]};
+        auto vs = model.face_verts(f);
+        std::vector<float> hd;
+        for (size_t i = 1; i + 1 < vs.size(); ++i) {
+            Vert* tri[3] = {vs[0], vs[i], vs[i + 1]};
+            for (Vert* v : tri) {
+                hd.insert(hd.end(), {(float)v->co[0], (float)v->co[1], (float)v->co[2], n[0], n[1], n[2]});
+                hl_verts++;
+            }
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, hvbo);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(hd.size() * sizeof(float)), hd.data(), GL_DYNAMIC_DRAW);
+    };
+
+    // cast a ray through the cursor and select the nearest hit face
+    auto do_pick = [&](double px, double py) {
+        int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
+        float ndcx = 2.0f * float(px) / float(fw) - 1.0f;
+        float ndcy = 1.0f - 2.0f * float(py) / float(fh);
+        V3 c = g.center, eye = orbit_eye(c);
+        V3 fwd = norm(sub(c, eye)), s = norm(cross(fwd, {0, 0, 1})), u = cross(s, fwd);
+        float fovy = 0.9f, asp = float(fw) / float(fh ? fh : 1), tt = std::tan(fovy * 0.5f);
+        V3 dir = norm({fwd[0] + ndcx*tt*asp*s[0] + ndcy*tt*u[0],
+                       fwd[1] + ndcx*tt*asp*s[1] + ndcy*tt*u[1],
+                       fwd[2] + ndcx*tt*asp*s[2] + ndcy*tt*u[2]});
+        float best = 1e30f; const Face* hit = nullptr;
+        for (const auto& fc : model.faces()) {
+            auto vs = model.face_verts(fc.get());
+            for (size_t i = 1; i + 1 < vs.size(); ++i) {
+                V3 a{(float)vs[0]->co[0], (float)vs[0]->co[1], (float)vs[0]->co[2]};
+                V3 b{(float)vs[i]->co[0], (float)vs[i]->co[1], (float)vs[i]->co[2]};
+                V3 cc{(float)vs[i+1]->co[0], (float)vs[i+1]->co[1], (float)vs[i+1]->co[2]};
+                float t;
+                if (ray_tri(eye, dir, a, b, cc, t) && t < best) { best = t; hit = fc.get(); }
+            }
+        }
+        if (hit) { g_has_sel = true; g_sel = face_centroid(model, hit); rebuild_highlight(); }
+    };
+
     auto draw = [&]() {
         int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
         glViewport(0, 0, fw, fh);
         glClearColor(0.10f, 0.11f, 0.13f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (g.verts == 0) return;
-        V3 c = g.center;
-        V3 eye{c[0] + g_dist * std::cos(g_pitch) * std::sin(g_yaw),
-               c[1] - g_dist * std::cos(g_pitch) * std::cos(g_yaw),
-               c[2] + g_dist * std::sin(g_pitch)};
+        V3 c = g.center, eye = orbit_eye(c);
         Mat4 mvp = mul(perspective(0.9f, float(fw) / float(fh ? fh : 1), 0.05f, 100.0f),
                        look_at(eye, c, {0, 0, 1}));
         glUseProgram(prog_gl);
@@ -223,6 +307,13 @@ int main(int argc, char** argv) {
         glUniform3f(locColor, 0.82f, 0.80f, 0.74f);
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLES, 0, g.verts);
+        if (hl_verts > 0) {  // selected face, pulled slightly forward to avoid z-fighting
+            glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.0f, -1.0f);
+            glUniform3f(locColor, 1.0f, 0.55f, 0.12f);
+            glBindVertexArray(hvao);
+            glDrawArrays(GL_TRIANGLES, 0, hl_verts);
+            glDisable(GL_POLYGON_OFFSET_FILL);
+        }
     };
 
     IMGUI_CHECKVERSION();
@@ -241,16 +332,20 @@ int main(int argc, char** argv) {
         ImGui::SameLine();
         if (ImGui::Button("New Cylinder")) { prog.clear(); prog.cylinder(24, 0.5, 1.0); dirty = true; }
         ImGui::Spacing();
-        ImGui::TextDisabled("operators (on the active face)");
-        if (ImGui::Button("Inset top"))  { prog.inset(0.3); dirty = true; }
+        ImGui::TextDisabled("operators (on picked or active face)");
+        if (ImGui::Button("Inset"))   { if (g_has_sel) prog.inset_at(g_sel, 0.3); else prog.inset(0.3); dirty = true; }
         ImGui::SameLine();
-        if (ImGui::Button("Extrude up")) { prog.extrude(0.5); dirty = true; }
+        if (ImGui::Button("Extrude")) { if (g_has_sel) prog.extrude_at(g_sel, 0.5); else prog.extrude(0.5); dirty = true; }
         ImGui::SameLine();
-        if (ImGui::Button("Subdivide"))  { prog.subdivide(1); dirty = true; }
+        if (ImGui::Button("Subdivide")) { prog.subdivide(1); dirty = true; }
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();
-        if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); dirty = true; }
+        if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); g_has_sel = false; dirty = true; }
+        ImGui::Spacing();
+        ImGui::TextDisabled("selection");
+        ImGui::Text("%s", g_has_sel ? "a face is picked (ops target it)" : "click a face to pick");
+        if (g_has_sel) { ImGui::SameLine(); if (ImGui::SmallButton("clear")) g_has_sel = false; }
         ImGui::Separator();
         ImGui::Text("verts %zu   edges %zu   faces %zu", model.num_verts(), model.num_edges(), model.num_faces());
         ImGui::Text("euler %d   manifold %s", model.euler(), model.is_closed_manifold() ? "yes" : "no");
@@ -266,13 +361,15 @@ int main(int argc, char** argv) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-        if (panel()) { model = prog.build(); g = build_gpu(model); upload(); }
+        if (panel()) { model = prog.build(); g = build_gpu(model); upload(); rebuild_highlight(); }
         draw();
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     };
 
     if (!shot.empty()) {  // headless verification: render a couple frames (mesh + GUI) -> PPM
+        const Face* sf = nearest_face(model, {0.5, 0.0, 0.2});  // pre-pick a side face to show the highlight
+        if (sf) { g_has_sel = true; g_sel = face_centroid(model, sf); rebuild_highlight(); }
         frame();  // warm-up (ImGui font atlas + first-frame auto-sizing)
         frame();
         glFinish();
@@ -284,6 +381,7 @@ int main(int argc, char** argv) {
         while (!glfwWindowShouldClose(win)) {
             glfwPollEvents();
             if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) break;
+            if (g_pick_request) { g_pick_request = false; do_pick(g_px, g_py); }
             frame();
             glfwSwapBuffers(win);
         }

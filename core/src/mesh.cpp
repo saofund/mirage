@@ -223,6 +223,25 @@ const Face* top_face(const Mesh& m) {
     return best;
 }
 
+std::array<double, 3> face_centroid(const Mesh& m, const Face* f) {
+    std::vector<Vert*> vs = m.face_verts(f);
+    std::array<double, 3> c{0, 0, 0};
+    for (Vert* v : vs) { c[0] += v->co[0]; c[1] += v->co[1]; c[2] += v->co[2]; }
+    const double n = static_cast<double>(vs.size());
+    return {c[0] / n, c[1] / n, c[2] / n};
+}
+
+const Face* nearest_face(const Mesh& m, const std::array<double, 3>& p) {
+    const Face* best = nullptr;
+    double bd = 1e30;
+    for (const auto& f : m.faces()) {
+        auto c = face_centroid(m, f.get());
+        const double d = (c[0]-p[0])*(c[0]-p[0]) + (c[1]-p[1])*(c[1]-p[1]) + (c[2]-p[2])*(c[2]-p[2]);
+        if (d < bd) { bd = d; best = f.get(); }
+    }
+    return best;
+}
+
 Mesh make_cylinder(int sides, double radius, double height) {
     constexpr double PI = 3.14159265358979323846;
     std::vector<std::array<double, 3>> pos;

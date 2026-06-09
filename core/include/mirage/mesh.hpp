@@ -110,6 +110,12 @@ std::array<double, 3> face_normal(const Mesh& m, const Face* f);
 // full selection-as-query engine lands.
 const Face* top_face(const Mesh& m);
 
+// Centroid of a face, and the face whose centroid is nearest a point. A picked
+// point is a re-evaluable selector: deterministic op-log replay reproduces the
+// same geometry, so "nearest face to P" resolves to the same face each rebuild.
+std::array<double, 3> face_centroid(const Mesh& m, const Face* f);
+const Face* nearest_face(const Mesh& m, const std::array<double, 3>& p);
+
 // Primitives.
 // Cube: axis-aligned, centered at origin, outward-consistent winding (euler == 2).
 Mesh make_cube(double size = 1.0);
