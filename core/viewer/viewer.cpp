@@ -225,34 +225,17 @@ int main(int argc, char** argv) {
         glDrawArrays(GL_TRIANGLES, 0, g.verts);
     };
 
-    if (!shot.empty()) {  // headless verification: one frame -> PPM
-        draw();
-        glFinish();
-        int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
-        write_ppm(shot, fw, fh);
-        std::printf("wrote %s (%dx%d, %d tris)\n", shot.c_str(), fw, fh, g.verts / 3);
-        glfwTerminate();
-        return 0;
-    }
-
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForOpenGL(win, true);
+    ImGui_ImplGlfw_InitForOpenGL(win, shot.empty());  // install input callbacks only when interactive
     ImGui_ImplOpenGL3_Init("#version 330");
-    g_imgui = true;
+    g_imgui = shot.empty();
 
-    while (!glfwWindowShouldClose(win)) {
-        glfwPollEvents();
-        if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) break;
-
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
+    auto panel = [&]() -> bool {  // the tool panel; returns true if the op-log changed
         bool dirty = false;
-        ImGui::SetNextWindowSize(ImVec2(290, 0), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Mirage  -  modeling");
+        ImGui::SetNextWindowPos(ImVec2(14, 14), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Mirage  -  modeling", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::TextDisabled("primitives (start fresh)");
         if (ImGui::Button("New Cube"))     { prog.clear(); prog.cube(1.0); dirty = true; }
         ImGui::SameLine();
@@ -268,27 +251,42 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();
         if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); dirty = true; }
-
         ImGui::Separator();
         ImGui::Text("verts %zu   edges %zu   faces %zu", model.num_verts(), model.num_edges(), model.num_faces());
         ImGui::Text("euler %d   manifold %s", model.euler(), model.is_closed_manifold() ? "yes" : "no");
-
         ImGui::Separator();
         ImGui::TextDisabled("op-log (the model)");
         int i = 0;
         for (const auto& op : prog.ops()) ImGui::Text("%2d  %s", i++, Program::label(op).c_str());
         ImGui::End();
+        return dirty;
+    };
 
-        if (dirty) {
-            model = prog.build();
-            g = build_gpu(model);
-            upload();
-        }
-
+    auto frame = [&]() {
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        if (panel()) { model = prog.build(); g = build_gpu(model); upload(); }
         draw();
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(win);
+    };
+
+    if (!shot.empty()) {  // headless verification: render a couple frames (mesh + GUI) -> PPM
+        frame();  // warm-up (ImGui font atlas + first-frame auto-sizing)
+        frame();
+        glFinish();
+        int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
+        write_ppm(shot, fw, fh);
+        std::printf("wrote %s (%dx%d, %d tris)\n", shot.c_str(), fw, fh, g.verts / 3);
+    } else {
+        std::printf("Mirage native viewport — drag to orbit, scroll to zoom, click tools to model, Esc to quit.\n");
+        while (!glfwWindowShouldClose(win)) {
+            glfwPollEvents();
+            if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) break;
+            frame();
+            glfwSwapBuffers(win);
+        }
     }
 
     ImGui_ImplOpenGL3_Shutdown();
