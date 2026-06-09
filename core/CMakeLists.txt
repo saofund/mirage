@@ -15,6 +15,7 @@ endif()
 
 add_library(mirage_core STATIC
   src/mesh.cpp
+  src/program.cpp
 )
 target_include_directories(mirage_core PUBLIC include)
 
@@ -47,7 +48,17 @@ if(MIRAGE_BUILD_VIEWER)
                        SOURCE_SUBDIR cmake)
   FetchContent_MakeAvailable(glad2)
   glad_add_library(glad_gl STATIC API gl:core=3.3)
-  add_executable(mirage_viewer viewer/viewer.cpp)
+  FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.91.5)
+  FetchContent_MakeAvailable(imgui)
+  add_executable(mirage_viewer
+    viewer/viewer.cpp
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
+  target_include_directories(mirage_viewer PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
   target_link_libraries(mirage_viewer PRIVATE mirage_core glfw glad_gl)
-  message(STATUS "mirage: building native viewer (mirage_viewer)")
+  message(STATUS "mirage: building native viewer (mirage_viewer) with Dear ImGui")
 endif()

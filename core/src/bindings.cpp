@@ -7,20 +7,7 @@
 #include "mirage/mesh.hpp"
 
 namespace py = pybind11;
-using namespace mirage;
-
-static const Face* top_face(const Mesh& m) {  // greatest-centroid-z face (a convenient selector)
-    const Face* best = nullptr;
-    double bz = -1e30;
-    for (const auto& f : m.faces()) {
-        std::vector<Vert*> vs = m.face_verts(f.get());
-        double cz = 0;
-        for (Vert* v : vs) cz += v->co[2];
-        cz /= static_cast<double>(vs.size());
-        if (cz > bz) { bz = cz; best = f.get(); }
-    }
-    return best;
-}
+using namespace mirage;  // top_face / make_cube / extrude / inset are provided by mirage_core
 
 PYBIND11_MODULE(_mirage_core, mod) {
     mod.doc() = "mirage_core — native C++ topology kernel (radial-edge)";
