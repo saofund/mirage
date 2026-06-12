@@ -12,11 +12,15 @@
 #include "imgui_impl_opengl3.h"
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <system_error>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -182,9 +186,14 @@ static SelMode g_sel_mode = SEL_NONE;
 static std::array<double, 3> g_sel{0, 0, 0};  // the picked point (PICK mode)
 
 // shared op-log file (the dual-operator bridge): Save/Load round-trips the same
-// JSON the AI (MCP save_mesh_program/load_mesh_program) reads and writes.
+// JSON the AI (MCP save_mesh_program/load_mesh_program) reads and writes. With
+// live sync on, the viewer watches the file's mtime and auto-reloads the AI's
+// edits, and auto-saves the human's — real-time co-editing of one op-log.
 static char g_oplog_path[256] = "mirage_oplog.json";
 static char g_io_status[256] = "";
+static bool g_live_sync = false;
+static double g_last_poll = 0.0;
+static long long g_last_mtime = 0;  // mtime we last reloaded/wrote (to ignore our own writes)
 
 // viewport material (PBR) — a warm off-white dielectric by default; flat shading
 // reads more truthfully for hard-surface models.
@@ -243,6 +252,13 @@ static void on_scroll(GLFWwindow*, double, double dy) {
     g_dist *= (1.0f - 0.12f * float(dy)); if (g_dist < 0.2f) g_dist = 0.2f;
 }
 
+// File modification time as a comparable integer (0 if the file is absent).
+static long long file_mtime(const char* path) {
+    std::error_code ec;
+    auto t = std::filesystem::last_write_time(path, ec);
+    return ec ? 0 : static_cast<long long>(t.time_since_epoch().count());
+}
+
 static void write_ppm(const std::string& path, int W, int H) {
     std::vector<unsigned char> px(size_t(W) * H * 3);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);  // tight rows — else GL pads to 4 bytes and overruns px
@@ -254,10 +270,12 @@ static void write_ppm(const std::string& path, int W, int H) {
 
 int main(int argc, char** argv) {
     std::string shot, load_path;
+    double watch_secs = 0.0;  // --watch N: headless live-sync proof (poll the file for N s)
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--screenshot" && i + 1 < argc) shot = argv[++i];
         else if (a == "--oplog" && i + 1 < argc) { load_path = argv[++i]; std::snprintf(g_oplog_path, sizeof(g_oplog_path), "%s", load_path.c_str()); }
+        else if (a == "--watch" && i + 1 < argc) watch_secs = std::atof(argv[++i]);
     }
 
     Program prog;
@@ -397,6 +415,34 @@ int main(int argc, char** argv) {
         if (hit) { g_sel_mode = SEL_PICK; g_sel = face_centroid(model, hit); rebuild_highlight(); }
     };
 
+    // Load the shared op-log file and rebuild everything (validate before adopting).
+    // Used by the Load button AND the live-sync poll, so the two can't diverge.
+    auto reload_oplog = [&]() -> bool {
+        std::ifstream f(g_oplog_path);
+        if (!f) { std::snprintf(g_io_status, sizeof(g_io_status), "load failed: %s", g_oplog_path); return false; }
+        std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        try {
+            Program loaded = Program::from_json(s);
+            loaded.build();  // validate before adopting
+            prog = std::move(loaded);
+            g_sel_mode = SEL_NONE;
+            model = prog.build(&last_tag); g = build_gpu(model); upload(); rebuild_highlight();
+            g_last_mtime = file_mtime(g_oplog_path);
+            std::snprintf(g_io_status, sizeof(g_io_status), "loaded %zu ops <- %s", prog.size(), g_oplog_path);
+            return true;
+        } catch (const std::exception& e) {
+            std::snprintf(g_io_status, sizeof(g_io_status), "bad op-log: %.180s", e.what());
+            return false;
+        }
+    };
+    auto save_oplog = [&]() {
+        std::ofstream f(g_oplog_path);
+        if (!f) { std::snprintf(g_io_status, sizeof(g_io_status), "save failed: %s", g_oplog_path); return; }
+        f << prog.to_json(2); f.close();
+        g_last_mtime = file_mtime(g_oplog_path);  // remember our own write so the poll won't echo it
+        std::snprintf(g_io_status, sizeof(g_io_status), "saved %zu ops -> %s", prog.size(), g_oplog_path);
+    };
+
     auto draw = [&]() {
         int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
         glViewport(0, 0, fw, fh);
@@ -458,34 +504,20 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Frame")) { g_yaw = 2.3f; g_pitch = 0.35f; g_dist = g.radius * 3.0f; }  // reset the view
         ImGui::Spacing();
         // The op-log is the shared SoT: Save writes the JSON an AI (MCP) can Load,
-        // and vice-versa — one model, a human and an AI both editing it.
+        // and vice-versa — one model, a human and an AI both editing it. Live sync
+        // makes that continuous: the AI's writes auto-reload, the human's auto-save.
         ImGui::TextDisabled("shared op-log (same JSON the AI reads/writes)");
         ImGui::SetNextItemWidth(220);
         ImGui::InputText("##path", g_oplog_path, sizeof(g_oplog_path));
-        if (ImGui::Button("Save")) {
-            std::ofstream f(g_oplog_path);
-            if (f) { f << prog.to_json(2); std::snprintf(g_io_status, sizeof(g_io_status), "saved %zu ops -> %s", prog.size(), g_oplog_path); }
-            else std::snprintf(g_io_status, sizeof(g_io_status), "save failed: %s", g_oplog_path);
-        }
+        if (ImGui::Button("Save")) save_oplog();
         ImGui::SameLine();
-        if (ImGui::Button("Load")) {
-            std::ifstream f(g_oplog_path);
-            if (!f) std::snprintf(g_io_status, sizeof(g_io_status), "load failed: %s", g_oplog_path);
-            else {
-                std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-                try {
-                    Program loaded = Program::from_json(s);
-                    loaded.build();  // validate before adopting
-                    prog = std::move(loaded);
-                    g_sel_mode = SEL_NONE;
-                    dirty = true;
-                    std::snprintf(g_io_status, sizeof(g_io_status), "loaded %zu ops <- %s", prog.size(), g_oplog_path);
-                } catch (const std::exception& e) {
-                    std::snprintf(g_io_status, sizeof(g_io_status), "bad op-log: %.180s", e.what());
-                }
-            }
+        if (ImGui::Button("Load")) reload_oplog();  // rebuilds itself; no dirty needed
+        ImGui::SameLine();
+        if (ImGui::Checkbox("live sync", &g_live_sync)) {
+            g_last_mtime = file_mtime(g_oplog_path);  // baseline: watch from now (don't clobber on enable)
+            std::snprintf(g_io_status, sizeof(g_io_status), g_live_sync ? "live sync ON — co-editing %s" : "live sync OFF", g_oplog_path);
         }
-        if (g_io_status[0]) { ImGui::SameLine(); ImGui::TextDisabled("%s", g_io_status); }
+        if (g_io_status[0]) ImGui::TextDisabled("%s", g_io_status);
         ImGui::Spacing();
         ImGui::TextDisabled("selection (the next op's target, highlighted orange)");
         const char* mode_txt = g_sel_mode == SEL_PICK  ? "picked face"
@@ -517,7 +549,10 @@ int main(int argc, char** argv) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-        if (panel()) { model = prog.build(&last_tag); g = build_gpu(model); upload(); rebuild_highlight(); }
+        if (panel()) {
+            model = prog.build(&last_tag); g = build_gpu(model); upload(); rebuild_highlight();
+            if (g_live_sync) save_oplog();  // push the human's edit to the shared op-log
+        }
         draw();
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -528,6 +563,21 @@ int main(int argc, char** argv) {
         if (sf) { g_sel_mode = SEL_PICK; g_sel = face_centroid(model, sf); rebuild_highlight(); }
         frame();  // warm-up (ImGui font atlas + first-frame auto-sizing)
         frame();
+        if (watch_secs > 0.0) {  // headless live-sync: poll the shared op-log and reload external edits
+            g_live_sync = true;
+            g_last_mtime = file_mtime(g_oplog_path);
+            std::printf("watching %s for %.1fs (live sync)...\n", g_oplog_path, watch_secs);
+            const double t0 = glfwGetTime();
+            while (glfwGetTime() - t0 < watch_secs) {
+                long long m = file_mtime(g_oplog_path);
+                if (m != 0 && m != g_last_mtime) {
+                    g_last_mtime = m;
+                    if (reload_oplog()) std::printf("  reloaded -> %zu ops, %zu faces\n", prog.size(), model.num_faces());
+                }
+                frame();
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
         glFinish();
         int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
         write_ppm(shot, fw, fh);
@@ -538,6 +588,14 @@ int main(int argc, char** argv) {
             glfwPollEvents();
             if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) break;
             if (g_pick_request) { g_pick_request = false; do_pick(g_px, g_py); }
+            if (g_live_sync) {  // watch the shared op-log; reload the AI's edits (~4 Hz)
+                double now = glfwGetTime();
+                if (now - g_last_poll > 0.25) {
+                    g_last_poll = now;
+                    long long m = file_mtime(g_oplog_path);
+                    if (m != 0 && m != g_last_mtime) { g_last_mtime = m; reload_oplog(); }
+                }
+            }
             frame();
             glfwSwapBuffers(win);
         }

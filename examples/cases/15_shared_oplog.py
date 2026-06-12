@@ -45,6 +45,8 @@ def main():
         f.write(p.to_json())
     print(f"  saved op-log ({len(p.ops)} ops) -> {SHARED}")
     print("  open it in the GUI:  mirage_viewer --oplog mirage_oplog.json")
+    print("  for LIVE co-editing: tick 'live sync' in the GUI — then every save_mesh_program")
+    print("  the AI does auto-reloads in the viewport (and the human's edits auto-save back).")
 
     # ... the human edits in the GUI and saves. Loading it back is symmetric: it's
     # the same op-log, no translation. (Here we just round-trip our own file.)
