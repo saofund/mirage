@@ -13,6 +13,7 @@ Run (stdio transport)::
 from __future__ import annotations
 
 import io
+import os
 from typing import Optional
 
 from .session import Session
@@ -384,6 +385,51 @@ def undo_mesh_op() -> dict:
     """Drop the last op."""
     if _model.ops:
         _model.ops.pop()
+    return get_mesh_state()
+
+
+# The op-log is the single source of truth a human (native GUI) and an AI (here)
+# both edit. It serializes to the SAME JSON dialect the C++ mirage::Program
+# reads, so a program saved by either operator loads in the other — the
+# dual-operator bridge. Default path: a shared file in the project root.
+_SHARED_OPLOG = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                             "mirage_oplog.json")
+
+
+@mcp.tool()
+def save_mesh_program(path: Optional[str] = None) -> dict:
+    """Write the current op-log to a JSON file (default: <project>/mirage_oplog.json).
+    The native GUI (mirage_viewer) can Load this exact file and keep modeling — and
+    vice-versa. This is how a human and an AI share one op-log."""
+    import json as _json
+    p = path or _SHARED_OPLOG
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(_json.dumps(_model.ops, indent=2))
+        return {"ok": True, "path": p, "ops": len(_model.ops)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "path": p}
+
+
+@mcp.tool()
+def load_mesh_program(path: Optional[str] = None) -> dict:
+    """Load an op-log JSON file (default: <project>/mirage_oplog.json) as the current
+    model — e.g. to pick up exactly where a human left off in the native GUI. The
+    loaded program is rebuilt and validated; returns the new state (or an error if
+    the file is missing / not a valid op-log)."""
+    import json as _json
+    global _model
+    p = path or _SHARED_OPLOG
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            ops = _json.load(f)
+        if not isinstance(ops, list):
+            return {"ok": False, "error": "op-log JSON must be a list of op dicts", "path": p}
+        loaded = MeshProgram(ops)
+        loaded.build()  # validate before adopting
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "path": p}
+    _model = loaded
     return get_mesh_state()
 
 

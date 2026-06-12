@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -138,6 +139,11 @@ enum SelMode { SEL_NONE, SEL_PICK, SEL_STACK };
 static SelMode g_sel_mode = SEL_NONE;
 static std::array<double, 3> g_sel{0, 0, 0};  // the picked point (PICK mode)
 
+// shared op-log file (the dual-operator bridge): Save/Load round-trips the same
+// JSON the AI (MCP save_mesh_program/load_mesh_program) reads and writes.
+static char g_oplog_path[256] = "mirage_oplog.json";
+static char g_io_status[256] = "";
+
 static json current_on() {
     if (g_sel_mode == SEL_PICK) return sel::near(g_sel);
     if (g_sel_mode == SEL_STACK) return sel::last();
@@ -198,14 +204,29 @@ static void write_ppm(const std::string& path, int W, int H) {
 }
 
 int main(int argc, char** argv) {
-    std::string shot;
-    for (int i = 1; i < argc; ++i)
-        if (std::string(argv[i]) == "--screenshot" && i + 1 < argc) shot = argv[++i];
+    std::string shot, load_path;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--screenshot" && i + 1 < argc) shot = argv[++i];
+        else if (a == "--oplog" && i + 1 < argc) { load_path = argv[++i]; std::snprintf(g_oplog_path, sizeof(g_oplog_path), "%s", load_path.c_str()); }
+    }
 
     Program prog;
-    prog.cube(1.0);
-    if (!shot.empty()) {  // a faceted default for the headless image (a boss on top)
-        prog.inset(sel::normal("z"), 0.3); prog.extrude(sel::last(), 0.6);
+    bool loaded_ok = false;
+    if (!load_path.empty()) {  // open straight onto a shared op-log (e.g. one an AI just saved)
+        std::ifstream f(load_path);
+        if (f) {
+            std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            try { prog = Program::from_json(s); prog.build(); loaded_ok = true;
+                  std::snprintf(g_io_status, sizeof(g_io_status), "loaded %zu ops <- %s", prog.size(), load_path.c_str()); }
+            catch (const std::exception& e) { std::fprintf(stderr, "could not load %s: %s\n", load_path.c_str(), e.what()); }
+        } else std::fprintf(stderr, "could not open %s\n", load_path.c_str());
+    }
+    if (!loaded_ok) {
+        prog.cube(1.0);
+        if (!shot.empty()) {  // a faceted default for the headless image (a boss on top)
+            prog.inset(sel::normal("z"), 0.3); prog.extrude(sel::last(), 0.6);
+        }
     }
 
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit failed\n"); return 1; }
@@ -364,6 +385,36 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();
         if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::Spacing();
+        // The op-log is the shared SoT: Save writes the JSON an AI (MCP) can Load,
+        // and vice-versa — one model, a human and an AI both editing it.
+        ImGui::TextDisabled("shared op-log (same JSON the AI reads/writes)");
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputText("##path", g_oplog_path, sizeof(g_oplog_path));
+        if (ImGui::Button("Save")) {
+            std::ofstream f(g_oplog_path);
+            if (f) { f << prog.to_json(2); std::snprintf(g_io_status, sizeof(g_io_status), "saved %zu ops -> %s", prog.size(), g_oplog_path); }
+            else std::snprintf(g_io_status, sizeof(g_io_status), "save failed: %s", g_oplog_path);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load")) {
+            std::ifstream f(g_oplog_path);
+            if (!f) std::snprintf(g_io_status, sizeof(g_io_status), "load failed: %s", g_oplog_path);
+            else {
+                std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                try {
+                    Program loaded = Program::from_json(s);
+                    loaded.build();  // validate before adopting
+                    prog = std::move(loaded);
+                    g_sel_mode = SEL_NONE;
+                    dirty = true;
+                    std::snprintf(g_io_status, sizeof(g_io_status), "loaded %zu ops <- %s", prog.size(), g_oplog_path);
+                } catch (const std::exception& e) {
+                    std::snprintf(g_io_status, sizeof(g_io_status), "bad op-log: %.180s", e.what());
+                }
+            }
+        }
+        if (g_io_status[0]) { ImGui::SameLine(); ImGui::TextDisabled("%s", g_io_status); }
         ImGui::Spacing();
         ImGui::TextDisabled("selection (the next op's target, highlighted orange)");
         const char* mode_txt = g_sel_mode == SEL_PICK  ? "picked face"

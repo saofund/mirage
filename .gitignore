@@ -40,3 +40,6 @@ examples/cases/outputs/
 # C++ engine build artifacts
 core/build/
 *.ppm
+
+# shared op-log runtime artifact (Save/Load round-trips it; not source)
+mirage_oplog.json
