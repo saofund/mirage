@@ -513,4 +513,47 @@ Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double th
     return Mesh::from_pydata(new_pos, new_faces, new_tags);
 }
 
+Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region_v, double width, double depth,
+           const std::string& mark) {
+    std::set<const Face*> region(region_v.begin(), region_v.end());
+    if (region.empty()) return mesh.copy();
+    width = std::min(std::max(width, 1e-3), 0.999);  // avoid degenerate / bowtie
+
+    std::vector<A3> new_pos;
+    for (const auto& v : mesh.verts()) new_pos.push_back(v->co);
+    std::vector<std::vector<int>> new_faces;
+    std::vector<Tags> new_tags;
+    for (const auto& f : mesh.faces())  // untouched faces
+        if (!region.count(f.get())) {
+            std::vector<int> fv;
+            for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+            new_faces.push_back(fv);
+            new_tags.push_back(copy_tags(f.get()));
+        }
+    for (const Face* f : region_in_id_order(region)) {
+        const A3 nrm = face_normal(mesh, f);
+        std::vector<int> vids;
+        for (Loop* lp : mesh.face_loops(f)) vids.push_back(lp->vert->id);
+        A3 c{0, 0, 0};
+        for (int i : vids) c = a3add(c, new_pos[i]);
+        c = a3scale(c, 1.0 / static_cast<double>(vids.size()));
+        std::vector<int> inner;
+        for (int i : vids) {
+            const A3 p = new_pos[i];  // copy (push_back below may reallocate)
+            inner.push_back(static_cast<int>(new_pos.size()));
+            new_pos.push_back({p[0] + (c[0] - p[0]) * width + nrm[0] * depth,   // inset, then lift along normal
+                               p[1] + (c[1] - p[1]) * width + nrm[1] * depth,
+                               p[2] + (c[2] - p[2]) * width + nrm[2] * depth});
+        }
+        const int n = static_cast<int>(vids.size());
+        for (int k = 0; k < n; ++k) {  // slanted border quads (the chamfer)
+            new_faces.push_back({vids[k], vids[(k + 1) % n], inner[(k + 1) % n], inner[k]});
+            new_tags.push_back(copy_tags(f));
+        }
+        new_faces.push_back(inner);  // inner face, tagged with `mark`
+        new_tags.push_back(copy_tags(f, mark));
+    }
+    return Mesh::from_pydata(new_pos, new_faces, new_tags);
+}
+
 }  // namespace mirage

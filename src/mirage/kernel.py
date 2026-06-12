@@ -405,6 +405,40 @@ def inset_faces(mesh: Mesh, faces, thickness: float = 0.3, mark: str | None = No
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
+def bevel_faces(mesh: Mesh, faces, width: float = 0.2, depth: float = 0.1, mark: str | None = None) -> Mesh:
+    """Bevel (chamfer) the rim of each face: an inset ring of ``width`` whose inner
+    face is offset ``depth`` along the face normal, so the border quads slant into a
+    chamfer. This is the face-region analogue of an edge bevel (and exactly
+    Blender's Inset Faces = Thickness + Depth). depth>0 raises a chamfered boss,
+    depth<0 sinks a chamfered recess; depth=0 is a plain inset. Same topology as
+    inset, so euler/manifold are preserved. The inner face is mesh.faces[-1]."""
+    import numpy as np
+    region = set(faces)
+    if not region:
+        return mesh.copy()
+    width = min(max(float(width), 1e-3), 0.999)
+    new_pos = [list(v.co) for v in mesh.verts]
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:
+        if f not in region:
+            new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs))
+    for f in sorted(region, key=lambda f: f.id):  # deterministic id order (reproducible replay)
+        normal = np.array(face_normal(mesh, f))
+        vids = [lp.vert.id for lp in mesh.face_loops(f)]
+        centroid = np.mean([new_pos[i] for i in vids], axis=0)
+        inner = []
+        for i in vids:
+            p = np.array(new_pos[i], float)
+            ip = p + (centroid - p) * width + normal * depth  # inset toward centroid, then lift along normal
+            inner.append(len(new_pos))
+            new_pos.append([float(ip[0]), float(ip[1]), float(ip[2])])
+        n = len(vids)
+        for k in range(n):
+            new_faces.append([vids[k], vids[(k + 1) % n], inner[(k + 1) % n], inner[k]]); new_attrs.append(_copy_attrs(f.attrs))
+        new_faces.append(inner); new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))  # inner face tagged
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
 def make_cube(size: float = 1.0) -> Mesh:
     s = size / 2.0
     p = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),

@@ -2,7 +2,9 @@ import math
 
 import pytest
 
-from mirage.kernel import make_cube, catmull_clark, extrude_faces, inset_faces, faces_by_normal
+from mirage.kernel import (
+    make_cube, catmull_clark, extrude_faces, inset_faces, bevel_faces, faces_by_normal,
+)
 
 
 def test_cube_topology():
@@ -58,6 +60,31 @@ def test_inset_then_extrude_stays_closed():
     m = extrude_faces(m, [m.faces[-1]], 0.5)                # extrude the inset inner face
     m.validate()
     assert m.euler() == 2 and m.is_closed_manifold()        # a raised boss, still closed
+
+
+def test_bevel_chamfers_the_rim():
+    m = make_cube(1.0)                                       # top face at z = +0.5
+    top = faces_by_normal(m, "z", 1.0)
+    depth = 0.2
+    b = bevel_faces(m, top, width=0.25, depth=depth)
+    b.validate()
+    # same topology as an inset (a ring of quads + the inner face), still closed
+    assert b.euler() == 2 and b.is_closed_manifold()
+    assert b.stats() == inset_faces(m, top, 0.25).stats()   # bevel == inset + a normal offset
+    inner = b.faces[-1]                                      # the lifted inner face
+    cz = sum(v.co[2] for v in b.face_verts(inner)) / len(b.face_verts(inner))
+    assert abs(cz - (0.5 + depth)) < 1e-9                    # raised by `depth` along +z
+
+
+def test_bevel_zero_depth_equals_inset():
+    m = make_cube(1.0)
+    top = faces_by_normal(m, "z", 1.0)
+    bev = bevel_faces(m, top, width=0.3, depth=0.0)
+    ins = inset_faces(m, top, 0.3)
+    bev.validate()
+    bz = sorted(round(v.co[2], 9) for v in bev.verts)
+    iz = sorted(round(v.co[2], 9) for v in ins.verts)
+    assert bz == iz                                         # depth=0 is a plain inset
 
 
 # --- regression tests for bugs found by the adversarial verification workflow --- #

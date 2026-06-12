@@ -45,6 +45,7 @@ public:
     Program& cylinder(int sides = 24, double radius = 0.5, double height = 1.0, const std::string& mark = "");
     Program& extrude(const json& on, double distance = 0.5, const std::string& mark = "");
     Program& inset(const json& on, double thickness = 0.3, const std::string& mark = "");
+    Program& bevel(const json& on, double width = 0.2, double depth = 0.1, const std::string& mark = "");
     Program& subdivide(int levels = 1);
     Program& tag(const json& on, const std::string& name);
     Program& translate(const json& on, const std::array<double, 3>& by);

@@ -147,5 +147,11 @@ Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region, double di
              const std::string& mark = "");
 Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region, double thickness = 0.3,
            const std::string& mark = "");
+// bevel: an inset ring of `width` whose inner face is offset `depth` along the
+// face normal — the border quads slant into a chamfer (the face-region analogue
+// of an edge bevel; Blender's Inset Faces = Thickness + Depth). depth=0 is a
+// plain inset. Same topology as inset, so euler/manifold are preserved.
+Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region, double width = 0.2,
+           double depth = 0.1, const std::string& mark = "");
 
 }  // namespace mirage

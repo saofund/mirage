@@ -94,6 +94,19 @@ OPLOGS = {
         {"op": "inset", "on": {"by": "normal", "axis": "z"}, "thickness": 0.3, "mark": "panel"},
         {"op": "extrude", "on": {"by": "tag", "name": "panel"}, "distance": 0.4},
     ],
+    "bevel_top": [
+        {"op": "cube", "size": 1.0},
+        {"op": "bevel", "on": {"by": "normal", "axis": "z"}, "width": 0.25, "depth": 0.2},
+    ],
+    "bevel_then_extrude": [
+        {"op": "cube", "size": 1.2},
+        {"op": "bevel", "on": {"by": "normal", "axis": "z"}, "width": 0.2, "depth": 0.15},
+        {"op": "extrude", "on": {"by": "last_created"}, "distance": 0.5},
+    ],
+    "bevel_all_negative_depth": [
+        {"op": "cube", "size": 1.0},
+        {"op": "bevel", "on": {"by": "all"}, "width": 0.15, "depth": -0.1},
+    ],
 }
 
 

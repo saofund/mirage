@@ -37,10 +37,11 @@ from dataclasses import dataclass, field
 from .kernel import Mesh, face_normal, _compact, _copy_attrs
 from .meshlang import MeshProgram, SelectorEmpty, describe, resolve, _tags
 
-KNOWN_OPS = ["cube", "cylinder", "extrude", "inset", "subdivide", "tag", "translate", "scale", "assert"]
+KNOWN_OPS = ["cube", "cylinder", "extrude", "inset", "bevel", "subdivide", "tag", "translate", "scale", "assert"]
 KNOWN_BY = ["all", "normal", "tag", "extreme", "side", "last_created"]
 _PARAM_SIG = {  # a param key -> the op it most likely belongs to (for op-name inference)
-    "distance": "extrude", "thickness": "inset", "levels": "subdivide", "size": "cube",
+    "distance": "extrude", "thickness": "inset", "width": "bevel", "depth": "bevel",
+    "levels": "subdivide", "size": "cube",
     "sides": "cylinder", "radius": "cylinder", "height": "cylinder",
 }
 MAX_SUBDIVIDE = 6
@@ -726,6 +727,13 @@ def lint_program(program) -> list:
             if isinstance(t, (int, float)) and not (1e-3 <= t <= 0.999):  # inclusive: kernel honors the endpoints
                 warn(i, "inset_clamped", f"thickness {t} is silently clamped to [1e-3, 0.999] — the built "
                      "geometry will NOT match the requested value", "pick a thickness in (0, 1)")
+        if name == "bevel":
+            w = op.get("width", 0.2)
+            if isinstance(w, (int, float)) and not (1e-3 <= w <= 0.999):
+                warn(i, "bevel_width_clamped", f"width {w} is silently clamped to [1e-3, 0.999] — the built "
+                     "geometry will NOT match the requested value", "pick a width in (0, 1)")
+            if op.get("depth", 0.1) == 0:
+                warn(i, "bevel_flat", "depth=0 makes bevel a plain inset (no chamfer)", "use a non-zero depth")
         if name == "subdivide":
             lv = op.get("levels", 1)
             if isinstance(lv, (int, float)) and lv <= 0:
