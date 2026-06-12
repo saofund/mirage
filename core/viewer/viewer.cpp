@@ -107,17 +107,59 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 uniform mat4 uMVP;
 out vec3 vN;
-void main(){ gl_Position = uMVP * vec4(aPos,1.0); vN = aNormal; }
+out vec3 vWorld;
+void main(){ vWorld = aPos; vN = aNormal; gl_Position = uMVP * vec4(aPos,1.0); }
 )";
+// Physically-based viewport: Cook-Torrance microfacet specular (GGX/Trowbridge-
+// Reitz NDF, Smith height-correlated geometry, Schlick Fresnel) + Lambert
+// diffuse, lit by a studio 3-point rig and a hemispherical ambient, then ACES
+// tonemapped. uFlat reconstructs per-face normals from screen-space derivatives
+// (true faceting for hard-surface models, no geometry change).
 static const char* FRAG = R"(#version 330 core
-in vec3 vN; out vec4 frag;
-uniform vec3 uColor;
+in vec3 vN; in vec3 vWorld;
+out vec4 frag;
+uniform vec3 uEye;
+uniform vec3 uAlbedo;
+uniform float uMetallic;
+uniform float uRough;
+uniform int uFlat;
+uniform int uHighlight;
+const float PI = 3.14159265359;
+
+float D_GGX(float NoH, float a){ float a2=a*a; float d=NoH*NoH*(a2-1.0)+1.0; return a2/(PI*d*d); }
+float G_Smith(float NoV, float NoL, float a){ float k=a*0.5;
+  float gv=NoV/(NoV*(1.0-k)+k); float gl=NoL/(NoL*(1.0-k)+k); return gv*gl; }
+vec3 F_Schlick(float VoH, vec3 f0){ return f0 + (1.0-f0)*pow(1.0-VoH,5.0); }
+
+vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 radiance, vec3 albedo, float metallic, float rough){
+  vec3 H = normalize(V+L);
+  float NoL = max(dot(N,L),0.0);
+  float NoV = max(dot(N,V),1e-4);
+  float NoH = max(dot(N,H),0.0);
+  float VoH = max(dot(V,H),0.0);
+  float a = max(rough*rough,1e-3);
+  vec3 f0 = mix(vec3(0.04), albedo, metallic);
+  float D = D_GGX(NoH,a);
+  float G = G_Smith(NoV,NoL,a);
+  vec3 F = F_Schlick(VoH,f0);
+  vec3 spec = (D*G*F)/max(4.0*NoV*NoL,1e-4);
+  vec3 kd = (vec3(1.0)-F)*(1.0-metallic);
+  return (kd*albedo/PI + spec)*radiance*NoL;
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+
 void main(){
-  vec3 n = normalize(vN);
-  vec3 L = normalize(vec3(0.35,0.5,0.8));
-  float d = max(dot(n,L),0.0);
-  vec3 c = uColor*(0.28 + 0.72*d);
-  frag = vec4(pow(c, vec3(0.4545)), 1.0);
+  if(uHighlight==1){ frag = vec4(pow(vec3(1.0,0.55,0.12),vec3(0.4545)),1.0); return; }
+  vec3 N = (uFlat==1) ? normalize(cross(dFdx(vWorld), dFdy(vWorld))) : normalize(vN);
+  vec3 V = normalize(uEye - vWorld);
+  if(dot(N,V) < 0.0) N = -N;                       // two-sided shading
+  vec3 col = vec3(0.0);
+  col += brdf(N,V, normalize(vec3( 0.4, 0.5, 0.8)), vec3(3.0,2.9,2.7), uAlbedo,uMetallic,uRough); // key
+  col += brdf(N,V, normalize(vec3(-0.6, 0.2, 0.3)), vec3(0.5,0.6,0.8), uAlbedo,uMetallic,uRough); // fill (cool)
+  col += brdf(N,V, normalize(vec3( 0.1,-0.7, 0.4)), vec3(0.5,0.45,0.4), uAlbedo,uMetallic,uRough); // rim (warm)
+  float hemi = 0.5+0.5*N.z;                          // sky/ground hemispherical ambient
+  col += mix(vec3(0.10,0.10,0.12), vec3(0.32,0.35,0.40), hemi) * uAlbedo * (1.0-uMetallic*0.7);
+  frag = vec4(pow(aces(col), vec3(0.4545)), 1.0);
 }
 )";
 
@@ -143,6 +185,12 @@ static std::array<double, 3> g_sel{0, 0, 0};  // the picked point (PICK mode)
 // JSON the AI (MCP save_mesh_program/load_mesh_program) reads and writes.
 static char g_oplog_path[256] = "mirage_oplog.json";
 static char g_io_status[256] = "";
+
+// viewport material (PBR) — a warm off-white dielectric by default; flat shading
+// reads more truthfully for hard-surface models.
+static float g_albedo[3] = {0.82f, 0.80f, 0.74f};
+static float g_metallic = 0.0f, g_rough = 0.45f;
+static bool g_flat = true;
 
 static json current_on() {
     if (g_sel_mode == SEL_PICK) return sel::near(g_sel);
@@ -259,7 +307,12 @@ int main(int argc, char** argv) {
     if (!linked) { char log[1024]; glGetProgramInfoLog(prog_gl, 1024, nullptr, log); std::fprintf(stderr, "link: %s\n", log); }
     glDeleteShader(vs); glDeleteShader(fs);  // flagged for deletion once detached at link
     const GLint locMVP = glGetUniformLocation(prog_gl, "uMVP");
-    const GLint locColor = glGetUniformLocation(prog_gl, "uColor");
+    const GLint locEye = glGetUniformLocation(prog_gl, "uEye");
+    const GLint locAlbedo = glGetUniformLocation(prog_gl, "uAlbedo");
+    const GLint locMetallic = glGetUniformLocation(prog_gl, "uMetallic");
+    const GLint locRough = glGetUniformLocation(prog_gl, "uRough");
+    const GLint locFlat = glGetUniformLocation(prog_gl, "uFlat");
+    const GLint locHighlight = glGetUniformLocation(prog_gl, "uHighlight");
 
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo);
@@ -347,7 +400,7 @@ int main(int argc, char** argv) {
     auto draw = [&]() {
         int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
         glViewport(0, 0, fw, fh);
-        glClearColor(0.10f, 0.11f, 0.13f, 1.0f);
+        glClearColor(0.16f, 0.17f, 0.19f, 1.0f);  // neutral studio grey
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (g.verts == 0) return;
         V3 c = g.center, eye = orbit_eye(c);
@@ -355,12 +408,17 @@ int main(int argc, char** argv) {
                        look_at(eye, c, {0, 0, 1}));
         glUseProgram(prog_gl);
         glUniformMatrix4fv(locMVP, 1, GL_FALSE, mvp.data());
-        glUniform3f(locColor, 0.82f, 0.80f, 0.74f);
+        glUniform3f(locEye, eye[0], eye[1], eye[2]);
+        glUniform3f(locAlbedo, g_albedo[0], g_albedo[1], g_albedo[2]);
+        glUniform1f(locMetallic, g_metallic);
+        glUniform1f(locRough, g_rough);
+        glUniform1i(locFlat, g_flat ? 1 : 0);
+        glUniform1i(locHighlight, 0);
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLES, 0, g.verts);
         if (hl_verts > 0) {  // selected face, pulled slightly forward to avoid z-fighting
             glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.0f, -1.0f);
-            glUniform3f(locColor, 1.0f, 0.55f, 0.12f);
+            glUniform1i(locHighlight, 1);  // flat orange overlay
             glBindVertexArray(hvao);
             glDrawArrays(GL_TRIANGLES, 0, hl_verts);
             glDisable(GL_POLYGON_OFFSET_FILL);
@@ -436,6 +494,12 @@ int main(int argc, char** argv) {
             ImGui::SameLine();
             if (ImGui::SmallButton("reset to top")) { g_sel_mode = SEL_NONE; rebuild_highlight(); }
         }
+        ImGui::Spacing();
+        ImGui::TextDisabled("material (PBR viewport)");
+        ImGui::SetNextItemWidth(220); ImGui::ColorEdit3("albedo", g_albedo);
+        ImGui::SetNextItemWidth(220); ImGui::SliderFloat("metallic", &g_metallic, 0.0f, 1.0f);
+        ImGui::SetNextItemWidth(220); ImGui::SliderFloat("roughness", &g_rough, 0.04f, 1.0f);
+        ImGui::Checkbox("flat shading (faceted)", &g_flat);
         ImGui::Separator();
         ImGui::Text("verts %zu   edges %zu   faces %zu", model.num_verts(), model.num_edges(), model.num_faces());
         ImGui::Text("euler %d   manifold %s", model.euler(), model.is_closed_manifold() ? "yes" : "no");
