@@ -403,6 +403,14 @@ Mesh Mesh::copy() const {
     return from_pydata(pos, faces, tags);
 }
 
+// Region faces in a deterministic order (by id) — so a replayed op-log yields a
+// byte-identical mesh every run, not one that depends on heap pointer values.
+static std::vector<const Face*> region_in_id_order(const std::set<const Face*>& region) {
+    std::vector<const Face*> v(region.begin(), region.end());
+    std::sort(v.begin(), v.end(), [](const Face* a, const Face* b) { return a->id < b->id; });
+    return v;
+}
+
 Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double distance,
              const std::string& mark) {
     std::set<const Face*> region(region_v.begin(), region_v.end());
@@ -454,7 +462,7 @@ Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double 
             new_tags.push_back(copy_tags(adj[0]));
         }
     }
-    for (const Face* f : region) {  // lifted caps, tagged with `mark` (the next op's handle)
+    for (const Face* f : region_in_id_order(region)) {  // lifted caps, tagged with `mark`
         std::vector<int> cap;
         for (Loop* lp : mesh.face_loops(f)) cap.push_back(newid[lp->vert->id]);
         new_faces.push_back(cap);
@@ -480,7 +488,7 @@ Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double th
             new_faces.push_back(fv);
             new_tags.push_back(copy_tags(f.get()));
         }
-    for (const Face* f : region) {
+    for (const Face* f : region_in_id_order(region)) {
         std::vector<int> vids;
         for (Loop* lp : mesh.face_loops(f)) vids.push_back(lp->vert->id);
         A3 c{0, 0, 0};

@@ -367,7 +367,7 @@ def extrude_faces(mesh: Mesh, faces, distance: float = 0.5, mark: str | None = N
             lp = next(l for l in mesh.face_loops(adj[0]) if l.edge is e)
             a, b = lp.vert.id, lp.next.vert.id
             new_faces.append([a, b, newid[b], newid[a]]); new_attrs.append(_copy_attrs(adj[0].attrs))
-    for f in region:  # lifted caps, tagged with `mark` (the durable handle for the next op)
+    for f in sorted(region, key=lambda f: f.id):  # caps in deterministic id order (reproducible replay)
         new_faces.append([newid[lp.vert.id] for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))
 
     new_pos, new_faces = _compact(new_pos, new_faces)
@@ -389,7 +389,7 @@ def inset_faces(mesh: Mesh, faces, thickness: float = 0.3, mark: str | None = No
     for f in mesh.faces:
         if f not in region:
             new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs))
-    for f in region:
+    for f in sorted(region, key=lambda f: f.id):  # deterministic id order (reproducible replay)
         vids = [lp.vert.id for lp in mesh.face_loops(f)]
         centroid = np.mean([new_pos[i] for i in vids], axis=0)
         inner = []

@@ -197,6 +197,7 @@ static void on_scroll(GLFWwindow*, double, double dy) {
 
 static void write_ppm(const std::string& path, int W, int H) {
     std::vector<unsigned char> px(size_t(W) * H * 3);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);  // tight rows — else GL pads to 4 bytes and overruns px
     glReadPixels(0, 0, W, H, GL_RGB, GL_UNSIGNED_BYTE, px.data());
     std::ofstream f(path, std::ios::binary);
     f << "P6\n" << W << " " << H << "\n255\n";
@@ -242,6 +243,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "glad load failed\n"); return 1;
     }
     if (shot.empty()) {
+        glfwSwapInterval(1);  // vsync — don't spin the GPU at thousands of fps
         glfwSetMouseButtonCallback(win, on_mouse);
         glfwSetCursorPosCallback(win, on_cursor);
         glfwSetScrollCallback(win, on_scroll);
@@ -249,9 +251,13 @@ int main(int argc, char** argv) {
     glEnable(GL_DEPTH_TEST);
 
     GLuint prog_gl = glCreateProgram();
-    glAttachShader(prog_gl, compile(GL_VERTEX_SHADER, VERT));
-    glAttachShader(prog_gl, compile(GL_FRAGMENT_SHADER, FRAG));
+    GLuint vs = compile(GL_VERTEX_SHADER, VERT), fs = compile(GL_FRAGMENT_SHADER, FRAG);
+    glAttachShader(prog_gl, vs);
+    glAttachShader(prog_gl, fs);
     glLinkProgram(prog_gl);
+    GLint linked = 0; glGetProgramiv(prog_gl, GL_LINK_STATUS, &linked);
+    if (!linked) { char log[1024]; glGetProgramInfoLog(prog_gl, 1024, nullptr, log); std::fprintf(stderr, "link: %s\n", log); }
+    glDeleteShader(vs); glDeleteShader(fs);  // flagged for deletion once detached at link
     const GLint locMVP = glGetUniformLocation(prog_gl, "uMVP");
     const GLint locColor = glGetUniformLocation(prog_gl, "uColor");
 
@@ -312,9 +318,12 @@ int main(int argc, char** argv) {
 
     // cast a ray through the cursor and select the nearest hit face
     auto do_pick = [&](double px, double py) {
+        // cursor is in window (screen) coords; aspect is from the framebuffer —
+        // these differ on HiDPI, so normalize each by its own size.
+        int ww, wh; glfwGetWindowSize(win, &ww, &wh);
         int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
-        float ndcx = 2.0f * float(px) / float(fw) - 1.0f;
-        float ndcy = 1.0f - 2.0f * float(py) / float(fh);
+        float ndcx = 2.0f * float(px) / float(ww ? ww : 1) - 1.0f;
+        float ndcy = 1.0f - 2.0f * float(py) / float(wh ? wh : 1);
         V3 c = g.center, eye = orbit_eye(c);
         V3 fwd = norm(sub(c, eye)), s = norm(cross(fwd, {0, 0, 1})), u = cross(s, fwd);
         float fovy = 0.9f, asp = float(fw) / float(fh ? fh : 1), tt = std::tan(fovy * 0.5f);
@@ -385,6 +394,8 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();
         if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Frame")) { g_yaw = 2.3f; g_pitch = 0.35f; g_dist = g.radius * 3.0f; }  // reset the view
         ImGui::Spacing();
         // The op-log is the shared SoT: Save writes the JSON an AI (MCP) can Load,
         // and vice-versa — one model, a human and an AI both editing it.
