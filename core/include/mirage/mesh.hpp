@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -47,6 +48,11 @@ struct Loop {
 struct Face {
     int id = 0;
     Loop* loop = nullptr;  // entry into the loop cycle
+    // Durable handles. Operators rebuild the mesh and renumber every element
+    // (the Topological Naming Problem), so an index dies after one op — tags are
+    // copied to descendant faces across rebuilds and are what selectors (`tag`,
+    // `last_created`) resolve. Mirrors Python Face.attrs["tags"].
+    std::vector<std::string> tags;
 };
 
 // A mesh owns its elements (vector<unique_ptr>) and links them by raw pointers,
@@ -62,7 +68,7 @@ public:
     Vert* add_vert(double x, double y, double z);
     // Create a face from an ordered, closed vertex loop. Throws std::invalid_argument
     // for < 3 verts or repeated verts (matches the Python kernel's add_face).
-    Face* add_face(const std::vector<Vert*>& verts);
+    Face* add_face(const std::vector<Vert*>& verts, std::vector<std::string> tags = {});
 
     std::vector<Loop*> face_loops(const Face* f) const;
     std::vector<Vert*> face_verts(const Face* f) const;
@@ -71,8 +77,10 @@ public:
 
     // Rebuild a mesh from positions + ngon face index lists (mirrors the Python
     // Mesh.from_pydata; the building block operators use to emit a fresh mesh).
+    // `face_tags`, when non-empty, carries one tag list per face.
     static Mesh from_pydata(const std::vector<std::array<double, 3>>& positions,
-                            const std::vector<std::vector<int>>& faces);
+                            const std::vector<std::vector<int>>& faces,
+                            const std::vector<std::vector<std::string>>& face_tags = {});
     // A fresh, equivalent mesh (this type is move-only, so this is the deep copy).
     Mesh copy() const;
 
@@ -128,12 +136,16 @@ Mesh make_cylinder(int sides = 24, double radius = 0.5, double height = 1.0);
 // found by walking the topology, then rebuilt as quads).
 Mesh catmull_clark(const Mesh& mesh);
 
-// Region operators (emit a fresh mesh; durable tags / op-log live in the layer
-// above). extrude: each region vertex moves along the average of its incident
+// Region operators (emit a fresh mesh; descendant faces inherit their parent's
+// tags). extrude: each region vertex moves along the average of its incident
 // region-face normals, side walls bridge boundary edges, orphaned interior verts
-// are compacted away. inset: a centroid-proportional smaller copy of each face,
-// ringed by border quads (thickness clamped to (0,1)).
-Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region, double distance = 0.5);
-Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region, double thickness = 0.3);
+// are compacted away; the lifted caps additionally get `mark` (when non-empty) —
+// the durable handle the next op selects. inset: a centroid-proportional smaller
+// copy of each face, ringed by border quads (thickness clamped to (0,1)); the
+// inner faces get `mark`.
+Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region, double distance = 0.5,
+             const std::string& mark = "");
+Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region, double thickness = 0.3,
+           const std::string& mark = "");
 
 }  // namespace mirage

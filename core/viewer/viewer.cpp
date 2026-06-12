@@ -127,7 +127,22 @@ static double g_lx = 0, g_ly = 0;
 static bool g_drag = false, g_moved = false;
 static double g_press_x = 0, g_press_y = 0;
 static bool g_pick_request = false; static double g_px = 0, g_py = 0;  // a click to resolve into a face
-static bool g_has_sel = false; static std::array<double, 3> g_sel{0, 0, 0};  // selected face centroid
+// What the next operator targets, as a re-evaluable selector (never a stored
+// index — TNP-safe):
+//   NONE  -> the top face(s)          sel::normal z+
+//   PICK  -> the face nearest a click sel::near(point)
+//   STACK -> whatever the last op made sel::last
+// A pick promotes to STACK after one op, so a picked region keeps stacking
+// (inset -> extrude -> inset ...) on the geometry each step actually produced.
+enum SelMode { SEL_NONE, SEL_PICK, SEL_STACK };
+static SelMode g_sel_mode = SEL_NONE;
+static std::array<double, 3> g_sel{0, 0, 0};  // the picked point (PICK mode)
+
+static json current_on() {
+    if (g_sel_mode == SEL_PICK) return sel::near(g_sel);
+    if (g_sel_mode == SEL_STACK) return sel::last();
+    return sel::normal("z", 1.0);  // default: the top face
+}
 
 static V3 orbit_eye(V3 c) {
     return {c[0] + g_dist * std::cos(g_pitch) * std::sin(g_yaw),
@@ -189,8 +204,8 @@ int main(int argc, char** argv) {
 
     Program prog;
     prog.cube(1.0);
-    if (!shot.empty()) {  // a faceted default for the headless image (big faces show the pick highlight)
-        prog.inset(0.3); prog.extrude(0.6);
+    if (!shot.empty()) {  // a faceted default for the headless image (a boss on top)
+        prog.inset(sel::normal("z"), 0.3); prog.extrude(sel::last(), 0.6);
     }
 
     if (!glfwInit()) { std::fprintf(stderr, "glfwInit failed\n"); return 1; }
@@ -237,7 +252,8 @@ int main(int argc, char** argv) {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    Mesh model = prog.build();
+    std::string last_tag;            // the build's most recent __out tag (for sel::last)
+    Mesh model = prog.build(&last_tag);
     Gpu g = build_gpu(model);
     g_dist = g.radius * 3.0f;
     auto upload = [&]() {
@@ -247,25 +263,30 @@ int main(int argc, char** argv) {
     };
     upload();
 
-    // resolve the picked point to a face and upload its triangles as the highlight
+    // Highlight = exactly what the next op will hit: resolve the current selector
+    // against the live mesh (so the highlight and the action can never disagree).
     auto rebuild_highlight = [&]() {
         hl_verts = 0;
-        if (!g_has_sel || model.num_faces() == 0) return;
-        const Face* f = nearest_face(model, g_sel);
-        if (!f) return;
-        auto fnv = face_normal(model, f);
-        V3 n{(float)fnv[0], (float)fnv[1], (float)fnv[2]};
-        auto vs = model.face_verts(f);
+        if (model.num_faces() == 0) return;
+        std::vector<const Face*> tgt;
+        try { tgt = resolve(model, current_on(), last_tag); }
+        catch (const std::exception&) { return; }  // SelectorEmpty -> nothing to show
         std::vector<float> hd;
-        for (size_t i = 1; i + 1 < vs.size(); ++i) {
-            Vert* tri[3] = {vs[0], vs[i], vs[i + 1]};
-            for (Vert* v : tri) {
-                hd.insert(hd.end(), {(float)v->co[0], (float)v->co[1], (float)v->co[2], n[0], n[1], n[2]});
-                hl_verts++;
+        for (const Face* f : tgt) {
+            auto fnv = face_normal(model, f);
+            V3 n{(float)fnv[0], (float)fnv[1], (float)fnv[2]};
+            auto vs = model.face_verts(f);
+            for (size_t i = 1; i + 1 < vs.size(); ++i) {
+                Vert* tri[3] = {vs[0], vs[i], vs[i + 1]};
+                for (Vert* v : tri) {
+                    hd.insert(hd.end(), {(float)v->co[0], (float)v->co[1], (float)v->co[2], n[0], n[1], n[2]});
+                    hl_verts++;
+                }
             }
         }
         glBindBuffer(GL_ARRAY_BUFFER, hvbo);
-        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(hd.size() * sizeof(float)), hd.data(), GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(hd.size() * sizeof(float)),
+                     hd.empty() ? nullptr : hd.data(), GL_DYNAMIC_DRAW);
     };
 
     // cast a ray through the cursor and select the nearest hit face
@@ -290,7 +311,7 @@ int main(int argc, char** argv) {
                 if (ray_tri(eye, dir, a, b, cc, t) && t < best) { best = t; hit = fc.get(); }
             }
         }
-        if (hit) { g_has_sel = true; g_sel = face_centroid(model, hit); rebuild_highlight(); }
+        if (hit) { g_sel_mode = SEL_PICK; g_sel = face_centroid(model, hit); rebuild_highlight(); }
     };
 
     auto draw = [&]() {
@@ -328,24 +349,31 @@ int main(int argc, char** argv) {
         ImGui::SetNextWindowPos(ImVec2(14, 14), ImGuiCond_FirstUseEver);
         ImGui::Begin("Mirage  -  modeling", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::TextDisabled("primitives (start fresh)");
-        if (ImGui::Button("New Cube"))     { prog.clear(); prog.cube(1.0); dirty = true; }
+        if (ImGui::Button("New Cube"))     { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::SameLine();
-        if (ImGui::Button("New Cylinder")) { prog.clear(); prog.cylinder(24, 0.5, 1.0); dirty = true; }
+        if (ImGui::Button("New Cylinder")) { prog.clear(); prog.cylinder(24, 0.5, 1.0); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::Spacing();
-        ImGui::TextDisabled("operators (on picked or active face)");
-        if (ImGui::Button("Inset"))   { if (g_has_sel) prog.inset_at(g_sel, 0.3); else prog.inset(0.3); dirty = true; }
+        ImGui::TextDisabled("operators (on the highlighted target)");
+        // act on the current selector; a pick then stacks on what the op produced
+        if (ImGui::Button("Inset"))   { prog.inset(current_on(), 0.3);   if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
         ImGui::SameLine();
-        if (ImGui::Button("Extrude")) { if (g_has_sel) prog.extrude_at(g_sel, 0.5); else prog.extrude(0.5); dirty = true; }
+        if (ImGui::Button("Extrude")) { prog.extrude(current_on(), 0.5); if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
         ImGui::SameLine();
         if (ImGui::Button("Subdivide")) { prog.subdivide(1); dirty = true; }
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();
-        if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); g_has_sel = false; dirty = true; }
+        if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::Spacing();
-        ImGui::TextDisabled("selection");
-        ImGui::Text("%s", g_has_sel ? "a face is picked (ops target it)" : "click a face to pick");
-        if (g_has_sel) { ImGui::SameLine(); if (ImGui::SmallButton("clear")) g_has_sel = false; }
+        ImGui::TextDisabled("selection (the next op's target, highlighted orange)");
+        const char* mode_txt = g_sel_mode == SEL_PICK  ? "picked face"
+                             : g_sel_mode == SEL_STACK ? "last result (stacking)"
+                                                       : "top face (default) — click any face to retarget";
+        ImGui::Text("target: %s", mode_txt);
+        if (g_sel_mode != SEL_NONE) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("reset to top")) { g_sel_mode = SEL_NONE; rebuild_highlight(); }
+        }
         ImGui::Separator();
         ImGui::Text("verts %zu   edges %zu   faces %zu", model.num_verts(), model.num_edges(), model.num_faces());
         ImGui::Text("euler %d   manifold %s", model.euler(), model.is_closed_manifold() ? "yes" : "no");
@@ -361,7 +389,7 @@ int main(int argc, char** argv) {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-        if (panel()) { model = prog.build(); g = build_gpu(model); upload(); rebuild_highlight(); }
+        if (panel()) { model = prog.build(&last_tag); g = build_gpu(model); upload(); rebuild_highlight(); }
         draw();
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -369,7 +397,7 @@ int main(int argc, char** argv) {
 
     if (!shot.empty()) {  // headless verification: render a couple frames (mesh + GUI) -> PPM
         const Face* sf = nearest_face(model, {0.5, 0.0, 0.2});  // pre-pick a side face to show the highlight
-        if (sf) { g_has_sel = true; g_sel = face_centroid(model, sf); rebuild_highlight(); }
+        if (sf) { g_sel_mode = SEL_PICK; g_sel = face_centroid(model, sf); rebuild_highlight(); }
         frame();  // warm-up (ImGui font atlas + first-frame auto-sizing)
         frame();
         glFinish();

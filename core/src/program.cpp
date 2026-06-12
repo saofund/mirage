@@ -1,84 +1,251 @@
 #include "mirage/program.hpp"
 
+#include <algorithm>
 #include <cstdio>
+#include <map>
 
 namespace mirage {
 
-void Program::cube(double size) { ops_.push_back({OpKind::Cube, size, 0, 0}); }
-void Program::cylinder(int sides, double radius, double height) {
-    ops_.push_back({OpKind::Cylinder, static_cast<double>(sides), radius, height});
+namespace {
+
+// Stamp a tag onto a face. resolve() hands back const Face* (read-only contract),
+// but build() owns the mesh mutably, so this const_cast is honest.
+void add_tag(const Face* f, const std::string& t) { const_cast<Face*>(f)->tags.push_back(t); }
+bool has_tag(const Face* f, const std::string& t) {
+    return std::find(f->tags.begin(), f->tags.end(), t) != f->tags.end();
 }
-void Program::inset(double thickness) { ops_.push_back({OpKind::Inset, thickness, 0, 0}); }
-void Program::extrude(double distance) { ops_.push_back({OpKind::Extrude, distance, 0, 0}); }
-void Program::inset_at(const std::array<double, 3>& p, double thickness) {
-    Op op{OpKind::Inset, thickness, 0, 0}; op.has_target = true; op.target = p; ops_.push_back(op);
+
+std::vector<const Face*> faces_with_tag(const Mesh& m, const std::string& tag) {
+    std::vector<const Face*> out;
+    for (const auto& f : m.faces())
+        if (has_tag(f.get(), tag)) out.push_back(f.get());
+    return out;
 }
-void Program::extrude_at(const std::array<double, 3>& p, double distance) {
-    Op op{OpKind::Extrude, distance, 0, 0}; op.has_target = true; op.target = p; ops_.push_back(op);
+
+// translate/scale: move the selected faces' verts in place (Python _transform).
+void transform_region(const Mesh& m, const std::vector<const Face*>& faces, const std::string& op,
+                      const std::array<double, 3>& by) {
+    std::map<int, Vert*> verts;  // unique verts of the region, deterministic order
+    for (const Face* f : faces)
+        for (Vert* v : m.face_verts(f)) verts[v->id] = v;
+    if (verts.empty()) return;
+    if (op == "translate") {
+        for (auto& [id, v] : verts)
+            for (int k = 0; k < 3; ++k) v->co[k] += by[k];
+    } else {  // scale about the region centroid
+        std::array<double, 3> c{0, 0, 0};
+        for (auto& [id, v] : verts)
+            for (int k = 0; k < 3; ++k) c[k] += v->co[k];
+        const double n = static_cast<double>(verts.size());
+        for (double& x : c) x /= n;
+        for (auto& [id, v] : verts)
+            for (int k = 0; k < 3; ++k) v->co[k] = c[k] + (v->co[k] - c[k]) * by[k];
+    }
 }
-void Program::subdivide(int levels) { ops_.push_back({OpKind::Subdivide, static_cast<double>(levels), 0, 0}); }
+
+void check_assert(const Mesh& m, const json& cmd) {
+    if (cmd.value("closed_manifold", false) && !m.is_closed_manifold())
+        throw MeshLangError("assert closed_manifold failed");
+    if (cmd.contains("euler")) {
+        const int want = cmd.at("euler").get<int>();
+        if (m.euler() != want)
+            throw MeshLangError("assert euler=" + std::to_string(want) + " failed (got " +
+                                std::to_string(m.euler()) + ")");
+    }
+}
+
+std::array<double, 3> json_by(const json& cmd, const std::array<double, 3>& dflt) {
+    if (!cmd.contains("by")) return dflt;
+    const json& b = cmd.at("by");
+    if (!b.is_array() || b.size() != 3) throw MeshLangError("'by' must be a [x,y,z] triple: " + cmd.dump());
+    return {b[0].get<double>(), b[1].get<double>(), b[2].get<double>()};
+}
+
+std::string num(double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.2f", v);
+    return buf;
+}
+
+// A short, human tag for the GUI showing what an op selects.
+std::string on_suffix(const json& op) {
+    if (!op.contains("on") || !op.at("on").is_object()) return "";
+    const json& on = op.at("on");
+    const std::string by = on.value("by", "");
+    if (by == "near") return "  @pick";
+    if (by == "last_created") return "  @last";
+    if (by == "normal") return "  @" + on.value("axis", std::string("z")) + (on.value("sign", 1.0) < 0 ? "-" : "+");
+    if (by == "extreme") return "  @" + on.value("which", std::string("max")) + " " + on.value("axis", std::string("z"));
+    if (by == "tag") return "  @#" + on.value("name", std::string("?"));
+    if (by == "side") return "  @side";
+    if (!by.empty()) return "  @" + by;
+    if (on.contains("and") || on.contains("or") || on.contains("not")) return "  @(combo)";
+    return "";
+}
+
+}  // namespace
+
+// --------------------------------------------------------------------------- //
+// log editing
+// --------------------------------------------------------------------------- //
+Program& Program::add(json cmd) { ops_.push_back(std::move(cmd)); return *this; }
+Program& Program::insert(std::size_t i, json cmd) {
+    ops_.insert(ops_.begin() + std::min(i, ops_.size()), std::move(cmd));
+    return *this;
+}
+Program& Program::replace(std::size_t i, json cmd) { ops_.at(i) = std::move(cmd); return *this; }
+Program& Program::erase(std::size_t i) { ops_.erase(ops_.begin() + i); return *this; }
 void Program::undo() { if (!ops_.empty()) ops_.pop_back(); }
 void Program::clear() { ops_.clear(); }
 
-Mesh Program::build() const {
+// --------------------------------------------------------------------------- //
+// fluent builders
+// --------------------------------------------------------------------------- //
+Program& Program::cube(double size, const std::string& mark) {
+    json c{{"op", "cube"}, {"size", size}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::cylinder(int sides, double radius, double height, const std::string& mark) {
+    json c{{"op", "cylinder"}, {"sides", sides}, {"radius", radius}, {"height", height}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::extrude(const json& on, double distance, const std::string& mark) {
+    json c{{"op", "extrude"}, {"on", on}, {"distance", distance}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::inset(const json& on, double thickness, const std::string& mark) {
+    json c{{"op", "inset"}, {"on", on}, {"thickness", thickness}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::subdivide(int levels) { return add(json{{"op", "subdivide"}, {"levels", levels}}); }
+Program& Program::tag(const json& on, const std::string& name) {
+    return add(json{{"op", "tag"}, {"on", on}, {"name", name}});
+}
+Program& Program::translate(const json& on, const std::array<double, 3>& by) {
+    return add(json{{"op", "translate"}, {"on", on}, {"by", {by[0], by[1], by[2]}}});
+}
+Program& Program::scale(const json& on, const std::array<double, 3>& by) {
+    return add(json{{"op", "scale"}, {"on", on}, {"by", {by[0], by[1], by[2]}}});
+}
+Program& Program::assert_(const json& cond) {
+    json c = cond;
+    c["op"] = "assert";
+    return add(std::move(c));
+}
+
+// --------------------------------------------------------------------------- //
+// replay (a faithful port of meshlang.MeshProgram.build)
+// --------------------------------------------------------------------------- //
+Mesh Program::build(std::string* last_tag_out) const {
     Mesh mesh;
-    const Face* active = nullptr;
     bool has = false;
-    for (const Op& op : ops_) {
-        switch (op.kind) {
-            case OpKind::Cube:
-                mesh = make_cube(op.a > 0 ? op.a : 1.0);
-                active = top_face(mesh);
+    std::string last_tag;  // most recent "__out<i>" (empty = none) -> last_created
+
+    for (std::size_t i = 0; i < ops_.size(); ++i) {
+        const json& cmd = ops_[i];
+        if (!cmd.is_object() || !cmd.contains("op"))
+            throw MeshLangError("op #" + std::to_string(i) + " is not a command dict: " + cmd.dump());
+        const std::string op = cmd.at("op").get<std::string>();
+        const std::string out_tag = "__out" + std::to_string(i);
+        std::vector<const Face*> outs;
+
+        try {
+            if (op == "cube") {
+                mesh = make_cube(cmd.value("size", 1.0));
                 has = true;
-                break;
-            case OpKind::Cylinder:
-                mesh = make_cylinder(static_cast<int>(op.a), op.b, op.c);
-                active = top_face(mesh);
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (op == "cylinder") {
+                mesh = make_cylinder(cmd.value("sides", 24), cmd.value("radius", 0.5), cmd.value("height", 1.0));
                 has = true;
-                break;
-            case OpKind::Inset:
-                if (has) {
-                    const Face* tgt = op.has_target ? nearest_face(mesh, op.target) : active;
-                    if (tgt) {
-                        mesh = mirage::inset(mesh, {tgt}, op.a);  // free operator, not Program::inset
-                        active = mesh.faces().empty() ? nullptr : mesh.faces().back().get();  // inner face
-                    }
-                }
-                break;
-            case OpKind::Extrude:
-                if (has) {
-                    const Face* tgt = op.has_target ? nearest_face(mesh, op.target) : active;
-                    if (tgt) {
-                        mesh = mirage::extrude(mesh, {tgt}, op.a);  // free operator, not Program::extrude
-                        active = mesh.faces().empty() ? nullptr : mesh.faces().back().get();  // lifted cap
-                    }
-                }
-                break;
-            case OpKind::Subdivide:
-                if (has) {
-                    for (int i = 0; i < static_cast<int>(op.a); ++i) mesh = catmull_clark(mesh);
-                    active = top_face(mesh);
-                }
-                break;
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (!has) {
+                throw MeshLangError("op '" + op + "' before any primitive");
+            } else if (op == "extrude") {
+                auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
+                mesh = mirage::extrude(mesh, seln, cmd.value("distance", 0.5), out_tag);  // free op, not Program::extrude
+                outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "inset") {
+                auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
+                mesh = mirage::inset(mesh, seln, cmd.value("thickness", 0.3), out_tag);  // free op, not Program::inset
+                outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "subdivide") {
+                const int levels = cmd.value("levels", 1);
+                for (int k = 0; k < levels; ++k) mesh = catmull_clark(mesh);
+                // global op — last_created is undefined afterward (outs stays empty)
+            } else if (op == "tag") {
+                if (!cmd.contains("name")) throw MeshLangError("tag op needs 'name'");
+                auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
+                const std::string name = cmd.at("name").get<std::string>();
+                for (const Face* f : seln) add_tag(f, name);
+                outs = seln;
+            } else if (op == "translate" || op == "scale") {
+                auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
+                const std::array<double, 3> dflt = op == "scale" ? std::array<double, 3>{1, 1, 1}
+                                                                  : std::array<double, 3>{0, 0, 0};
+                transform_region(mesh, seln, op, json_by(cmd, dflt));
+                outs = seln;
+            } else if (op == "assert") {
+                check_assert(mesh, cmd);
+            } else {
+                throw MeshLangError("unknown op '" + op + "'");
+            }
+        } catch (const SelectorEmpty&) {
+            throw;
+        } catch (const MeshLangError&) {
+            throw;
+        } catch (const std::exception& e) {  // localise any kernel error to its op
+            throw MeshLangError("op #" + std::to_string(i) + " '" + op + "': " + e.what());
+        }
+
+        for (const Face* f : outs)  // stamp the step's out tag (extrude/inset already did via mark)
+            if (!has_tag(f, out_tag)) add_tag(f, out_tag);
+        if (cmd.contains("mark") && !cmd.at("mark").is_null() && !outs.empty()) {
+            const std::string m = cmd.at("mark").get<std::string>();
+            for (const Face* f : outs) add_tag(f, m);
+        }
+        if (!outs.empty()) last_tag = out_tag;
+
+        try {
+            mesh.validate();
+        } catch (const std::exception& e) {
+            throw MeshLangError("op #" + std::to_string(i) + " '" + op + "' produced an invalid mesh: " +
+                                e.what());
         }
     }
+    if (!has) throw MeshLangError("empty program");
+    if (last_tag_out) *last_tag_out = last_tag;
     return mesh;
 }
 
-std::string Program::label(const Op& op) {
-    char buf[80];
-    switch (op.kind) {
-        case OpKind::Cube: std::snprintf(buf, sizeof(buf), "cube  size=%.2f", op.a); break;
-        case OpKind::Cylinder:
-            std::snprintf(buf, sizeof(buf), "cylinder  n=%d r=%.2f h=%.2f", static_cast<int>(op.a), op.b, op.c);
-            break;
-        case OpKind::Inset:
-            std::snprintf(buf, sizeof(buf), "inset  t=%.2f%s", op.a, op.has_target ? "  @pick" : ""); break;
-        case OpKind::Extrude:
-            std::snprintf(buf, sizeof(buf), "extrude  d=%.2f%s", op.a, op.has_target ? "  @pick" : ""); break;
-        case OpKind::Subdivide: std::snprintf(buf, sizeof(buf), "subdivide  x%d", static_cast<int>(op.a)); break;
-    }
-    return std::string(buf);
+// --------------------------------------------------------------------------- //
+// JSON round-trip — the dual-operator bridge
+// --------------------------------------------------------------------------- //
+std::string Program::to_json(int indent) const { return json(ops_).dump(indent); }
+
+Program Program::from_json(const std::string& s) {
+    json j = json::parse(s);
+    if (!j.is_array()) throw MeshLangError("op-log JSON must be an array of op dicts");
+    return Program(j.get<std::vector<json>>());
+}
+
+std::string Program::label(const json& op) {
+    const std::string k = op.value("op", std::string("?"));
+    if (k == "cube") return "cube  size=" + num(op.value("size", 1.0));
+    if (k == "cylinder")
+        return "cylinder  n=" + std::to_string(op.value("sides", 24)) + " r=" + num(op.value("radius", 0.5)) +
+               " h=" + num(op.value("height", 1.0));
+    if (k == "inset") return "inset  t=" + num(op.value("thickness", 0.3)) + on_suffix(op);
+    if (k == "extrude") return "extrude  d=" + num(op.value("distance", 0.5)) + on_suffix(op);
+    if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
+    if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
+    if (k == "translate") return "translate" + on_suffix(op);
+    if (k == "scale") return "scale" + on_suffix(op);
+    if (k == "assert") return "assert";
+    return k;
 }
 
 }  // namespace mirage

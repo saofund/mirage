@@ -2,6 +2,7 @@
 // subdivision, each validated (euler == 2, closed 2-manifold). Counts are
 // differential-checked against the Python kernel spec (see the build script).
 #include "mirage/mesh.hpp"
+#include "mirage/program.hpp"
 
 #include <cstdio>
 
@@ -51,6 +52,25 @@ int main() {
     Mesh boss = extrude(ins2, {ins2.faces().back().get()}, 0.5);
     boss.validate();
     ok &= report("cube inset+extrude boss", boss);
+
+    // op-log (mirage::Program) — selectors + replay, the AI/GUI-shared SoT.
+    std::printf("op-log replay (selection-as-query):\n");
+    Program prog;
+    prog.cube(1.0)
+        .inset(sel::normal("z"), 0.3)   // the top face, by its normal
+        .extrude(sel::last(), 0.6)      // the inner face the inset just made
+        .tag(sel::extreme("z", "max"), "lid");
+    Mesh m = prog.build();
+    m.validate();
+    ok &= report("program: boss + tag", m);
+
+    // JSON round-trip — the dual-operator bridge (this op-log loads in Python too)
+    const std::string js = prog.to_json(0);
+    Mesh m2 = Program::from_json(js).build();
+    const bool same = (m.num_verts() == m2.num_verts()) && (m.num_edges() == m2.num_edges()) &&
+                      (m.num_faces() == m2.num_faces());
+    std::printf("  %-22s %s  (%s)\n", "program JSON round-trip", same ? "OK" : "FAIL", js.c_str());
+    ok &= same;
 
     std::printf("%s\n", ok ? "ALL OK" : "FAILURES");
     return ok ? 0 : 1;

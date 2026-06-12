@@ -13,11 +13,22 @@ else()
   add_compile_options(-Wall -Wextra)
 endif()
 
+# nlohmann/json — the op-log IS a JSON program (the same dialect the Python
+# meshlang reads/writes), so the core carries a JSON model natively.
+include(FetchContent)
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+FetchContent_Declare(nlohmann_json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+  URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d)
+FetchContent_MakeAvailable(nlohmann_json)
+
 add_library(mirage_core STATIC
   src/mesh.cpp
+  src/select.cpp
   src/program.cpp
 )
 target_include_directories(mirage_core PUBLIC include)
+target_link_libraries(mirage_core PUBLIC nlohmann_json::nlohmann_json)
 
 add_executable(mirage_stats src/main.cpp)
 target_link_libraries(mirage_stats PRIVATE mirage_core)

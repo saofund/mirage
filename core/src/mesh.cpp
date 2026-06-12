@@ -48,7 +48,7 @@ void Mesh::radial_insert(Edge* e, Loop* lp) {
     }
 }
 
-Face* Mesh::add_face(const std::vector<Vert*>& verts) {
+Face* Mesh::add_face(const std::vector<Vert*>& verts, std::vector<std::string> tags) {
     const std::size_t n = verts.size();
     if (n < 3) throw std::invalid_argument("a face needs >= 3 verts");
     if (std::set<Vert*>(verts.begin(), verts.end()).size() != n)
@@ -56,6 +56,7 @@ Face* Mesh::add_face(const std::vector<Vert*>& verts) {
 
     auto face = std::make_unique<Face>();
     face->id = static_cast<int>(faces_.size());
+    face->tags = std::move(tags);
     Face* fraw = face.get();
 
     std::vector<Loop*> loops(n);
@@ -180,16 +181,17 @@ std::vector<Face*> Mesh::edge_faces(const Edge* e) const {
 }
 
 Mesh Mesh::from_pydata(const std::vector<std::array<double, 3>>& positions,
-                       const std::vector<std::vector<int>>& faces) {
+                       const std::vector<std::vector<int>>& faces,
+                       const std::vector<std::vector<std::string>>& face_tags) {
     Mesh m;
     std::vector<Vert*> vs;
     vs.reserve(positions.size());
     for (const auto& p : positions) vs.push_back(m.add_vert(p[0], p[1], p[2]));
-    for (const auto& f : faces) {
+    for (std::size_t i = 0; i < faces.size(); ++i) {
         std::vector<Vert*> fv;
-        fv.reserve(f.size());
-        for (int idx : f) fv.push_back(vs[idx]);
-        m.add_face(fv);
+        fv.reserve(faces[i].size());
+        for (int idx : faces[i]) fv.push_back(vs[idx]);
+        m.add_face(fv, i < face_tags.size() ? face_tags[i] : std::vector<std::string>{});
     }
     return m;
 }
@@ -271,12 +273,22 @@ Mesh make_cylinder(int sides, double radius, double height) {
 // ---------------------------------------------------------------------------
 namespace {
 using A3 = std::array<double, 3>;
+using Tags = std::vector<std::string>;
 A3 a3add(const A3& a, const A3& b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
 A3 a3scale(const A3& a, double s) { return {a[0] * s, a[1] * s, a[2] * s}; }
 
+// A face's tags, optionally extended by `mark` — the per-descendant copy that
+// carries durable handles across an operator's rebuild (Python _copy_attrs).
+Tags copy_tags(const Face* f, const std::string& mark = "") {
+    Tags out = f->tags;
+    if (!mark.empty()) out.push_back(mark);
+    return out;
+}
+
 // Drop positions referenced by no face and remap indices (mirrors Python _compact),
 // then rebuild — used by operators that orphan interior verts (extrude).
-Mesh build_compact(const std::vector<A3>& pos, const std::vector<std::vector<int>>& faces) {
+Mesh build_compact(const std::vector<A3>& pos, const std::vector<std::vector<int>>& faces,
+                   const std::vector<Tags>& face_tags) {
     std::set<int> used;
     for (const auto& f : faces)
         for (int i : f) used.insert(i);
@@ -292,7 +304,7 @@ Mesh build_compact(const std::vector<A3>& pos, const std::vector<std::vector<int
         for (int i : f) g.push_back(remap[i]);
         nf.push_back(g);
     }
-    return Mesh::from_pydata(np, nf);
+    return Mesh::from_pydata(np, nf, face_tags);
 }
 }  // namespace
 
@@ -364,11 +376,14 @@ Mesh catmull_clark(const Mesh& mesh) {
     for (const auto& f : mesh.faces()) { jf[f.get()] = static_cast<int>(pos.size()); pos.push_back(fp[f.get()]); }
 
     std::vector<std::vector<int>> quads;
+    std::vector<std::vector<std::string>> quad_tags;
     for (const auto& f : mesh.faces())
-        for (Loop* lp : mesh.face_loops(f.get()))
+        for (Loop* lp : mesh.face_loops(f.get())) {  // child quads inherit the parent face's tags
             quads.push_back({iv[lp->vert], ie[lp->edge], jf[f.get()], ie[lp->prev->edge]});
+            quad_tags.push_back(f->tags);
+        }
 
-    return Mesh::from_pydata(pos, quads);
+    return Mesh::from_pydata(pos, quads, quad_tags);
 }
 
 Mesh Mesh::copy() const {
@@ -376,16 +391,20 @@ Mesh Mesh::copy() const {
     pos.reserve(verts_.size());
     for (const auto& v : verts_) pos.push_back(v->co);
     std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
     faces.reserve(faces_.size());
+    tags.reserve(faces_.size());
     for (const auto& f : faces_) {
         std::vector<int> fv;
         for (Loop* lp : face_loops(f.get())) fv.push_back(lp->vert->id);
         faces.push_back(fv);
+        tags.push_back(f->tags);
     }
-    return from_pydata(pos, faces);
+    return from_pydata(pos, faces, tags);
 }
 
-Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double distance) {
+Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double distance,
+             const std::string& mark) {
     std::set<const Face*> region(region_v.begin(), region_v.end());
     if (region.empty() || std::abs(distance) < 1e-9) return mesh.copy();
 
@@ -416,11 +435,13 @@ Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double 
     }
 
     std::vector<std::vector<int>> new_faces;
+    std::vector<Tags> new_tags;
     for (const auto& f : mesh.faces())  // untouched faces
         if (!region.count(f.get())) {
             std::vector<int> fv;
             for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
             new_faces.push_back(fv);
+            new_tags.push_back(copy_tags(f.get()));
         }
     for (const auto& e : mesh.edges()) {  // side walls bridge edges with one region face
         std::vector<Face*> adj;
@@ -430,17 +451,20 @@ Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double 
             for (Loop* l : mesh.face_loops(adj[0])) if (l->edge == e.get()) { lp = l; break; }
             const int a = lp->vert->id, b = lp->next->vert->id;
             new_faces.push_back({a, b, newid[b], newid[a]});
+            new_tags.push_back(copy_tags(adj[0]));
         }
     }
-    for (const Face* f : region) {  // lifted caps
+    for (const Face* f : region) {  // lifted caps, tagged with `mark` (the next op's handle)
         std::vector<int> cap;
         for (Loop* lp : mesh.face_loops(f)) cap.push_back(newid[lp->vert->id]);
         new_faces.push_back(cap);
+        new_tags.push_back(copy_tags(f, mark));
     }
-    return build_compact(new_pos, new_faces);
+    return build_compact(new_pos, new_faces, new_tags);
 }
 
-Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double thickness) {
+Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double thickness,
+           const std::string& mark) {
     std::set<const Face*> region(region_v.begin(), region_v.end());
     if (region.empty()) return mesh.copy();
     thickness = std::min(std::max(thickness, 1e-3), 0.999);  // avoid degenerate / bowtie
@@ -448,11 +472,13 @@ Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double th
     std::vector<A3> new_pos;
     for (const auto& v : mesh.verts()) new_pos.push_back(v->co);
     std::vector<std::vector<int>> new_faces;
+    std::vector<Tags> new_tags;
     for (const auto& f : mesh.faces())  // untouched faces
         if (!region.count(f.get())) {
             std::vector<int> fv;
             for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
             new_faces.push_back(fv);
+            new_tags.push_back(copy_tags(f.get()));
         }
     for (const Face* f : region) {
         std::vector<int> vids;
@@ -469,11 +495,14 @@ Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double th
                                p[2] + (c[2] - p[2]) * thickness});
         }
         const int n = static_cast<int>(vids.size());
-        for (int k = 0; k < n; ++k)  // border quads
+        for (int k = 0; k < n; ++k) {  // border quads
             new_faces.push_back({vids[k], vids[(k + 1) % n], inner[(k + 1) % n], inner[k]});
-        new_faces.push_back(inner);  // inner face (mesh.faces().back() after a single-face inset)
+            new_tags.push_back(copy_tags(f));
+        }
+        new_faces.push_back(inner);  // inner face, tagged with `mark`
+        new_tags.push_back(copy_tags(f, mark));
     }
-    return Mesh::from_pydata(new_pos, new_faces);
+    return Mesh::from_pydata(new_pos, new_faces, new_tags);
 }
 
 }  // namespace mirage

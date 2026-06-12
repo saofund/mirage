@@ -5,6 +5,8 @@
 #include <pybind11/stl.h>
 
 #include "mirage/mesh.hpp"
+#include "mirage/program.hpp"
+#include "mirage/select.hpp"
 
 namespace py = pybind11;
 using namespace mirage;  // top_face / make_cube / extrude / inset are provided by mirage_core
@@ -38,4 +40,28 @@ PYBIND11_MODULE(_mirage_core, mod) {
             py::arg("mesh"), py::arg("distance") = 0.5);
     mod.def("inset_top", [](const Mesh& m, double t) { return inset(m, {top_face(m)}, t); },
             py::arg("mesh"), py::arg("thickness") = 0.3);
+
+    // op-log (mirage::Program) — the C++ twin of Python meshlang.MeshProgram. It
+    // speaks the SAME JSON dialect, so an op-log authored by either engine (a
+    // human in the GUI or an AI over MCP) replays identically in the other. The
+    // differential test (tests/test_cpp_program.py) builds the SAME JSON in both.
+    py::register_exception<MeshLangError>(mod, "MeshLangError");
+    py::class_<Program>(mod, "Program")
+        .def(py::init<>())
+        .def_static("from_json", &Program::from_json, py::arg("s"))
+        .def("to_json", &Program::to_json, py::arg("indent") = 2)
+        .def("size", &Program::size)
+        .def("build", [](const Program& p) { return p.build(); });
+
+    // Replay an op-log given as a JSON string straight to a kernel Mesh — the
+    // one call a differential harness needs.
+    mod.def("replay_json", [](const std::string& s) { return Program::from_json(s).build(); },
+            py::arg("ops_json"));
+    // Resolve a selector (JSON) against a mesh, returning the matched face count —
+    // exercises the native selection-as-query engine directly.
+    mod.def("selector_count",
+            [](const Mesh& m, const std::string& sel_json) {
+                return resolve(m, json::parse(sel_json)).size();
+            },
+            py::arg("mesh"), py::arg("selector_json"));
 }

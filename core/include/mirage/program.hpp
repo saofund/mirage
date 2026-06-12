@@ -1,53 +1,100 @@
-// mirage::Program — the op-log (the model is a replayable list of operators).
+// mirage::Program — the op-log: the model is a replayable list of operators.
 //
-// This is the seed of the single source of truth that a human (GUI) and an AI
-// will both edit. Selection is currently simplified to "the active face" (the
-// top face after a primitive/subdivide, or the face an inset/extrude just
-// created), pending the full selection-as-query engine. build() replays the
-// ops into a kernel Mesh — the same geometry-as-program idea as the Python
-// meshlang, now native.
+// This is the single source of truth a human (GUI) and an AI (MCP) both edit.
+// Crucially it is a *twin* of the Python meshlang.MeshProgram: an op is the SAME
+// JSON command dict — {"op", "on": <selector>, ...params, "mark"} — so one op-log
+// loads and replays identically in either engine (to_json/from_json bridge them).
+//
+// build() replays the ops into a kernel Mesh, resolving each op's `on` selector
+// against the LIVE mesh (selection-as-query, never a stored index — the
+// Topological Naming Problem) and threading a durable "__out<i>" tag so
+// `last_created` resolves after any op. There is no fragile "active face"
+// heuristic: the selector IS the intent, and it re-evaluates on every rebuild.
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "mirage/mesh.hpp"
+#include "mirage/select.hpp"
 
 namespace mirage {
 
-enum class OpKind { Cube, Cylinder, Inset, Extrude, Subdivide };
-
-struct Op {
-    OpKind kind;
-    double a = 0, b = 0, c = 0;  // params: cube{size}; cylinder{sides,r,h}; inset{t}; extrude{d}; subdivide{levels}
-    bool has_target = false;     // inset/extrude: act on the face nearest `target`
-    std::array<double, 3> target{0, 0, 0};
-};
+using json = nlohmann::json;
 
 class Program {
 public:
-    void cube(double size = 1.0);
-    void cylinder(int sides = 24, double radius = 0.5, double height = 1.0);
-    void inset(double thickness = 0.3);
-    void extrude(double distance = 0.5);
-    void inset_at(const std::array<double, 3>& p, double thickness = 0.3);     // picked-face inset
-    void extrude_at(const std::array<double, 3>& p, double distance = 0.5);    // picked-face extrude
-    void subdivide(int levels = 1);
-    void undo();
+    Program() = default;
+    explicit Program(std::vector<json> ops) : ops_(std::move(ops)) {}
+
+    // -- log editing (mirrors Python MeshProgram.add/insert/replace/delete) ----
+    Program& add(json cmd);
+    Program& insert(std::size_t i, json cmd);
+    Program& replace(std::size_t i, json cmd);
+    Program& erase(std::size_t i);  // Python's `delete` (a C++ keyword)
+    void undo();                    // pop the last op
     void clear();
 
+    // -- fluent builders (sugar; an AI just emits the op dicts) ----------------
+    // `on` is a selector dict (see select.hpp). Default selectors are chosen so a
+    // bare cube()/inset() does the obvious thing in a GUI.
+    Program& cube(double size = 1.0, const std::string& mark = "");
+    Program& cylinder(int sides = 24, double radius = 0.5, double height = 1.0, const std::string& mark = "");
+    Program& extrude(const json& on, double distance = 0.5, const std::string& mark = "");
+    Program& inset(const json& on, double thickness = 0.3, const std::string& mark = "");
+    Program& subdivide(int levels = 1);
+    Program& tag(const json& on, const std::string& name);
+    Program& translate(const json& on, const std::array<double, 3>& by);
+    Program& scale(const json& on, const std::array<double, 3>& by);
+    Program& assert_(const json& cond);  // {"closed_manifold": true} and/or {"euler": n}
+
     bool empty() const { return ops_.empty(); }
-    const std::vector<Op>& ops() const { return ops_; }
+    std::size_t size() const { return ops_.size(); }
+    const std::vector<json>& ops() const { return ops_; }
+    const json& op(std::size_t i) const { return ops_.at(i); }
 
-    // Replay the op-log into a fresh mesh. A primitive op restarts the mesh;
-    // inset/extrude act on the active face and update it to the new one; the
-    // active face becomes the top face after a primitive or subdivide.
-    Mesh build() const;
+    // Replay the op-log into a fresh, validated mesh. Throws MeshLangError /
+    // SelectorEmpty (both derive from std::runtime_error) localised to the op.
+    // `last_tag_out`, when non-null, receives the final "__out<i>" tag — what a
+    // `last_created` selector resolves against (the GUI uses it to show/target
+    // the most recent result).
+    Mesh build(std::string* last_tag_out = nullptr) const;
 
-    static std::string label(const Op& op);
+    // The op-log IS JSON — round-trips with the Python meshlang dialect.
+    std::string to_json(int indent = 2) const;
+    static Program from_json(const std::string& s);
+
+    // One-line human label for the GUI op-log view.
+    static std::string label(const json& op);
 
 private:
-    std::vector<Op> ops_;
+    std::vector<json> ops_;
 };
+
+// Selector sugar (the native mirror of Python meshlang.Sel) — an AI emits the
+// dicts directly; the GUI and tests use these to stay terse and correct.
+namespace sel {
+inline json all() { return json{{"by", "all"}}; }
+inline json normal(const std::string& axis = "z", double sign = 1.0, double tol = 0.5) {
+    return json{{"by", "normal"}, {"axis", axis}, {"sign", sign}, {"tol", tol}};
+}
+inline json tag(const std::string& name) { return json{{"by", "tag"}, {"name", name}}; }
+inline json extreme(const std::string& axis = "z", const std::string& which = "max") {
+    return json{{"by", "extreme"}, {"axis", axis}, {"which", which}};
+}
+inline json side(const std::string& axis = "x", double sign = 1.0) {
+    return json{{"by", "side"}, {"axis", axis}, {"sign", sign}};
+}
+inline json last() { return json{{"by", "last_created"}}; }
+inline json near(const std::array<double, 3>& p) {
+    return json{{"by", "near"}, {"point", {p[0], p[1], p[2]}}};
+}
+inline json AND(std::initializer_list<json> s) { return json{{"and", json(s)}}; }
+inline json OR(std::initializer_list<json> s) { return json{{"or", json(s)}}; }
+inline json NOT(json s) { return json{{"not", std::move(s)}}; }
+}  // namespace sel
 
 }  // namespace mirage
