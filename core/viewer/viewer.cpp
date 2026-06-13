@@ -262,6 +262,9 @@ static double g_lx = 0, g_ly = 0;
 static bool g_drag = false, g_moved = false;
 static double g_press_x = 0, g_press_y = 0;
 static bool g_pick_request = false; static double g_px = 0, g_py = 0;  // a click to resolve into a face
+static V3 g_pan{0, 0, 0};                       // orbit-target pan offset (right-drag)
+static bool g_panning = false;
+static V3 g_cam_right{1, 0, 0}, g_cam_up{0, 0, 1};  // camera basis, refreshed each frame for panning
 // What the next operator targets, as a re-evaluable selector (never a stored
 // index — TNP-safe):
 //   NONE  -> the top face(s)          sel::normal z+
@@ -315,6 +318,12 @@ static bool ray_tri(V3 o, V3 d, V3 a, V3 b, V3 c, float& t) {  // Moller-Trumbor
 
 static bool ui_wants_mouse() { return g_imgui && ImGui::GetIO().WantCaptureMouse; }
 static void on_mouse(GLFWwindow* w, int button, int action, int) {
+    if (button == GLFW_MOUSE_BUTTON_RIGHT) {  // right-drag pans the orbit target
+        if (action == GLFW_PRESS && !ui_wants_mouse()) {
+            g_panning = true; glfwGetCursorPos(w, &g_lx, &g_ly);
+        } else if (action == GLFW_RELEASE) g_panning = false;
+        return;
+    }
     if (button != GLFW_MOUSE_BUTTON_LEFT) return;
     if (action == GLFW_PRESS) {
         if (ui_wants_mouse()) { g_drag = false; return; }
@@ -326,7 +335,11 @@ static void on_mouse(GLFWwindow* w, int button, int action, int) {
     }
 }
 static void on_cursor(GLFWwindow*, double x, double y) {
-    if (g_drag && !ui_wants_mouse()) {
+    if (g_panning) {  // move the orbit target in the camera's screen plane
+        const float k = g_dist * 0.0018f;
+        for (int i = 0; i < 3; ++i)
+            g_pan[i] += -g_cam_right[i] * float(x - g_lx) * k + g_cam_up[i] * float(y - g_ly) * k;
+    } else if (g_drag && !ui_wants_mouse()) {
         if (std::fabs(x - g_press_x) + std::fabs(y - g_press_y) > 4.0) g_moved = true;
         if (g_moved) {  // drag past a small threshold -> orbit
             g_yaw += float(x - g_lx) * 0.01f; g_pitch += float(y - g_ly) * 0.01f;
@@ -530,7 +543,8 @@ int main(int argc, char** argv) {
         int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
         float ndcx = 2.0f * float(px) / float(ww ? ww : 1) - 1.0f;
         float ndcy = 1.0f - 2.0f * float(py) / float(wh ? wh : 1);
-        V3 c = g.center, eye = orbit_eye(c);
+        V3 c = {g.center[0] + g_pan[0], g.center[1] + g_pan[1], g.center[2] + g_pan[2]};
+        V3 eye = orbit_eye(c);
         V3 fwd = norm(sub(c, eye)), s = norm(cross(fwd, {0, 0, 1})), u = cross(s, fwd);
         float fovy = 0.9f, asp = float(fw) / float(fh ? fh : 1), tt = std::tan(fovy * 0.5f);
         V3 dir = norm({fwd[0] + ndcx*tt*asp*s[0] + ndcy*tt*u[0],
@@ -606,9 +620,13 @@ int main(int argc, char** argv) {
         glViewport(0, 0, fw, fh);
         glClearColor(0.13f, 0.14f, 0.16f, 1.0f);  // neutral studio grey
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        V3 c = g.center, eye = orbit_eye(c);
+        V3 c = {g.center[0] + g_pan[0], g.center[1] + g_pan[1], g.center[2] + g_pan[2]};
+        V3 eye = orbit_eye(c);
         Mat4 mvp = mul(perspective(0.9f, float(fw) / float(fh ? fh : 1), 0.05f, 100.0f),
                        look_at(eye, c, {0, 0, 1}));
+        V3 fwd = norm(sub(c, eye));                 // refresh the camera basis (for panning)
+        g_cam_right = norm(cross(fwd, {0, 0, 1}));
+        g_cam_up = cross(g_cam_right, fwd);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, depthTex);
 
@@ -677,9 +695,14 @@ int main(int argc, char** argv) {
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();
+        const bool redoable = prog.can_redo();
+        if (!redoable) ImGui::BeginDisabled();
+        if (ImGui::Button("Redo")) { prog.redo(); dirty = true; }
+        if (!redoable) ImGui::EndDisabled();
+        ImGui::SameLine();
         if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::SameLine();
-        if (ImGui::Button("Frame")) { g_yaw = 2.3f; g_pitch = 0.35f; g_dist = g.radius * 3.0f; }  // reset the view
+        if (ImGui::Button("Frame")) { g_yaw = 2.3f; g_pitch = 0.35f; g_dist = g.radius * 3.0f; g_pan = {0, 0, 0}; }  // reset the view
         ImGui::Spacing();
         // The op-log is the shared SoT: Save writes the JSON an AI (MCP) can Load,
         // and vice-versa — one model, a human and an AI both editing it. Live sync
@@ -777,7 +800,7 @@ int main(int argc, char** argv) {
         write_ppm(shot, fw, fh);
         std::printf("wrote %s (%dx%d, %d tris)\n", shot.c_str(), fw, fh, g.verts / 3);
     } else {
-        std::printf("Mirage native viewport — drag to orbit, scroll to zoom, click tools to model, Esc to quit.\n");
+        std::printf("Mirage native viewport — left-drag orbit, right-drag pan, scroll zoom, click to pick, Esc quit.\n");
         while (!glfwWindowShouldClose(win)) {
             glfwPollEvents();
             if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) break;

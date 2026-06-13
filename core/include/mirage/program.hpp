@@ -35,7 +35,9 @@ public:
     Program& insert(std::size_t i, json cmd);
     Program& replace(std::size_t i, json cmd);
     Program& erase(std::size_t i);  // Python's `delete` (a C++ keyword)
-    void undo();                    // pop the last op
+    void undo();                    // pop the last op onto the redo stack
+    void redo();                    // re-apply the last undone op
+    bool can_redo() const { return !redo_.empty(); }
     void clear();
 
     // -- fluent builders (sugar; an AI just emits the op dicts) ----------------
@@ -74,6 +76,7 @@ public:
 
 private:
     std::vector<json> ops_;
+    std::vector<json> redo_;  // ops popped by undo(), transient (not part of the saved SoT)
 };
 
 // Selector sugar (the native mirror of Python meshlang.Sel) — an AI emits the

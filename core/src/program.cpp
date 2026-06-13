@@ -88,15 +88,18 @@ std::string on_suffix(const json& op) {
 // --------------------------------------------------------------------------- //
 // log editing
 // --------------------------------------------------------------------------- //
-Program& Program::add(json cmd) { ops_.push_back(std::move(cmd)); return *this; }
+// Any explicit edit invalidates the redo stack (you can't redo onto a new branch).
+Program& Program::add(json cmd) { ops_.push_back(std::move(cmd)); redo_.clear(); return *this; }
 Program& Program::insert(std::size_t i, json cmd) {
     ops_.insert(ops_.begin() + std::min(i, ops_.size()), std::move(cmd));
+    redo_.clear();
     return *this;
 }
-Program& Program::replace(std::size_t i, json cmd) { ops_.at(i) = std::move(cmd); return *this; }
-Program& Program::erase(std::size_t i) { ops_.erase(ops_.begin() + i); return *this; }
-void Program::undo() { if (!ops_.empty()) ops_.pop_back(); }
-void Program::clear() { ops_.clear(); }
+Program& Program::replace(std::size_t i, json cmd) { ops_.at(i) = std::move(cmd); redo_.clear(); return *this; }
+Program& Program::erase(std::size_t i) { ops_.erase(ops_.begin() + i); redo_.clear(); return *this; }
+void Program::undo() { if (!ops_.empty()) { redo_.push_back(std::move(ops_.back())); ops_.pop_back(); } }
+void Program::redo() { if (!redo_.empty()) { ops_.push_back(std::move(redo_.back())); redo_.pop_back(); } }
+void Program::clear() { ops_.clear(); redo_.clear(); }
 
 // --------------------------------------------------------------------------- //
 // fluent builders
