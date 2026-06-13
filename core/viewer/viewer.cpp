@@ -49,6 +49,12 @@ static Mat4 perspective(float fovy, float asp, float n, float f) {
     m[0] = t / asp; m[5] = t; m[10] = (f + n) / (n - f); m[11] = -1; m[14] = (2 * f * n) / (n - f);
     return m;
 }
+static Mat4 ortho(float l, float r, float b, float t, float n, float f) {  // for the shadow light
+    Mat4 m{};
+    m[0] = 2 / (r - l); m[5] = 2 / (t - b); m[10] = -2 / (f - n); m[15] = 1;
+    m[12] = -(r + l) / (r - l); m[13] = -(t + b) / (t - b); m[14] = -(f + n) / (f - n);
+    return m;
+}
 static V3 sub(V3 a, V3 b) { return {a[0] - b[0], a[1] - b[1], a[2] - b[2]}; }
 static V3 cross(V3 a, V3 b) { return {a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]}; }
 static float dot(V3 a, V3 b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
@@ -106,21 +112,35 @@ static GLuint compile(GLenum type, const char* src) {
     if (!ok) { char log[1024]; glGetShaderInfoLog(s, 1024, nullptr, log); std::fprintf(stderr, "shader: %s\n", log); }
     return s;
 }
+static GLuint make_program(const char* vs, const char* fs) {
+    GLuint p = glCreateProgram();
+    GLuint v = compile(GL_VERTEX_SHADER, vs), f = compile(GL_FRAGMENT_SHADER, fs);
+    glAttachShader(p, v); glAttachShader(p, f); glLinkProgram(p);
+    GLint ok = 0; glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) { char log[1024]; glGetProgramInfoLog(p, 1024, nullptr, log); std::fprintf(stderr, "link: %s\n", log); }
+    glDeleteShader(v); glDeleteShader(f);
+    return p;
+}
+// The key light also casts the shadow — keep this in sync with the C++ light rig.
+#define KEY_LIGHT "normalize(vec3(0.4,0.5,0.8))"
+
 static const char* VERT = R"(#version 330 core
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 uniform mat4 uMVP;
+uniform mat4 uLightVP;
 out vec3 vN;
 out vec3 vWorld;
-void main(){ vWorld = aPos; vN = aNormal; gl_Position = uMVP * vec4(aPos,1.0); }
+out vec4 vLightPos;
+void main(){ vWorld=aPos; vN=aNormal; vLightPos=uLightVP*vec4(aPos,1.0); gl_Position=uMVP*vec4(aPos,1.0); }
 )";
 // Physically-based viewport: Cook-Torrance microfacet specular (GGX/Trowbridge-
 // Reitz NDF, Smith height-correlated geometry, Schlick Fresnel) + Lambert
-// diffuse, lit by a studio 3-point rig and a hemispherical ambient, then ACES
-// tonemapped. uFlat reconstructs per-face normals from screen-space derivatives
-// (true faceting for hard-surface models, no geometry change).
+// diffuse, lit by a studio 3-point rig and a hemispherical ambient, with a
+// shadow-mapped key light, then ACES tonemapped. uFlat reconstructs per-face
+// normals from screen-space derivatives (true faceting, no geometry change).
 static const char* FRAG = R"(#version 330 core
-in vec3 vN; in vec3 vWorld;
+in vec3 vN; in vec3 vWorld; in vec4 vLightPos;
 out vec4 frag;
 uniform vec3 uEye;
 uniform vec3 uAlbedo;
@@ -128,6 +148,7 @@ uniform float uMetallic;
 uniform float uRough;
 uniform int uFlat;
 uniform int uHighlight;
+uniform sampler2D uShadow;
 const float PI = 3.14159265359;
 
 float D_GGX(float NoH, float a){ float a2=a*a; float d=NoH*NoH*(a2-1.0)+1.0; return a2/(PI*d*d); }
@@ -150,6 +171,17 @@ vec3 brdf(vec3 N, vec3 V, vec3 L, vec3 radiance, vec3 albedo, float metallic, fl
   vec3 kd = (vec3(1.0)-F)*(1.0-metallic);
   return (kd*albedo/PI + spec)*radiance*NoL;
 }
+// 3x3 PCF shadow visibility (1 = lit, 0 = fully shadowed).
+float shadow_vis(vec4 lp, float NoL){
+  vec3 p = lp.xyz/lp.w * 0.5 + 0.5;
+  if(p.z > 1.0) return 1.0;
+  float bias = max(0.003*(1.0-NoL), 0.0010);
+  vec2 tx = 1.0/vec2(textureSize(uShadow,0));
+  float s = 0.0;
+  for(int x=-1;x<=1;x++) for(int y=-1;y<=1;y++)
+    s += (p.z - bias > texture(uShadow, p.xy + vec2(x,y)*tx).r) ? 0.0 : 1.0;
+  return s/9.0;
+}
 vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
 
 void main(){
@@ -157,13 +189,68 @@ void main(){
   vec3 N = (uFlat==1) ? normalize(cross(dFdx(vWorld), dFdy(vWorld))) : normalize(vN);
   vec3 V = normalize(uEye - vWorld);
   if(dot(N,V) < 0.0) N = -N;                       // two-sided shading
+  vec3 key = )" KEY_LIGHT R"(;
+  float vis = shadow_vis(vLightPos, max(dot(N,key),0.0));
   vec3 col = vec3(0.0);
-  col += brdf(N,V, normalize(vec3( 0.4, 0.5, 0.8)), vec3(3.0,2.9,2.7), uAlbedo,uMetallic,uRough); // key
+  col += vis * brdf(N,V, key,                       vec3(3.0,2.9,2.7), uAlbedo,uMetallic,uRough); // key (shadowed)
   col += brdf(N,V, normalize(vec3(-0.6, 0.2, 0.3)), vec3(0.5,0.6,0.8), uAlbedo,uMetallic,uRough); // fill (cool)
   col += brdf(N,V, normalize(vec3( 0.1,-0.7, 0.4)), vec3(0.5,0.45,0.4), uAlbedo,uMetallic,uRough); // rim (warm)
   float hemi = 0.5+0.5*N.z;                          // sky/ground hemispherical ambient
   col += mix(vec3(0.10,0.10,0.12), vec3(0.32,0.35,0.40), hemi) * uAlbedo * (1.0-uMetallic*0.7);
   frag = vec4(pow(aces(col), vec3(0.4545)), 1.0);
+}
+)";
+
+// Shadow caster — depth-only render from the light's point of view.
+static const char* DEPTH_VERT = R"(#version 330 core
+layout(location=0) in vec3 aPos;
+uniform mat4 uLightVP;
+void main(){ gl_Position = uLightVP * vec4(aPos,1.0); }
+)";
+static const char* DEPTH_FRAG = R"(#version 330 core
+void main(){}
+)";
+
+// Studio floor — an anti-aliased world grid that receives the key-light shadow
+// and fades to the background at the rim (so the model sits in a scene, not void).
+static const char* GRID_VERT = R"(#version 330 core
+layout(location=0) in vec3 aPos;
+uniform mat4 uMVP;
+uniform mat4 uLightVP;
+out vec3 vWorld;
+out vec4 vLightPos;
+void main(){ vWorld=aPos; vLightPos=uLightVP*vec4(aPos,1.0); gl_Position=uMVP*vec4(aPos,1.0); }
+)";
+static const char* GRID_FRAG = R"(#version 330 core
+in vec3 vWorld; in vec4 vLightPos;
+out vec4 frag;
+uniform sampler2D uShadow;
+uniform vec2 uCenter;
+uniform float uFade;
+float shadow_vis(vec4 lp){
+  vec3 p = lp.xyz/lp.w * 0.5 + 0.5;
+  if(p.z > 1.0) return 1.0;
+  vec2 tx = 1.0/vec2(textureSize(uShadow,0));
+  float s = 0.0;
+  for(int x=-1;x<=1;x++) for(int y=-1;y<=1;y++)
+    s += (p.z - 0.0015 > texture(uShadow, p.xy + vec2(x,y)*tx).r) ? 0.0 : 1.0;
+  return s/9.0;
+}
+float gridline(vec2 p, float scale){
+  vec2 c = abs(fract(p/scale - 0.5) - 0.5) / fwidth(p/scale);
+  return 1.0 - min(min(c.x,c.y),1.0);
+}
+void main(){
+  float vis = shadow_vis(vLightPos);
+  vec3 base = vec3(0.165,0.175,0.205);
+  float major = gridline(vWorld.xy, 1.0);
+  float minor = gridline(vWorld.xy, 0.25)*0.35;
+  vec3 col = mix(base, vec3(0.34,0.36,0.42), max(major,minor));
+  if(abs(vWorld.y) < 0.012) col = vec3(0.55,0.27,0.27);  // X axis (red)
+  if(abs(vWorld.x) < 0.012) col = vec3(0.30,0.52,0.32);  // Y axis (green)
+  col *= (0.32 + 0.68*vis);                              // the model's shadow on the floor
+  float a = clamp(1.0 - length(vWorld.xy - uCenter)/uFade, 0.0, 1.0);
+  frag = vec4(pow(col, vec3(0.4545)), a*a*0.97);
 }
 )";
 
@@ -316,21 +403,26 @@ int main(int argc, char** argv) {
     }
     glEnable(GL_DEPTH_TEST);
 
-    GLuint prog_gl = glCreateProgram();
-    GLuint vs = compile(GL_VERTEX_SHADER, VERT), fs = compile(GL_FRAGMENT_SHADER, FRAG);
-    glAttachShader(prog_gl, vs);
-    glAttachShader(prog_gl, fs);
-    glLinkProgram(prog_gl);
-    GLint linked = 0; glGetProgramiv(prog_gl, GL_LINK_STATUS, &linked);
-    if (!linked) { char log[1024]; glGetProgramInfoLog(prog_gl, 1024, nullptr, log); std::fprintf(stderr, "link: %s\n", log); }
-    glDeleteShader(vs); glDeleteShader(fs);  // flagged for deletion once detached at link
+    GLuint prog_gl = make_program(VERT, FRAG);
     const GLint locMVP = glGetUniformLocation(prog_gl, "uMVP");
+    const GLint locLightVP = glGetUniformLocation(prog_gl, "uLightVP");
     const GLint locEye = glGetUniformLocation(prog_gl, "uEye");
     const GLint locAlbedo = glGetUniformLocation(prog_gl, "uAlbedo");
     const GLint locMetallic = glGetUniformLocation(prog_gl, "uMetallic");
     const GLint locRough = glGetUniformLocation(prog_gl, "uRough");
     const GLint locFlat = glGetUniformLocation(prog_gl, "uFlat");
     const GLint locHighlight = glGetUniformLocation(prog_gl, "uHighlight");
+    const GLint locShadow = glGetUniformLocation(prog_gl, "uShadow");
+
+    GLuint depth_gl = make_program(DEPTH_VERT, DEPTH_FRAG);  // shadow caster
+    const GLint locDLightVP = glGetUniformLocation(depth_gl, "uLightVP");
+
+    GLuint grid_gl = make_program(GRID_VERT, GRID_FRAG);     // studio floor
+    const GLint locGMVP = glGetUniformLocation(grid_gl, "uMVP");
+    const GLint locGLightVP = glGetUniformLocation(grid_gl, "uLightVP");
+    const GLint locGShadow = glGetUniformLocation(grid_gl, "uShadow");
+    const GLint locGCenter = glGetUniformLocation(grid_gl, "uCenter");
+    const GLint locGFade = glGetUniformLocation(grid_gl, "uFade");
 
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo);
@@ -350,6 +442,32 @@ int main(int argc, char** argv) {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+    GLuint gvao, gvbo;  // studio floor quad (position-only)
+    glGenVertexArrays(1, &gvao); glGenBuffers(1, &gvbo);
+    glBindVertexArray(gvao);
+    glBindBuffer(GL_ARRAY_BUFFER, gvbo);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // shadow map: a depth texture rendered from the key light's POV
+    const int SHADOW_SZ = 2048;
+    GLuint depthFBO, depthTex;
+    glGenFramebuffers(1, &depthFBO);
+    glGenTextures(1, &depthTex);
+    glBindTexture(GL_TEXTURE_2D, depthTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, SHADOW_SZ, SHADOW_SZ, 0,
+                 GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    const float border[4] = {1, 1, 1, 1};  // outside the light frustum = fully lit
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+    glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
+    glDrawBuffer(GL_NONE); glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     std::string last_tag;            // the build's most recent __out tag (for sel::last)
     Mesh model = prog.build(&last_tag);
     Gpu g = build_gpu(model);
@@ -360,6 +478,22 @@ int main(int argc, char** argv) {
                      g.data.empty() ? nullptr : g.data.data(), GL_DYNAMIC_DRAW);
     };
     upload();
+
+    // The studio floor: a large quad just below the model, rebuilt when the model
+    // changes so the grid + shadow always sit at the model's base.
+    float ground_z = 0.0f, ground_S = 10.0f;
+    auto build_ground = [&]() {
+        float minz = 1e9f;
+        for (const auto& v : model.verts()) minz = std::min(minz, (float)v->co[2]);
+        ground_z = (model.num_verts() ? minz : 0.0f) - 0.002f * g.radius;
+        ground_S = std::max(g.radius * 9.0f, 5.0f);
+        const float cx = g.center[0], cy = g.center[1], z = ground_z, S = ground_S;
+        const float q[18] = {cx-S, cy-S, z,  cx+S, cy-S, z,  cx+S, cy+S, z,
+                             cx-S, cy-S, z,  cx+S, cy+S, z,  cx-S, cy+S, z};
+        glBindBuffer(GL_ARRAY_BUFFER, gvbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_DYNAMIC_DRAW);
+    };
+    build_ground();
 
     // Highlight = exactly what the next op will hit: resolve the current selector
     // against the live mesh (so the highlight and the action can never disagree).
@@ -426,7 +560,7 @@ int main(int argc, char** argv) {
             loaded.build();  // validate before adopting
             prog = std::move(loaded);
             g_sel_mode = SEL_NONE;
-            model = prog.build(&last_tag); g = build_gpu(model); upload(); rebuild_highlight();
+            model = prog.build(&last_tag); g = build_gpu(model); upload(); build_ground(); rebuild_highlight();
             g_last_mtime = file_mtime(g_oplog_path);
             std::snprintf(g_io_status, sizeof(g_io_status), "loaded %zu ops <- %s", prog.size(), g_oplog_path);
             return true;
@@ -444,22 +578,63 @@ int main(int argc, char** argv) {
     };
 
     auto draw = [&]() {
+        // The key light's view-projection (must agree with KEY_LIGHT in the shader):
+        // an orthographic camera looking down the key direction, fitted to the model.
+        V3 Ld = norm({0.4f, 0.5f, 0.8f});
+        const float R = g.radius * 2.4f + 0.3f;
+        V3 lc = {g.center[0], g.center[1], ground_z + g.radius * 0.5f};
+        V3 le = {lc[0] + Ld[0] * R * 3, lc[1] + Ld[1] * R * 3, lc[2] + Ld[2] * R * 3};
+        Mat4 lightVP = mul(ortho(-R, R, -R, R, 0.05f, R * 8), look_at(le, lc, {0, 0, 1}));
+
+        // --- shadow pass: render the model's depth from the light ---
+        if (g.verts > 0) {
+            glViewport(0, 0, SHADOW_SZ, SHADOW_SZ);
+            glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glUseProgram(depth_gl);
+            glUniformMatrix4fv(locDLightVP, 1, GL_FALSE, lightVP.data());
+            glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(2.5f, 4.0f);  // tame shadow acne
+            glBindVertexArray(vao);
+            glDrawArrays(GL_TRIANGLES, 0, g.verts);
+            glDisable(GL_POLYGON_OFFSET_FILL);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+
+        // --- main pass ---
         int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
         glViewport(0, 0, fw, fh);
-        glClearColor(0.16f, 0.17f, 0.19f, 1.0f);  // neutral studio grey
+        glClearColor(0.13f, 0.14f, 0.16f, 1.0f);  // neutral studio grey
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        if (g.verts == 0) return;
         V3 c = g.center, eye = orbit_eye(c);
         Mat4 mvp = mul(perspective(0.9f, float(fw) / float(fh ? fh : 1), 0.05f, 100.0f),
                        look_at(eye, c, {0, 0, 1}));
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, depthTex);
+
+        // studio floor (grid + received shadow), alpha-blended to fade at the rim
+        glUseProgram(grid_gl);
+        glUniformMatrix4fv(locGMVP, 1, GL_FALSE, mvp.data());
+        glUniformMatrix4fv(locGLightVP, 1, GL_FALSE, lightVP.data());
+        glUniform1i(locGShadow, 0);
+        glUniform2f(locGCenter, c[0], c[1]);
+        glUniform1f(locGFade, ground_S);
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBindVertexArray(gvao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glDisable(GL_BLEND);
+
+        if (g.verts == 0) return;
+        // the model
         glUseProgram(prog_gl);
         glUniformMatrix4fv(locMVP, 1, GL_FALSE, mvp.data());
+        glUniformMatrix4fv(locLightVP, 1, GL_FALSE, lightVP.data());
         glUniform3f(locEye, eye[0], eye[1], eye[2]);
         glUniform3f(locAlbedo, g_albedo[0], g_albedo[1], g_albedo[2]);
         glUniform1f(locMetallic, g_metallic);
         glUniform1f(locRough, g_rough);
         glUniform1i(locFlat, g_flat ? 1 : 0);
         glUniform1i(locHighlight, 0);
+        glUniform1i(locShadow, 0);
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLES, 0, g.verts);
         if (hl_verts > 0) {  // selected face, pulled slightly forward to avoid z-fighting
@@ -550,7 +725,7 @@ int main(int argc, char** argv) {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
         if (panel()) {
-            model = prog.build(&last_tag); g = build_gpu(model); upload(); rebuild_highlight();
+            model = prog.build(&last_tag); g = build_gpu(model); upload(); build_ground(); rebuild_highlight();
             if (g_live_sync) save_oplog();  // push the human's edit to the shared op-log
         }
         draw();
