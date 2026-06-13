@@ -26,6 +26,7 @@ add_library(mirage_core STATIC
   src/mesh.cpp
   src/select.cpp
   src/program.cpp
+  src/lint.cpp
   src/raytrace.cpp
 )
 target_include_directories(mirage_core PUBLIC include)

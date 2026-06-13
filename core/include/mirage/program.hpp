@@ -18,6 +18,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "mirage/lint.hpp"
 #include "mirage/mesh.hpp"
 #include "mirage/select.hpp"
 
@@ -66,6 +67,9 @@ public:
     // `last_created` selector resolves against (the GUI uses it to show/target
     // the most recent result).
     Mesh build(std::string* last_tag_out = nullptr) const;
+
+    // Static lint of the op-log: silent traps that build but lose intent.
+    std::vector<LintWarning> lint() const { return lint_program(ops_); }
 
     // The op-log IS JSON — round-trips with the Python meshlang dialect.
     std::string to_json(int indent = 2) const;

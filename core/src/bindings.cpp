@@ -57,6 +57,18 @@ PYBIND11_MODULE(_mirage_core, mod) {
     // one call a differential harness needs.
     mod.def("replay_json", [](const std::string& s) { return Program::from_json(s).build(); },
             py::arg("ops_json"));
+    // Lint an op-log (JSON string) -> list of {op_index, code, message, suggestion}.
+    // Differential-tested against Python repair.lint_program (tests/test_cpp_program).
+    mod.def("lint_json", [](const std::string& s) {
+        py::list out;
+        for (const LintWarning& w : lint_program(json::parse(s).get<std::vector<json>>())) {
+            py::dict d;
+            d["op_index"] = w.op_index; d["code"] = w.code;
+            d["message"] = w.message; d["suggestion"] = w.suggestion;
+            out.append(d);
+        }
+        return out;
+    }, py::arg("ops_json"));
     // Resolve a selector (JSON) against a mesh, returning the matched face count —
     // exercises the native selection-as-query engine directly.
     mod.def("selector_count",

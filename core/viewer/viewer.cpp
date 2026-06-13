@@ -758,6 +758,14 @@ int main(int argc, char** argv) {
         ImGui::TextDisabled("op-log (the model)");
         int i = 0;
         for (const auto& op : prog.ops()) ImGui::Text("%2d  %s", i++, Program::label(op).c_str());
+        // Lint: silent traps that build but lose intent (same checks the AI gets).
+        auto warns = prog.lint();
+        if (!warns.empty()) {
+            ImGui::Separator();
+            ImGui::TextDisabled("lint (silent traps)");
+            for (const auto& w : warns)
+                ImGui::TextColored(ImVec4(1.0f, 0.78f, 0.25f, 1.0f), "! op %d  %s", w.op_index, w.code.c_str());
+        }
         ImGui::End();
         return dirty;
     };

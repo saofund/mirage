@@ -183,3 +183,31 @@ def test_empty_selector_raises():
 def test_op_before_primitive_raises():
     with pytest.raises(Exception):
         cpp.replay_json(json.dumps([{"op": "inset", "on": {"by": "all"}, "thickness": 0.3}]))
+
+
+# ----- the native lint pass, checked against the Python one -------------------
+from mirage.repair import lint_program  # noqa: E402
+
+LINT_CASES = [
+    # each builds cleanly but trips a silent-trap warning
+    [{"op": "cube"}, {"op": "extrude", "on": {"by": "normal", "axis": "z"}, "distance": 0.0}],     # extrude_noop
+    [{"op": "cube"}, {"op": "extrude", "on": {"by": "all"}, "distance": 0.5}],                     # extrude_all
+    [{"op": "cube"}, {"op": "inset", "on": {"by": "normal", "axis": "z"}, "thickness": 1.5}],      # inset_clamped
+    [{"op": "cube"}, {"op": "bevel", "on": {"by": "normal", "axis": "z"}, "width": 2.0, "depth": 0.1}],  # bevel_width_clamped
+    [{"op": "cube"}, {"op": "bevel", "on": {"by": "normal", "axis": "z"}, "width": 0.2, "depth": 0.0}],  # bevel_flat
+    [{"op": "cube"}, {"op": "subdivide", "levels": 0}],                                            # subdivide_noop
+    [{"op": "cube"}, {"op": "subdivide", "levels": 9}],                                            # subdivide_explosive
+    [{"op": "cube"}, {"op": "inset", "on": {"by": "extreme", "axis": "z", "which": "highest"}, "thickness": 0.3}],  # extreme_which
+    [{"op": "cube"}, {"op": "inset", "on": {"by": "last_created"}, "thickness": 0.3}],             # last_created_broad
+    [{"op": "cube"}, {"op": "extrude", "on": {"by": "side", "axis": "x", "sign": 0}, "distance": 0.5}],  # sign_zero
+    [{"op": "cube"},  # nested trap inside and/not — must be caught at depth
+     {"op": "inset", "on": {"and": [{"by": "all"}, {"not": {"by": "extreme", "axis": "z", "which": "top"}}]}, "thickness": 0.3}],
+    [{"op": "cube"}, {"op": "extrude", "on": {"by": "normal", "axis": "z"}, "distance": 0.5}],     # clean: no warnings
+]
+
+
+@pytest.mark.parametrize("ops", LINT_CASES)
+def test_lint_matches_python(ops):
+    py = sorted((w["op_index"], w["code"]) for w in lint_program(ops))
+    cp = sorted((w["op_index"], w["code"]) for w in cpp.lint_json(json.dumps(ops)))
+    assert cp == py, f"lint diverged for {ops}: C++ {cp} vs Python {py}"
