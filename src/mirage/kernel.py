@@ -439,6 +439,86 @@ def bevel_faces(mesh: Mesh, faces, width: float = 0.2, depth: float = 0.1, mark:
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
+def loop_cut(mesh: Mesh, seed_faces, axis: str = "z", mark: str | None = None) -> Mesh:
+    """Insert an edge loop. From a seed quad, walk the ring of quads whose shared
+    edges run along ``axis`` and bisect each one, threading a continuous loop of
+    new midpoint vertices (so the cut is watertight). Only quad strips are cut —
+    an n-gon (e.g. a cylinder cap) stops the walk. Returns a fresh, valid mesh.
+
+    This is the classic hard-surface loop cut: e.g. a loop around a cylinder's
+    waist, or a horizontal band around a cube. The cut faces are tagged ``mark``."""
+    import numpy as np
+    seed = next(iter(seed_faces), None)
+    if seed is None or len(mesh.face_verts(seed)) != 4:
+        return mesh.copy()  # only a quad can seed a loop cut
+    ax = "xyz".index(axis)
+
+    def quad_edges(f):
+        return [lp.edge for lp in mesh.face_loops(f)]
+
+    def opposite_edge(f, e):
+        es = quad_edges(f)
+        return es[(es.index(e) + 2) % 4]
+
+    def other_face(e, f):
+        fs = [x for x in mesh.edge_faces(e) if x is not f]
+        return fs[0] if fs else None
+
+    # The seed's crossed edge-pair: the opposite pair most aligned with `axis`
+    # (so the new bisecting edge runs perpendicular — the loop encircles `axis`).
+    loops = list(mesh.face_loops(seed))
+    es = [lp.edge for lp in loops]
+    dirs = [np.array(lp.next.vert.co) - np.array(lp.vert.co) for lp in loops]
+
+    def pair_align(i):
+        a = abs(dirs[i][ax]) / (np.linalg.norm(dirs[i]) or 1.0)
+        b = abs(dirs[(i + 2) % 4][ax]) / (np.linalg.norm(dirs[(i + 2) % 4]) or 1.0)
+        return a + b
+
+    i0 = 0 if pair_align(0) >= pair_align(1) else 1
+
+    # Walk the connected ring of quads linked through the crossed edges.
+    cross = {id(seed): (es[i0], es[(i0 + 2) % 4])}
+    seen, ring, crossed = set(), [], set()
+    stack = [seed]
+    while stack:
+        f = stack.pop()
+        if id(f) in seen or len(mesh.face_verts(f)) != 4:
+            continue
+        seen.add(id(f))
+        ea, ec = cross[id(f)]
+        crossed.add(ea); crossed.add(ec)
+        ring.append(f)
+        for e in (ea, ec):
+            nf = other_face(e, f)
+            if nf is not None and id(nf) not in seen and len(mesh.face_verts(nf)) == 4 and id(nf) not in cross:
+                cross[id(nf)] = (e, opposite_edge(nf, e))
+                stack.append(nf)
+
+    new_pos = [list(v.co) for v in mesh.verts]
+    mid = {}  # crossed edge -> new midpoint vertex id
+    for e in crossed:
+        p = (np.array(e.v1.co) + np.array(e.v2.co)) * 0.5
+        mid[e] = len(new_pos); new_pos.append([float(p[0]), float(p[1]), float(p[2])])
+
+    ring_ids = {id(f) for f in ring}
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:
+        if id(f) not in ring_ids:
+            new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs))
+            continue
+        vids = [lp.vert.id for lp in mesh.face_loops(f)]
+        fedges = quad_edges(f)
+        ea, ec = cross[id(f)]
+        i = next(k for k in range(4) if fedges[k] in (ea, ec))  # crossed pair at i and i+2
+        mi, mj = mid[fedges[i]], mid[fedges[(i + 2) % 4]]
+        quad1 = [vids[i], mi, mj, vids[(i + 3) % 4]]
+        quad2 = [mi, vids[(i + 1) % 4], vids[(i + 2) % 4], mj]
+        for q in (quad1, quad2):
+            new_faces.append(q); new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
 def make_cube(size: float = 1.0) -> Mesh:
     s = size / 2.0
     p = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),

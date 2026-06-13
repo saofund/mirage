@@ -22,7 +22,7 @@ import json
 
 from .kernel import (
     Mesh, make_cube, make_cylinder_ngon, face_normal, faces_by_normal,
-    extrude_faces, inset_faces, bevel_faces, catmull_clark,
+    extrude_faces, inset_faces, bevel_faces, loop_cut, catmull_clark,
 )
 
 
@@ -222,6 +222,7 @@ class MeshProgram:
     def extrude(self, on, distance=0.5, mark=None): return self.add(**_cmd("extrude", on=on, mark=mark, distance=distance))
     def inset(self, on, thickness=0.3, mark=None): return self.add(**_cmd("inset", on=on, mark=mark, thickness=thickness))
     def bevel(self, on, width=0.2, depth=0.1, mark=None): return self.add(**_cmd("bevel", on=on, mark=mark, width=width, depth=depth))
+    def loop_cut(self, on, axis="z", mark=None): return self.add(**_cmd("loop_cut", on=on, mark=mark, axis=axis))
     def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
     def translate(self, on, by): return self.add(**_cmd("translate", on=on, by=list(by)))
@@ -254,6 +255,10 @@ class MeshProgram:
                 elif op == "bevel":
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
                     mesh = bevel_faces(mesh, sel, cmd.get("width", 0.2), cmd.get("depth", 0.1), mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "loop_cut":
+                    sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
+                    mesh = loop_cut(mesh, sel, cmd.get("axis", "z"), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "subdivide":
                     for _ in range(cmd.get("levels", 1)):

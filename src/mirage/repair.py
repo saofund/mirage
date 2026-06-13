@@ -37,7 +37,8 @@ from dataclasses import dataclass, field
 from .kernel import Mesh, face_normal, _compact, _copy_attrs
 from .meshlang import MeshProgram, SelectorEmpty, describe, resolve, _tags
 
-KNOWN_OPS = ["cube", "cylinder", "extrude", "inset", "bevel", "subdivide", "tag", "translate", "scale", "assert"]
+KNOWN_OPS = ["cube", "cylinder", "extrude", "inset", "bevel", "loop_cut", "subdivide",
+             "tag", "translate", "scale", "assert"]
 KNOWN_BY = ["all", "normal", "tag", "extreme", "side", "last_created"]
 _PARAM_SIG = {  # a param key -> the op it most likely belongs to (for op-name inference)
     "distance": "extrude", "thickness": "inset", "width": "bevel", "depth": "bevel",

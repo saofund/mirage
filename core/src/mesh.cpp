@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace mirage {
 
@@ -511,6 +513,100 @@ Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double th
         new_tags.push_back(copy_tags(f, mark));
     }
     return Mesh::from_pydata(new_pos, new_faces, new_tags);
+}
+
+Mesh loop_cut(const Mesh& mesh, const std::vector<const Face*>& seed_v, const std::string& axis,
+              const std::string& mark) {
+    if (seed_v.empty()) return mesh.copy();
+    const Face* seed = seed_v.front();
+    if (mesh.face_verts(seed).size() != 4) return mesh.copy();  // only a quad can seed
+    const int ax = axis == "x" ? 0 : axis == "y" ? 1 : 2;
+
+    auto quad_edges = [&](const Face* f) {
+        std::vector<Edge*> e;
+        for (Loop* lp : mesh.face_loops(f)) e.push_back(lp->edge);
+        return e;
+    };
+    auto edge_index = [](const std::vector<Edge*>& es, Edge* e) {
+        for (int k = 0; k < 4; ++k) if (es[k] == e) return k;
+        return 0;
+    };
+    auto opposite_edge = [&](const Face* f, Edge* e) {
+        auto es = quad_edges(f);
+        return es[(edge_index(es, e) + 2) % 4];
+    };
+    auto other_face = [&](Edge* e, const Face* f) -> Face* {
+        for (Face* x : mesh.edge_faces(e)) if (x != f) return x;
+        return nullptr;
+    };
+
+    // seed's crossed edge-pair: the opposite pair most aligned with `axis`
+    std::vector<Loop*> loops = mesh.face_loops(seed);
+    std::vector<Edge*> es;
+    std::vector<A3> dirs;
+    for (Loop* lp : loops) {
+        es.push_back(lp->edge);
+        dirs.push_back({lp->next->vert->co[0] - lp->vert->co[0],
+                        lp->next->vert->co[1] - lp->vert->co[1],
+                        lp->next->vert->co[2] - lp->vert->co[2]});
+    }
+    auto axis_align = [&](int k) {
+        double n = std::sqrt(dirs[k][0] * dirs[k][0] + dirs[k][1] * dirs[k][1] + dirs[k][2] * dirs[k][2]);
+        return n > 0 ? std::fabs(dirs[k][ax]) / n : 0.0;
+    };
+    const int i0 = (axis_align(0) + axis_align(2)) >= (axis_align(1) + axis_align(3)) ? 0 : 1;
+
+    std::unordered_map<const Face*, std::pair<Edge*, Edge*>> cross;
+    cross[seed] = {es[i0], es[(i0 + 2) % 4]};
+    std::set<const Face*> seen;
+    std::set<Edge*> crossed;
+    std::vector<const Face*> ring;
+    std::vector<const Face*> stack{seed};
+    while (!stack.empty()) {
+        const Face* f = stack.back(); stack.pop_back();
+        if (seen.count(f) || mesh.face_verts(f).size() != 4) continue;
+        seen.insert(f);
+        Edge* ea = cross[f].first; Edge* ec = cross[f].second;
+        crossed.insert(ea); crossed.insert(ec); ring.push_back(f);
+        for (Edge* e : {ea, ec}) {
+            Face* nf = other_face(e, f);
+            if (nf && !seen.count(nf) && mesh.face_verts(nf).size() == 4 && !cross.count(nf)) {
+                cross[nf] = {e, opposite_edge(nf, e)};
+                stack.push_back(nf);
+            }
+        }
+    }
+
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::map<Edge*, int> mid;
+    for (Edge* e : crossed) {
+        mid[e] = static_cast<int>(pos.size());
+        pos.push_back(a3scale(a3add(e->v1->co, e->v2->co), 0.5));
+    }
+
+    std::set<const Face*> ring_set(ring.begin(), ring.end());
+    std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
+    for (const auto& fp : mesh.faces()) {
+        const Face* f = fp.get();
+        if (!ring_set.count(f)) {
+            std::vector<int> v;
+            for (Loop* lp : mesh.face_loops(f)) v.push_back(lp->vert->id);
+            faces.push_back(v); tags.push_back(copy_tags(f));
+            continue;
+        }
+        std::vector<int> vids;
+        std::vector<Edge*> fe;
+        for (Loop* lp : mesh.face_loops(f)) { vids.push_back(lp->vert->id); fe.push_back(lp->edge); }
+        Edge* ea = cross[f].first; Edge* ec = cross[f].second;
+        int i = 0;
+        for (int k = 0; k < 4; ++k) if (fe[k] == ea || fe[k] == ec) { i = k; break; }
+        const int mi = mid[fe[i]], mj = mid[fe[(i + 2) % 4]];
+        faces.push_back({vids[i], mi, mj, vids[(i + 3) % 4]}); tags.push_back(copy_tags(f, mark));
+        faces.push_back({mi, vids[(i + 1) % 4], vids[(i + 2) % 4], mj}); tags.push_back(copy_tags(f, mark));
+    }
+    return Mesh::from_pydata(pos, faces, tags);
 }
 
 Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region_v, double width, double depth,

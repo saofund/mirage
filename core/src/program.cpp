@@ -126,6 +126,11 @@ Program& Program::bevel(const json& on, double width, double depth, const std::s
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::loop_cut(const json& on, const std::string& axis, const std::string& mark) {
+    json c{{"op", "loop_cut"}, {"on", on}, {"axis", axis}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::subdivide(int levels) { return add(json{{"op", "subdivide"}, {"levels", levels}}); }
 Program& Program::tag(const json& on, const std::string& name) {
     return add(json{{"op", "tag"}, {"on", on}, {"name", name}});
@@ -180,6 +185,10 @@ Mesh Program::build(std::string* last_tag_out) const {
             } else if (op == "bevel") {
                 auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
                 mesh = mirage::bevel(mesh, seln, cmd.value("width", 0.2), cmd.value("depth", 0.1), out_tag);
+                outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "loop_cut") {
+                auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
+                mesh = mirage::loop_cut(mesh, seln, cmd.value("axis", std::string("z")), out_tag);
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "subdivide") {
                 const int levels = cmd.value("levels", 1);
@@ -250,6 +259,7 @@ std::string Program::label(const json& op) {
     if (k == "inset") return "inset  t=" + num(op.value("thickness", 0.3)) + on_suffix(op);
     if (k == "bevel") return "bevel  w=" + num(op.value("width", 0.2)) + " d=" + num(op.value("depth", 0.1)) + on_suffix(op);
     if (k == "extrude") return "extrude  d=" + num(op.value("distance", 0.5)) + on_suffix(op);
+    if (k == "loop_cut") return "loop_cut  " + op.value("axis", std::string("z")) + on_suffix(op);
     if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
     if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
     if (k == "translate") return "translate" + on_suffix(op);

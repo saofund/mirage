@@ -153,5 +153,10 @@ Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region, double thic
 // plain inset. Same topology as inset, so euler/manifold are preserved.
 Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region, double width = 0.2,
            double depth = 0.1, const std::string& mark = "");
+// loop_cut: from a seed quad, walk the ring of quads whose shared edges run along
+// `axis` and bisect each, threading a watertight loop of midpoint vertices (the
+// classic hard-surface loop cut). N-gons (e.g. cylinder caps) stop the walk.
+Mesh loop_cut(const Mesh& mesh, const std::vector<const Face*>& seed, const std::string& axis = "z",
+              const std::string& mark = "");
 
 }  // namespace mirage

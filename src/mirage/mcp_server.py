@@ -302,6 +302,7 @@ def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
     """Append ONE meshlang op and rebuild. command = {op, on:<selector>, ...params, mark?}.
     Ops: cube/cylinder (primitive); extrude{on,distance}; inset{on,thickness};
     bevel{on,width,depth} (chamfer the rim: inset + offset along the normal);
+    loop_cut{on,axis} (insert an edge loop around a quad ring perpendicular to axis);
     subdivide{levels}; tag{on,name}; scale/translate{on,by}; assert{closed_manifold,euler}.
     Selectors (the `on` value): {"by":"normal","axis":"z","sign":1} | {"by":"tag","name":..} |
     {"by":"extreme","axis":"z","which":"max"} | {"by":"last_created"} | {"by":"all"} |

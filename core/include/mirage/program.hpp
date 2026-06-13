@@ -46,6 +46,7 @@ public:
     Program& extrude(const json& on, double distance = 0.5, const std::string& mark = "");
     Program& inset(const json& on, double thickness = 0.3, const std::string& mark = "");
     Program& bevel(const json& on, double width = 0.2, double depth = 0.1, const std::string& mark = "");
+    Program& loop_cut(const json& on, const std::string& axis = "z", const std::string& mark = "");
     Program& subdivide(int levels = 1);
     Program& tag(const json& on, const std::string& name);
     Program& translate(const json& on, const std::array<double, 3>& by);

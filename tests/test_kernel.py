@@ -3,7 +3,8 @@ import math
 import pytest
 
 from mirage.kernel import (
-    make_cube, catmull_clark, extrude_faces, inset_faces, bevel_faces, faces_by_normal,
+    make_cube, make_cylinder_ngon, catmull_clark, extrude_faces, inset_faces, bevel_faces,
+    loop_cut, faces_by_normal,
 )
 
 
@@ -74,6 +75,33 @@ def test_bevel_chamfers_the_rim():
     inner = b.faces[-1]                                      # the lifted inner face
     cz = sum(v.co[2] for v in b.face_verts(inner)) / len(b.face_verts(inner))
     assert abs(cz - (0.5 + depth)) < 1e-9                    # raised by `depth` along +z
+
+
+def test_loop_cut_cube_stays_closed():
+    m = make_cube(1.0)
+    seed = faces_by_normal(m, "y", -1.0)            # a side quad seeds the ring
+    lc = loop_cut(m, seed, axis="z")                 # a horizontal band around z
+    lc.validate()
+    s = lc.stats()
+    # 4 vertical edges bisected: +4 verts, the 4 side quads -> 8, caps unchanged
+    assert (s["verts"], s["faces"]) == (12, 10)
+    assert s["euler"] == 2 and s["closed_manifold"]
+
+
+def test_loop_cut_cylinder_adds_a_ring():
+    m = make_cylinder_ngon(8, 0.5, 1.0)
+    seed = [f for f in m.faces if len(m.face_verts(f)) == 4][:1]  # a side quad
+    lc = loop_cut(m, seed, axis="z")
+    lc.validate()
+    assert lc.euler() == 2 and lc.is_closed_manifold()
+    assert lc.stats()["faces"] == m.stats()["faces"] + 8   # each of 8 side quads split
+
+
+def test_loop_cut_ngon_seed_is_noop():
+    m = make_cylinder_ngon(6, 0.5, 1.0)
+    cap = [f for f in m.faces if len(m.face_verts(f)) == 6][:1]  # an n-gon cap can't seed
+    lc = loop_cut(m, cap, axis="z")
+    assert lc.stats() == m.stats()
 
 
 def test_bevel_zero_depth_equals_inset():

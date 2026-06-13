@@ -107,6 +107,19 @@ OPLOGS = {
         {"op": "cube", "size": 1.0},
         {"op": "bevel", "on": {"by": "all"}, "width": 0.15, "depth": -0.1},
     ],
+    "loop_cut_cube": [
+        {"op": "cube", "size": 1.0},
+        {"op": "loop_cut", "on": {"by": "normal", "axis": "y", "sign": -1.0}, "axis": "z"},
+    ],
+    "loop_cut_cylinder": [
+        {"op": "cylinder", "sides": 10, "radius": 0.5, "height": 1.2},
+        {"op": "loop_cut", "on": {"by": "side", "axis": "x", "sign": 1.0}, "axis": "z"},
+    ],
+    "loop_cut_then_extrude": [
+        {"op": "cube", "size": 1.0},
+        {"op": "loop_cut", "on": {"by": "normal", "axis": "x", "sign": 1.0}, "axis": "z", "mark": "band"},
+        {"op": "extrude", "on": {"by": "tag", "name": "band"}, "distance": 0.2},
+    ],
 }
 
 

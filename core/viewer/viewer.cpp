@@ -671,6 +671,8 @@ int main(int argc, char** argv) {
         ImGui::SameLine();
         if (ImGui::Button("Bevel"))   { prog.bevel(current_on(), 0.2, 0.15); if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
         ImGui::SameLine();
+        if (ImGui::Button("Loop Cut")) { prog.loop_cut(current_on(), "z"); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
         if (ImGui::Button("Subdivide")) { prog.subdivide(1); dirty = true; }
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
