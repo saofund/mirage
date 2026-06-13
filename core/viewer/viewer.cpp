@@ -26,6 +26,7 @@
 
 #include "mirage/mesh.hpp"
 #include "mirage/program.hpp"
+#include "mirage/raytrace.hpp"
 
 using namespace mirage;
 using Mat4 = std::array<float, 16>;  // column-major (OpenGL)
@@ -709,6 +710,21 @@ int main(int argc, char** argv) {
         ImGui::SetNextItemWidth(220); ImGui::SliderFloat("metallic", &g_metallic, 0.0f, 1.0f);
         ImGui::SetNextItemWidth(220); ImGui::SliderFloat("roughness", &g_rough, 0.04f, 1.0f);
         ImGui::Checkbox("flat shading (faceted)", &g_flat);
+        // Ground-truth render: path-trace the current model from this camera. The
+        // realtime view above is the preview; this is the Cycles-class render.
+        if (ImGui::Button("Render (path-traced -> mirage_render.ppm)")) {
+            V3 c = g.center, e = orbit_eye(c);
+            Camera cam;
+            cam.eye = {e[0], e[1], e[2]};
+            cam.target = {c[0], c[1], c[2]};
+            cam.fov_y = 0.9;
+            RenderSettings rs;
+            rs.width = 800; rs.height = 600; rs.spp = 64;
+            rs.albedo = {g_albedo[0], g_albedo[1], g_albedo[2]};
+            Image img = path_trace(model, cam, rs);
+            write_ppm(img, "mirage_render.ppm");
+            std::snprintf(g_io_status, sizeof(g_io_status), "rendered %dx%d @ %dspp -> mirage_render.ppm", rs.width, rs.height, rs.spp);
+        }
         ImGui::Separator();
         ImGui::Text("verts %zu   edges %zu   faces %zu", model.num_verts(), model.num_edges(), model.num_faces());
         ImGui::Text("euler %d   manifold %s", model.euler(), model.is_closed_manifold() ? "yes" : "no");

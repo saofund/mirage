@@ -1,0 +1,47 @@
+// mirage path tracer — the offline ("Cycles-class") render pillar.
+//
+// A from-scratch, physically-based Monte-Carlo path tracer over the kernel mesh:
+// cosine-importance-sampled diffuse global illumination lit by a sky + sun
+// environment, with a ground plane for contact shadow and colour bleeding,
+// Russian-roulette path termination, multi-threaded over scanlines, ACES
+// tonemapped. The realtime viewport (mirage_viewer) is the Eevee-class preview;
+// this is the ground-truth render of the SAME kernel mesh.
+#pragma once
+
+#include <array>
+#include <vector>
+
+#include "mirage/mesh.hpp"
+
+namespace mirage {
+
+struct Camera {
+    std::array<double, 3> eye{3.2, -3.2, 2.2};
+    std::array<double, 3> target{0, 0, 0.3};
+    std::array<double, 3> up{0, 0, 1};
+    double fov_y = 0.7;  // vertical field of view, radians
+};
+
+struct RenderSettings {
+    int width = 640;
+    int height = 480;
+    int spp = 64;             // samples per pixel
+    int max_bounce = 6;
+    unsigned threads = 0;     // 0 => hardware_concurrency
+    std::array<double, 3> albedo{0.82, 0.80, 0.74};  // surface base colour (Lambertian)
+    bool ground = true;       // an implicit diffuse floor under the model
+};
+
+struct Image {
+    int w = 0, h = 0;
+    std::vector<unsigned char> rgb;  // tonemapped, gamma-encoded, row-major, 3 bytes/px
+};
+
+// Path-trace the mesh. Deterministic for a given (mesh, camera, settings): each
+// sample is seeded from its pixel + sample index, so renders are reproducible.
+Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& settings);
+
+// Write an Image to a binary PPM (P6).
+void write_ppm(const Image& img, const std::string& path);
+
+}  // namespace mirage

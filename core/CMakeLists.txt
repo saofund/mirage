@@ -26,12 +26,19 @@ add_library(mirage_core STATIC
   src/mesh.cpp
   src/select.cpp
   src/program.cpp
+  src/raytrace.cpp
 )
 target_include_directories(mirage_core PUBLIC include)
 target_link_libraries(mirage_core PUBLIC nlohmann_json::nlohmann_json)
+find_package(Threads REQUIRED)
+target_link_libraries(mirage_core PUBLIC Threads::Threads)
 
 add_executable(mirage_stats src/main.cpp)
 target_link_libraries(mirage_stats PRIVATE mirage_core)
+
+# Offline path-traced renderer (Cycles-class) — the ground-truth render pillar.
+add_executable(mirage_render src/render_main.cpp)
+target_link_libraries(mirage_render PRIVATE mirage_core)
 
 # Optional pybind11 module — built when configured with -Dpybind11_DIR=... and
 # -DPython_EXECUTABLE=... (see tests/test_cpp_core.py, the differential harness).
