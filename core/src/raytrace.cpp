@@ -73,6 +73,7 @@ struct Hit {
     double t = 1e30;
     V3 n{0, 0, 1};
     V3 albedo{0, 0, 0};
+    double metallic = 0.0, rough = 0.5;
     bool is_ground = false;
 };
 
@@ -112,6 +113,26 @@ V3 cosine_sample(const V3& n, Rng& rng) {
     return norm(u * (r * std::cos(phi)) + v * (r * std::sin(phi)) + w * std::sqrt(1.0 - r2));
 }
 
+// --- Cook-Torrance microfacet (GGX) — same model as the realtime viewport ---
+double luminance(const V3& c) { return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+V3 reflectv(const V3& v, const V3& n) { return n * (2.0 * dot(v, n)) - v; }  // mirror v about n
+double D_ggx(double NoH, double a) { double a2 = a * a; double d = NoH * NoH * (a2 - 1) + 1; return a2 / (PI * d * d + 1e-12); }
+double G_smith(double NoV, double NoL, double a) {
+    double k = a * 0.5;
+    return (NoV / (NoV * (1 - k) + k)) * (NoL / (NoL * (1 - k) + k));
+}
+V3 fresnel(double VoH, const V3& f0) { double p = std::pow(1.0 - VoH, 5.0); return f0 + (V3{1, 1, 1} - f0) * p; }
+
+// Importance-sample a GGX half-vector around n.
+V3 sample_ggx(const V3& n, double a, Rng& rng) {
+    const double u1 = rng.next(), u2 = rng.next();
+    const double ct = std::sqrt((1.0 - u1) / (1.0 + (a * a - 1.0) * u1));
+    const double st = std::sqrt(std::max(0.0, 1.0 - ct * ct)), phi = 2 * PI * u2;
+    const V3 t = std::fabs(n[0]) > 0.9 ? V3{0, 1, 0} : V3{1, 0, 0};
+    const V3 tx = norm(cross(t, n)), ty = cross(n, tx);
+    return norm(tx * (st * std::cos(phi)) + ty * (st * std::sin(phi)) + n * ct);
+}
+
 struct Scene {
     std::vector<Tri> tris;
     std::vector<AABB> tbox;     // per-triangle box
@@ -124,6 +145,7 @@ struct Scene {
     V3 ground_center{0, 0, 0};
     V3 ground_albedo{0.40, 0.42, 0.46};
     V3 albedo{0.8, 0.8, 0.8};
+    double metallic = 0.0, roughness = 0.5;
 };
 
 // Recursive median-split BVH build. Returns the node index of the built subtree.
@@ -157,7 +179,10 @@ void hit_ground(const Scene& sc, const V3& o, const V3& d, Hit& h) {
     if (tt > 1e-5 && tt < h.t) {
         V3 p = o + d * tt;
         double dx = p[0] - sc.ground_center[0], dy = p[1] - sc.ground_center[1];
-        if (dx * dx + dy * dy < sc.ground_r2) { h.t = tt; h.n = {0, 0, 1}; h.albedo = sc.ground_albedo; h.is_ground = true; }
+        if (dx * dx + dy * dy < sc.ground_r2) {
+            h.t = tt; h.n = {0, 0, 1}; h.albedo = sc.ground_albedo;
+            h.metallic = 0.0; h.rough = 0.92; h.is_ground = true;  // matte floor
+        }
     }
 }
 
@@ -176,7 +201,8 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
                 if (tt > 0 && tt < h.t) {
                     h.t = tt;
                     V3 nn = t.n; if (dot(nn, d) > 0) nn = nn * -1.0;  // two-sided
-                    h.n = nn; h.albedo = sc.albedo; h.is_ground = false;
+                    h.n = nn; h.albedo = sc.albedo; h.metallic = sc.metallic; h.rough = sc.roughness;
+                    h.is_ground = false;
                 }
             }
         } else { stack[sp++] = n.left; stack[sp++] = n.right; }
@@ -217,22 +243,51 @@ V3 jittered_sun(Rng& rng) {
     return norm(SUN_DIR + u * (r * std::cos(phi)) + v * (r * std::sin(phi)));
 }
 
-// One path: diffuse GI gathered by BSDF sampling (sky on miss), with the sun
-// added by next-event estimation at each hit (so shadows are crisp, not noisy).
+// One path: a Cook-Torrance microfacet surface (diffuse + GGX specular) gathered
+// by lobe-importance-sampled BSDF bounces (sky on miss), with the sun added by
+// next-event estimation at each hit (crisp shadows + sharp speculars, low noise).
 V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
     V3 L{0, 0, 0}, beta{1, 1, 1};
     for (int bounce = 0; bounce < max_bounce; ++bounce) {
         Hit h = intersect(sc, o, d);
         if (h.t > 1e29) { L = L + mulv(beta, sky(d)); break; }  // escaped -> sky fill
-        const V3 p = o + d * h.t + h.n * 1e-4;
-        const V3 sdir = jittered_sun(rng);          // NEE: direct sun
-        const double cosL = dot(h.n, sdir);
-        if (cosL > 0 && !occluded(sc, p, sdir))
-            L = L + mulv(mulv(beta, h.albedo), SUN_E) * (cosL / PI);
+        const V3 N = h.n, V = d * -1.0;
+        const double NoV = std::max(dot(N, V), 1e-4);
+        const double a = std::max(h.rough * h.rough, 1e-3);
+        const V3 f0 = V3{0.04, 0.04, 0.04} * (1.0 - h.metallic) + h.albedo * h.metallic;
+        const V3 diff_alb = h.albedo * (1.0 - h.metallic);
+        const V3 p = o + d * h.t + N * 1e-4;
+
+        // NEE: direct sun (diffuse + specular through the microfacet BRDF)
+        const V3 sdir = jittered_sun(rng);
+        const double NoL = dot(N, sdir);
+        if (NoL > 0 && !occluded(sc, p, sdir)) {
+            const V3 H = norm(V + sdir);
+            const double NoH = std::max(dot(N, H), 0.0), VoH = std::max(dot(V, H), 0.0);
+            const V3 F = fresnel(VoH, f0);
+            const V3 spec = F * (D_ggx(NoH, a) * G_smith(NoV, NoL, a) / (4 * NoV * NoL + 1e-6));
+            const V3 fr = diff_alb * (1.0 / PI) + spec;
+            L = L + mulv(mulv(beta, fr), SUN_E) * NoL;
+        }
+
+        // indirect: stochastically pick the diffuse or specular lobe
+        const double lf = luminance(f0), ld = luminance(diff_alb);
+        const double pSpec = std::clamp(lf / (lf + ld + 1e-4), 0.1, 0.9);
         o = p;
-        d = cosine_sample(h.n, rng);                // indirect bounce
-        beta = mulv(beta, h.albedo);
-        if (bounce >= 3) {                          // Russian roulette
+        if (rng.next() < pSpec) {                    // GGX specular bounce
+            const V3 Hh = sample_ggx(N, a, rng);
+            const V3 Ld = reflectv(V, Hh);
+            const double nl = dot(N, Ld);
+            if (nl <= 0) break;
+            const double VoH = std::max(dot(V, Hh), 1e-4), NoH = std::max(dot(N, Hh), 1e-4);
+            const V3 F = fresnel(VoH, f0);
+            beta = mulv(beta, F) * (G_smith(NoV, nl, a) * VoH / (NoV * NoH) / pSpec);
+            d = Ld;
+        } else {                                     // Lambertian diffuse bounce
+            d = cosine_sample(N, rng);
+            beta = mulv(beta, diff_alb) * (1.0 / (1.0 - pSpec));
+        }
+        if (bounce >= 3) {                           // Russian roulette
             double q = std::max({beta[0], beta[1], beta[2]});
             if (rng.next() > q) break;
             beta = beta * (1.0 / std::max(q, 1e-4));
@@ -254,6 +309,8 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     // Build the triangle soup + ground from the mesh bounds.
     Scene sc;
     sc.albedo = settings.albedo;
+    sc.metallic = settings.metallic;
+    sc.roughness = settings.roughness;
     sc.ground = settings.ground;
     V3 lo{1e30, 1e30, 1e30}, hi{-1e30, -1e30, -1e30};
     for (const auto& f : mesh.faces()) {

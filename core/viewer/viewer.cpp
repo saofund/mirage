@@ -723,6 +723,7 @@ int main(int argc, char** argv) {
             RenderSettings rs;
             rs.width = 800; rs.height = 600; rs.spp = 64;
             rs.albedo = {g_albedo[0], g_albedo[1], g_albedo[2]};
+            rs.metallic = g_metallic; rs.roughness = g_rough;  // same material as the preview
             Image img = path_trace(model, cam, rs);
             write_ppm(img, "mirage_render.ppm");
             std::snprintf(g_io_status, sizeof(g_io_status), "rendered %dx%d @ %dspp -> mirage_render.ppm", rs.width, rs.height, rs.spp);

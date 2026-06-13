@@ -33,6 +33,8 @@ int main(int argc, char** argv) {
         else if (a == "--w") s.width = int(next(s.width));
         else if (a == "--h") s.height = int(next(s.height));
         else if (a == "--bounce") s.max_bounce = int(next(s.max_bounce));
+        else if (a == "--metallic") s.metallic = next(s.metallic);
+        else if (a == "--rough") s.roughness = next(s.roughness);
     }
 
     Program prog;

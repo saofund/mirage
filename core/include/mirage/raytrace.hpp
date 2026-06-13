@@ -28,7 +28,9 @@ struct RenderSettings {
     int spp = 64;             // samples per pixel
     int max_bounce = 6;
     unsigned threads = 0;     // 0 => hardware_concurrency
-    std::array<double, 3> albedo{0.82, 0.80, 0.74};  // surface base colour (Lambertian)
+    std::array<double, 3> albedo{0.82, 0.80, 0.74};  // surface base colour
+    double metallic = 0.0;    // 0 = dielectric, 1 = metal (albedo tints the specular)
+    double roughness = 0.5;   // microfacet roughness (GGX)
     bool ground = true;       // an implicit diffuse floor under the model
 };
 
