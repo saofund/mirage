@@ -51,4 +51,10 @@ json selector_diagnostics(const Mesh& mesh);
 // empty string = none.
 std::vector<const Face*> resolve(const Mesh& mesh, const json& sel, const std::string& last_tag = "");
 
+// Resolve an EDGE selector to a list of edges (deduped, mesh order). The parallel
+// grammar for edges (the foundation for edge_bevel):
+//   {"by": "all" | "sharp"(angle) | "axis"(axis,tol) | "boundary" | "on_face"(face)}
+//   composable with and/or/not. `on_face` composes with the face grammar above.
+std::vector<Edge*> resolve_edges(const Mesh& mesh, const json& sel, const std::string& last_tag = "");
+
 }  // namespace mirage

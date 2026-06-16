@@ -303,6 +303,9 @@ def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
     Ops: cube/cylinder (primitive); extrude{on,distance}; inset{on,thickness};
     bevel{on,width,depth} (chamfer the rim: inset + offset along the normal);
     loop_cut{on,axis} (insert an edge loop around a quad ring perpendicular to axis);
+    edge_bevel{on,width} (round/chamfer selected EDGES; `on` is an EDGE selector:
+      {"by":"sharp","angle":30} | {"by":"axis","axis":"z"} | {"by":"boundary"} |
+      {"by":"on_face","face":<face-selector>} | {"by":"all"} + and/or/not);
     subdivide{levels}; tag{on,name}; scale/translate{on,by}; assert{closed_manifold,euler}.
     Selectors (the `on` value): {"by":"normal","axis":"z","sign":1} | {"by":"tag","name":..} |
     {"by":"extreme","axis":"z","which":"max"} | {"by":"last_created"} | {"by":"all"} |

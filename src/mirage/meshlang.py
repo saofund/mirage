@@ -22,7 +22,7 @@ import json
 
 from .kernel import (
     Mesh, make_cube, make_cylinder_ngon, face_normal, faces_by_normal,
-    extrude_faces, inset_faces, bevel_faces, loop_cut, catmull_clark,
+    extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel, catmull_clark,
 )
 
 
@@ -128,6 +128,76 @@ def _resolve(mesh, sel, last_tag):
     raise MeshLangError(f"unknown selector {sel!r}")
 
 
+# --------------------------------------------------------------------------- #
+# Edge selection (the same re-evaluable query idea, for edges) — the foundation
+# for edge_bevel. Edges are NEVER addressed by index; a query resolves against
+# the live mesh (sharp creases, an axis direction, the rim of a face region, ...).
+# --------------------------------------------------------------------------- #
+def _edge_dir(e):
+    a, b = e.v1.co, e.v2.co
+    d = [b[k] - a[k] for k in range(3)]
+    m = (d[0] ** 2 + d[1] ** 2 + d[2] ** 2) ** 0.5 or 1.0
+    return [x / m for x in d]
+
+
+def _dihedral_deg(mesh, e):
+    """Angle between the two faces meeting at e (0 = flat/coplanar, 90 = a cube
+    edge). Boundary/non-manifold edges count as fully sharp."""
+    import math
+    fs = mesh.edge_faces(e)
+    if len(fs) != 2:
+        return 180.0
+    n1, n2 = face_normal(mesh, fs[0]), face_normal(mesh, fs[1])
+    d = max(-1.0, min(1.0, sum(n1[k] * n2[k] for k in range(3))))
+    return math.degrees(math.acos(d))
+
+
+def resolve_edges(mesh: Mesh, sel: dict, last_tag=None) -> list:
+    """Resolve an edge selector to a deduped list of Edges. Raises SelectorEmpty
+    on no match. Grammar: {by: all|sharp|axis|boundary|on_face} + and/or/not."""
+    edges = _resolve_edges(mesh, sel, last_tag)
+    seen, out = set(), []
+    for e in edges:
+        if id(e) not in seen:
+            seen.add(id(e)); out.append(e)
+    if not out:
+        raise SelectorEmpty(sel, _diagnostics(mesh))
+    return out
+
+
+def _resolve_edges(mesh, sel, last_tag):
+    if not isinstance(sel, dict):
+        raise MeshLangError(f"edge selector must be a dict, got {sel!r}")
+    if "and" in sel:
+        sets = [set(map(id, _resolve_edges(mesh, s, last_tag))) for s in sel["and"]]
+        keep = set.intersection(*sets) if sets else set()
+        return [e for e in mesh.edges if id(e) in keep]
+    if "or" in sel:
+        keep = set()
+        for s in sel["or"]:
+            keep |= set(map(id, _resolve_edges(mesh, s, last_tag)))
+        return [e for e in mesh.edges if id(e) in keep]
+    if "not" in sel:
+        excl = set(map(id, _resolve_edges(mesh, sel["not"], last_tag)))
+        return [e for e in mesh.edges if id(e) not in excl]
+    by = sel.get("by")
+    if by == "all":
+        return list(mesh.edges)
+    if by == "sharp":
+        ang = sel.get("angle", 30.0)
+        return [e for e in mesh.edges if _dihedral_deg(mesh, e) >= ang]
+    if by == "axis":
+        ax = "xyz".index(sel.get("axis", "z"))
+        tol = sel.get("tol", 0.1)
+        return [e for e in mesh.edges if abs(_edge_dir(e)[ax]) > 1 - tol]
+    if by == "boundary":
+        return [e for e in mesh.edges if len(mesh.edge_faces(e)) != 2]
+    if by == "on_face":
+        fset = set(map(id, resolve(mesh, sel["face"], last_tag)))
+        return [e for e in mesh.edges if any(id(f) in fset for f in mesh.edge_faces(e))]
+    raise MeshLangError(f"unknown edge selector {sel!r}")
+
+
 class Sel:
     """Python sugar for selector dicts (an LLM emits the dicts directly)."""
     normal = staticmethod(lambda axis="z", sign=1.0, tol=0.5: {"by": "normal", "axis": axis, "sign": sign, "tol": tol})
@@ -137,6 +207,18 @@ class Sel:
     side = staticmethod(lambda axis="x", sign=1.0: {"by": "side", "axis": axis, "sign": sign})
     all = staticmethod(lambda: {"by": "all"})
     last = staticmethod(lambda: {"by": "last_created"})
+    AND = staticmethod(lambda *s: {"and": list(s)})
+    OR = staticmethod(lambda *s: {"or": list(s)})
+    NOT = staticmethod(lambda s: {"not": s})
+
+
+class ESel:
+    """Python sugar for EDGE selector dicts (used by edge_bevel)."""
+    all = staticmethod(lambda: {"by": "all"})
+    sharp = staticmethod(lambda angle=30.0: {"by": "sharp", "angle": angle})
+    axis = staticmethod(lambda axis="z", tol=0.1: {"by": "axis", "axis": axis, "tol": tol})
+    boundary = staticmethod(lambda: {"by": "boundary"})
+    on_face = staticmethod(lambda face: {"by": "on_face", "face": face})
     AND = staticmethod(lambda *s: {"and": list(s)})
     OR = staticmethod(lambda *s: {"or": list(s)})
     NOT = staticmethod(lambda s: {"not": s})
@@ -223,6 +305,7 @@ class MeshProgram:
     def inset(self, on, thickness=0.3, mark=None): return self.add(**_cmd("inset", on=on, mark=mark, thickness=thickness))
     def bevel(self, on, width=0.2, depth=0.1, mark=None): return self.add(**_cmd("bevel", on=on, mark=mark, width=width, depth=depth))
     def loop_cut(self, on, axis="z", mark=None): return self.add(**_cmd("loop_cut", on=on, mark=mark, axis=axis))
+    def edge_bevel(self, on, width=0.15, mark=None): return self.add(**_cmd("edge_bevel", on=on, mark=mark, width=width))
     def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
     def translate(self, on, by): return self.add(**_cmd("translate", on=on, by=list(by)))
@@ -259,6 +342,10 @@ class MeshProgram:
                 elif op == "loop_cut":
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
                     mesh = loop_cut(mesh, sel, cmd.get("axis", "z"), mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "edge_bevel":
+                    esel = resolve_edges(mesh, cmd.get("on", {"by": "all"}), last_tag)
+                    mesh = edge_bevel(mesh, esel, cmd.get("width", 0.15), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "subdivide":
                     for _ in range(cmd.get("levels", 1)):

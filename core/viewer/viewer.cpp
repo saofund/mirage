@@ -692,6 +692,8 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Loop Cut")) { prog.loop_cut(current_on(), "z"); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::SameLine();
         if (ImGui::Button("Subdivide")) { prog.subdivide(1); dirty = true; }
+        // edge_bevel rounds every sharp edge (an edge selector, not a face one)
+        if (ImGui::Button("Edge Bevel (sharp)")) { prog.edge_bevel(json{{"by", "sharp"}, {"angle", 30}}, 0.12); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();

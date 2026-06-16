@@ -158,5 +158,11 @@ Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region, double widt
 // classic hard-surface loop cut). N-gons (e.g. cylinder caps) stop the walk.
 Mesh loop_cut(const Mesh& mesh, const std::vector<const Face*>& seed, const std::string& axis = "z",
               const std::string& mark = "");
+// edge_bevel: round/chamfer the selected edges. Each face is shrunk at its
+// bevelled corners, each bevelled edge becomes a chamfer quad, each bevelled
+// vertex a corner face. Only fully-selected vertex stars are bevelled (a fixpoint
+// keeps it watertight), so a cube with all edges selected -> a chamfered cube.
+Mesh edge_bevel(const Mesh& mesh, const std::vector<Edge*>& edges, double width = 0.15,
+                const std::string& mark = "");
 
 }  // namespace mirage

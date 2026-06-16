@@ -515,6 +515,116 @@ Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double th
     return Mesh::from_pydata(new_pos, new_faces, new_tags);
 }
 
+// Faces incident to vertex `vid`, in rotational (umbrella) order.
+static std::vector<const Face*> faces_around_vertex(const Mesh& mesh, int vid) {
+    struct Info { const Face* f; Edge* ein; Edge* eout; };
+    std::unordered_map<const Face*, Info> info;
+    std::unordered_map<Edge*, std::vector<const Face*>> e2f;
+    for (const auto& fp : mesh.faces()) {
+        const Face* f = fp.get();
+        for (Loop* lp : mesh.face_loops(f))
+            if (lp->vert->id == vid) {
+                Info in{f, lp->prev->edge, lp->edge};
+                info[f] = in;
+                e2f[in.ein].push_back(f);
+                e2f[in.eout].push_back(f);
+                break;
+            }
+    }
+    if (info.empty()) return {};
+    const Face* start = info.begin()->first;
+    std::vector<const Face*> ordered{start};
+    std::set<const Face*> seen{start};
+    Edge* bridge = info[start].eout;
+    while (ordered.size() < info.size()) {
+        const Face* nxt = nullptr;
+        for (const Face* g : e2f[bridge]) if (!seen.count(g)) { nxt = g; break; }
+        if (!nxt) break;
+        seen.insert(nxt); ordered.push_back(nxt);
+        const Info& gi = info[nxt];
+        bridge = (gi.ein == bridge) ? gi.eout : gi.ein;
+    }
+    return ordered;
+}
+
+Mesh edge_bevel(const Mesh& mesh, const std::vector<Edge*>& edges, double width, const std::string& mark) {
+    std::set<const Edge*> sel(edges.begin(), edges.end());
+    if (sel.empty()) return mesh.copy();
+
+    std::unordered_map<int, std::vector<Edge*>> vert_edges;
+    for (const auto& e : mesh.edges()) {
+        vert_edges[e->v1->id].push_back(e.get());
+        vert_edges[e->v2->id].push_back(e.get());
+    }
+    std::set<int> beveled;  // fixpoint: keep only fully-selected vertex stars
+    while (true) {
+        beveled.clear();
+        for (const auto& kv : vert_edges) {
+            bool all_in = true;
+            for (Edge* e : kv.second) if (!sel.count(e)) { all_in = false; break; }
+            if (all_in) beveled.insert(kv.first);
+        }
+        std::set<const Edge*> new_sel;
+        for (const auto& e : mesh.edges())
+            if (sel.count(e.get()) && beveled.count(e->v1->id) && beveled.count(e->v2->id))
+                new_sel.insert(e.get());
+        if (new_sel == sel) break;
+        sel = std::move(new_sel);
+    }
+    if (beveled.empty()) return mesh.copy();
+    width = std::min(std::max(width, 1e-3), 0.49);
+
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::map<std::pair<const Face*, int>, int> copy;  // per-face copy of a bevelled corner
+    for (const auto& fp : mesh.faces()) {
+        const Face* f = fp.get();
+        std::vector<Vert*> vs = mesh.face_verts(f);
+        A3 c{0, 0, 0};
+        for (Vert* v : vs) c = a3add(c, v->co);
+        c = a3scale(c, 1.0 / static_cast<double>(vs.size()));
+        for (Vert* v : vs) {
+            if (beveled.count(v->id)) {
+                copy[{f, v->id}] = static_cast<int>(pos.size());
+                pos.push_back({v->co[0] + (c[0] - v->co[0]) * width,
+                               v->co[1] + (c[1] - v->co[1]) * width,
+                               v->co[2] + (c[2] - v->co[2]) * width});
+            } else {
+                copy[{f, v->id}] = v->id;
+            }
+        }
+    }
+
+    std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
+    for (const auto& fp : mesh.faces()) {  // shrunk faces
+        const Face* f = fp.get();
+        std::vector<int> poly;
+        for (Loop* lp : mesh.face_loops(f)) poly.push_back(copy[{f, lp->vert->id}]);
+        faces.push_back(poly); tags.push_back(copy_tags(f));
+    }
+    for (const auto& ep : mesh.edges()) {  // chamfer quad per bevelled edge
+        Edge* e = ep.get();
+        if (!sel.count(e)) continue;
+        std::vector<Face*> fs = mesh.edge_faces(e);
+        if (fs.size() != 2) continue;
+        Face* f1 = fs[0]; Face* f2 = fs[1];
+        Loop* lp1 = nullptr;
+        for (Loop* l : mesh.face_loops(f1)) if (l->edge == e) { lp1 = l; break; }
+        const int u = lp1->vert->id, w = lp1->next->vert->id;
+        faces.push_back({copy[{f1, w}], copy[{f1, u}], copy[{f2, u}], copy[{f2, w}]});
+        tags.push_back(copy_tags(f1, mark));
+    }
+    for (int vid : beveled) {  // corner face (reversed umbrella -> outward winding)
+        auto ring = faces_around_vertex(mesh, vid);
+        if (ring.size() < 3) continue;
+        std::vector<int> poly;
+        for (auto it = ring.rbegin(); it != ring.rend(); ++it) poly.push_back(copy[{*it, vid}]);
+        faces.push_back(poly); tags.push_back(copy_tags(ring.front(), mark));
+    }
+    return build_compact(pos, faces, tags);  // drop the now-orphaned original verts
+}
+
 Mesh loop_cut(const Mesh& mesh, const std::vector<const Face*>& seed_v, const std::string& axis,
               const std::string& mark) {
     if (seed_v.empty()) return mesh.copy();

@@ -120,6 +120,23 @@ OPLOGS = {
         {"op": "loop_cut", "on": {"by": "normal", "axis": "x", "sign": 1.0}, "axis": "z", "mark": "band"},
         {"op": "extrude", "on": {"by": "tag", "name": "band"}, "distance": 0.2},
     ],
+    "edge_bevel_cube_all": [
+        {"op": "cube", "size": 1.0},
+        {"op": "edge_bevel", "on": {"by": "all"}, "width": 0.2},
+    ],
+    "edge_bevel_cube_sharp": [
+        {"op": "cube", "size": 1.2},
+        {"op": "edge_bevel", "on": {"by": "sharp", "angle": 30}, "width": 0.15},
+    ],
+    "edge_bevel_cylinder": [
+        {"op": "cylinder", "sides": 8, "radius": 0.5, "height": 1.0},
+        {"op": "edge_bevel", "on": {"by": "sharp", "angle": 20}, "width": 0.12},
+    ],
+    "edge_bevel_then_extrude": [
+        {"op": "cube", "size": 1.0},
+        {"op": "edge_bevel", "on": {"by": "all"}, "width": 0.18, "mark": "rounded"},
+        {"op": "extrude", "on": {"by": "normal", "axis": "z", "sign": 1.0, "tol": 0.3}, "distance": 0.3},
+    ],
 }
 
 
@@ -165,6 +182,27 @@ def test_selector_count_matches_python(selector):
     py_n = len(resolve(make_cube(1.0), selector))
     cpp_n = cpp.selector_count(cpp.make_cube(1.0), json.dumps(selector))
     assert cpp_n == py_n, f"selector {selector} matched {cpp_n} faces (C++) vs {py_n} (Python)"
+
+
+from mirage.meshlang import resolve_edges  # noqa: E402
+
+EDGE_SELECTORS = [
+    {"by": "all"},
+    {"by": "sharp", "angle": 30},
+    {"by": "sharp", "angle": 89},
+    {"by": "axis", "axis": "z"},
+    {"by": "axis", "axis": "x", "tol": 0.2},
+    {"by": "on_face", "face": {"by": "normal", "axis": "z", "sign": 1.0}},
+    {"or": [{"by": "axis", "axis": "x"}, {"by": "axis", "axis": "y"}]},
+    {"and": [{"by": "all"}, {"not": {"by": "axis", "axis": "z"}}]},
+]
+
+
+@pytest.mark.parametrize("esel", EDGE_SELECTORS)
+def test_edge_selector_count_matches_python(esel):
+    py_n = len(resolve_edges(make_cube(1.0), esel))
+    cpp_n = cpp.edge_selector_count(cpp.make_cube(1.0), json.dumps(esel))
+    assert cpp_n == py_n, f"edge selector {esel} matched {cpp_n} (C++) vs {py_n} (Python)"
 
 
 def test_near_selector_is_native_only():

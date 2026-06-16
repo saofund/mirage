@@ -519,6 +519,105 @@ def loop_cut(mesh: Mesh, seed_faces, axis: str = "z", mark: str | None = None) -
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
+def _faces_around_vertex(mesh: Mesh, vid: int) -> list:
+    """The faces incident to vertex ``vid``, in rotational (umbrella) order — walk
+    from face to face across the edges that meet at the vertex."""
+    info, e2f = {}, {}
+    for f in mesh.faces:
+        for lp in mesh.face_loops(f):
+            if lp.vert.id == vid:
+                ein, eout = lp.prev.edge, lp.edge
+                info[id(f)] = (f, ein, eout)
+                e2f.setdefault(id(ein), []).append(f)
+                e2f.setdefault(id(eout), []).append(f)
+                break
+    if not info:
+        return []
+    start = next(iter(info.values()))[0]
+    ordered, seen = [start], {id(start)}
+    bridge = info[id(start)][2]
+    while len(ordered) < len(info):
+        nxt = next((g for g in e2f.get(id(bridge), []) if id(g) not in seen), None)
+        if nxt is None:
+            break
+        seen.add(id(nxt)); ordered.append(nxt)
+        _, ein, eout = info[id(nxt)]
+        bridge = eout if id(ein) == id(bridge) else ein
+    return ordered
+
+
+def edge_bevel(mesh: Mesh, edges, width: float = 0.15, mark: str | None = None) -> Mesh:
+    """Bevel (round/chamfer) selected edges. Each face is shrunk at its bevelled
+    corners, each bevelled edge becomes a chamfer quad, and each bevelled vertex
+    becomes a corner face — so a cube with all edges selected becomes a chamfered
+    cube (26 faces), still a closed 2-manifold.
+
+    Only vertices whose *entire* edge-star is selected are bevelled (a fixpoint
+    prunes the rest), which keeps the result watertight: a partial selection on a
+    closed mesh bevels its clean core (often all-or-nothing). This is the dominant
+    hard-surface use — `edge_bevel(resolve_edges(m, {"by":"sharp"}))` rounds every
+    hard edge. Selected edges are found via the edge-selection grammar."""
+    import numpy as np
+    sel_ids = set(id(e) for e in edges)
+    if not sel_ids:
+        return mesh.copy()
+    vert_edges = {}
+    for e in mesh.edges:
+        vert_edges.setdefault(e.v1.id, []).append(e)
+        vert_edges.setdefault(e.v2.id, []).append(e)
+    beveled = set()
+    while True:  # keep only edges whose BOTH endpoints have a fully-selected star
+        beveled = {vid for vid, es in vert_edges.items() if all(id(e) in sel_ids for e in es)}
+        new_sel = {id(e) for e in mesh.edges
+                   if id(e) in sel_ids and e.v1.id in beveled and e.v2.id in beveled}
+        if new_sel == sel_ids:
+            break
+        sel_ids = new_sel
+    if not beveled:
+        return mesh.copy()  # nothing cleanly bevelable
+    t = min(max(float(width), 1e-3), 0.49)
+
+    new_pos = [list(v.co) for v in mesh.verts]
+    copy = {}  # (face_id, vert_id) -> vertex id (a moved per-face copy for bevelled verts)
+    for f in mesh.faces:
+        vs = mesh.face_verts(f)
+        c = np.mean([v.co for v in vs], axis=0)
+        for v in vs:
+            if v.id in beveled:
+                p = np.array(v.co) + (c - np.array(v.co)) * t
+                copy[(id(f), v.id)] = len(new_pos); new_pos.append([float(p[0]), float(p[1]), float(p[2])])
+            else:
+                copy[(id(f), v.id)] = v.id
+
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:  # the shrunk original faces
+        new_faces.append([copy[(id(f), lp.vert.id)] for lp in mesh.face_loops(f)])
+        new_attrs.append(_copy_attrs(f.attrs))
+    for e in mesh.edges:  # a chamfer quad per bevelled edge
+        if id(e) not in sel_ids:
+            continue
+        fs = mesh.edge_faces(e)
+        if len(fs) != 2:
+            continue
+        f1, f2 = fs
+        lp1 = next(lp for lp in mesh.face_loops(f1) if lp.edge is e)
+        u, w = lp1.vert.id, lp1.next.vert.id      # f1 traverses u->w along the edge
+        u1, w1 = copy[(id(f1), u)], copy[(id(f1), w)]
+        u2, w2 = copy[(id(f2), u)], copy[(id(f2), w)]
+        new_faces.append([w1, u1, u2, w2])        # opposite to f1's u1->w1 -> manifold
+        new_attrs.append(_copy_attrs(f1.attrs, add_tag=mark))
+    for vid in beveled:  # a corner face per bevelled vertex
+        ring = _faces_around_vertex(mesh, vid)
+        if len(ring) < 3:
+            continue
+        # the umbrella walk runs clockwise as seen from outside; reverse for an
+        # outward-facing corner polygon (consistent winding with the rest).
+        new_faces.append([copy[(id(f), vid)] for f in reversed(ring)])
+        new_attrs.append(_copy_attrs(ring[0].attrs, add_tag=mark))
+    new_pos, new_faces = _compact(new_pos, new_faces)  # drop the now-orphaned original verts
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
 def make_cube(size: float = 1.0) -> Mesh:
     s = size / 2.0
     p = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),

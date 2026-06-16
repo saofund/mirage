@@ -192,6 +192,110 @@ json selector_diagnostics(const Mesh& mesh) {
                 {"normal_histogram", hist}};
 }
 
+// --- edge selection (the parallel grammar for edges) -------------------------
+namespace {
+
+constexpr double PI = 3.14159265358979323846;
+
+std::array<double, 3> edge_dir(const Edge* e) {
+    std::array<double, 3> d{e->v2->co[0] - e->v1->co[0], e->v2->co[1] - e->v1->co[1],
+                            e->v2->co[2] - e->v1->co[2]};
+    double m = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (m == 0) m = 1;
+    return {d[0] / m, d[1] / m, d[2] / m};
+}
+
+// Angle between the two faces at e (0 = flat, 90 = cube edge); boundary = sharp.
+double dihedral_deg(const Mesh& mesh, const Edge* e) {
+    std::vector<Face*> fs = mesh.edge_faces(e);
+    if (fs.size() != 2) return 180.0;
+    auto n1 = face_normal(mesh, fs[0]), n2 = face_normal(mesh, fs[1]);
+    double d = std::clamp(n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2], -1.0, 1.0);
+    return std::acos(d) * 180.0 / PI;
+}
+
+std::vector<Edge*> edges_in_order(const Mesh& mesh, const std::unordered_set<const Edge*>& keep,
+                                  bool invert = false) {
+    std::vector<Edge*> out;
+    for (const auto& e : mesh.edges())
+        if (keep.count(e.get()) != static_cast<std::size_t>(invert ? 1 : 0)) out.push_back(e.get());
+    return out;
+}
+
+std::vector<Edge*> resolve_edges_inner(const Mesh& mesh, const json& sel, const std::string& last_tag) {
+    if (!sel.is_object()) throw MeshLangError("edge selector must be a dict, got " + sel.dump());
+    if (sel.contains("and")) {
+        std::unordered_set<const Edge*> keep;
+        bool first = true;
+        for (const json& s : sel.at("and")) {
+            auto part = resolve_edges_inner(mesh, s, last_tag);
+            std::unordered_set<const Edge*> ps(part.begin(), part.end());
+            if (first) { keep = std::move(ps); first = false; }
+            else {
+                std::unordered_set<const Edge*> next;
+                for (const Edge* e : keep) if (ps.count(e)) next.insert(e);
+                keep = std::move(next);
+            }
+        }
+        if (first) keep.clear();
+        return edges_in_order(mesh, keep);
+    }
+    if (sel.contains("or")) {
+        std::unordered_set<const Edge*> keep;
+        for (const json& s : sel.at("or"))
+            for (Edge* e : resolve_edges_inner(mesh, s, last_tag)) keep.insert(e);
+        return edges_in_order(mesh, keep);
+    }
+    if (sel.contains("not")) {
+        auto ex = resolve_edges_inner(mesh, sel.at("not"), last_tag);
+        std::unordered_set<const Edge*> excl(ex.begin(), ex.end());
+        return edges_in_order(mesh, excl, /*invert=*/true);
+    }
+    const std::string by = sel.value("by", "");
+    std::vector<Edge*> out;
+    if (by == "all") {
+        for (const auto& e : mesh.edges()) out.push_back(e.get());
+        return out;
+    }
+    if (by == "sharp") {
+        const double ang = sel.value("angle", 30.0);
+        for (const auto& e : mesh.edges()) if (dihedral_deg(mesh, e.get()) >= ang) out.push_back(e.get());
+        return out;
+    }
+    if (by == "axis") {
+        const int ax = axis_index(sel.value("axis", "z"));
+        const double tol = sel.value("tol", 0.1);
+        for (const auto& e : mesh.edges()) if (std::fabs(edge_dir(e.get())[ax]) > 1.0 - tol) out.push_back(e.get());
+        return out;
+    }
+    if (by == "boundary") {
+        for (const auto& e : mesh.edges()) if (mesh.edge_faces(e.get()).size() != 2) out.push_back(e.get());
+        return out;
+    }
+    if (by == "on_face") {
+        if (!sel.contains("face")) throw MeshLangError("on_face edge selector needs 'face': " + sel.dump());
+        auto faces = resolve(mesh, sel.at("face"), last_tag);
+        std::unordered_set<const Face*> fset(faces.begin(), faces.end());
+        for (const auto& e : mesh.edges())
+            for (Face* f : mesh.edge_faces(e.get()))
+                if (fset.count(f)) { out.push_back(e.get()); break; }
+        return out;
+    }
+    throw MeshLangError("unknown edge selector " + sel.dump());
+}
+
+}  // namespace
+
+std::vector<Edge*> resolve_edges(const Mesh& mesh, const json& sel, const std::string& last_tag) {
+    std::vector<Edge*> edges = resolve_edges_inner(mesh, sel, last_tag);
+    std::unordered_set<const Edge*> seen;
+    std::vector<Edge*> out;
+    for (Edge* e : edges)
+        if (seen.insert(e).second) out.push_back(e);
+    if (out.empty()) throw SelectorEmpty(sel, selector_diagnostics(mesh));
+    return out;
+}
+
 SelectorEmpty::SelectorEmpty(json sel_, json diagnostics_)
     : MeshLangError("selector matched 0 faces: " + sel_.dump() + " | available: " + diagnostics_.dump()),
       sel(std::move(sel_)),

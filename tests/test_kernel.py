@@ -2,10 +2,13 @@ import math
 
 import pytest
 
+import numpy as np
+
 from mirage.kernel import (
     make_cube, make_cylinder_ngon, catmull_clark, extrude_faces, inset_faces, bevel_faces,
-    loop_cut, faces_by_normal,
+    loop_cut, edge_bevel, face_normal, faces_by_normal,
 )
+from mirage.meshlang import resolve_edges, ESel
 
 
 def test_cube_topology():
@@ -95,6 +98,41 @@ def test_loop_cut_cylinder_adds_a_ring():
     lc.validate()
     assert lc.euler() == 2 and lc.is_closed_manifold()
     assert lc.stats()["faces"] == m.stats()["faces"] + 8   # each of 8 side quads split
+
+
+def _all_outward(m):
+    ctr = np.mean([v.co for v in m.verts], axis=0)
+    return all(np.dot(np.array(face_normal(m, f)),
+                      np.mean([v.co for v in m.face_verts(f)], axis=0) - ctr) >= 0 for f in m.faces)
+
+
+def test_edge_bevel_cube_is_chamfered_cube():
+    c = make_cube(1.0)
+    b = edge_bevel(c, resolve_edges(c, ESel.all()), width=0.2)
+    b.validate()
+    s = b.stats()
+    # 6 shrunk faces + 12 chamfer quads + 8 corner triangles, 8 verts x 3 copies
+    assert (s["verts"], s["faces"]) == (24, 26)
+    assert s["euler"] == 2 and s["closed_manifold"]
+    assert _all_outward(b)                                # winding stays outward-consistent
+
+
+def test_edge_bevel_cylinder_sharp_stays_closed():
+    m = make_cylinder_ngon(8, 0.5, 1.0)
+    b = edge_bevel(m, resolve_edges(m, ESel.sharp(20)), width=0.12)
+    b.validate()
+    assert b.euler() == 2 and b.is_closed_manifold() and _all_outward(b)
+
+
+def test_edge_bevel_partial_selection_is_safe():
+    # the top 4 edges alone don't form complete vertex stars on a closed cube,
+    # so the fixpoint prunes them -> a safe no-op (never a torn mesh).
+    c = make_cube(1.0)
+    top_edges = resolve_edges(c, ESel.on_face({"by": "normal", "axis": "z", "sign": 1.0}))
+    # intersect with sharp to keep just the rim; still not a full star -> no-op
+    b = edge_bevel(c, top_edges, width=0.2)
+    b.validate()
+    assert b.is_closed_manifold()  # valid regardless
 
 
 def test_loop_cut_ngon_seed_is_noop():

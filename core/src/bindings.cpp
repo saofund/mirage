@@ -76,4 +76,10 @@ PYBIND11_MODULE(_mirage_core, mod) {
                 return resolve(m, json::parse(sel_json)).size();
             },
             py::arg("mesh"), py::arg("selector_json"));
+    // Same, for the edge-selection grammar (the foundation for edge_bevel).
+    mod.def("edge_selector_count",
+            [](const Mesh& m, const std::string& sel_json) {
+                return resolve_edges(m, json::parse(sel_json)).size();
+            },
+            py::arg("mesh"), py::arg("edge_selector_json"));
 }
