@@ -137,6 +137,25 @@ OPLOGS = {
         {"op": "edge_bevel", "on": {"by": "all"}, "width": 0.18, "mark": "rounded"},
         {"op": "extrude", "on": {"by": "normal", "axis": "z", "sign": 1.0, "tol": 0.3}, "distance": 0.3},
     ],
+    "plane": [
+        {"op": "plane", "size_x": 1.5, "size_y": 1.0},
+    ],
+    "cube_open_top": [
+        {"op": "cube", "size": 1.0},
+        {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},   # an open box
+    ],
+    "delete_then_refill": [
+        {"op": "cube", "size": 1.0},
+        {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},
+        {"op": "fill"},                                                       # re-cap -> closed again
+    ],
+    "open_box_from_bridge": [
+        {"op": "cube", "size": 1.0},
+        {"op": "delete", "on": {"not": {"or": [{"by": "normal", "axis": "z", "sign": 1.0},
+                                               {"by": "normal", "axis": "z", "sign": -1.0}]}}},
+        {"op": "bridge", "on": {"by": "all"}},   # tunnel the 2 disjoint quads -> tube
+        {"op": "fill"},                          # cap -> closed box
+    ],
 }
 
 

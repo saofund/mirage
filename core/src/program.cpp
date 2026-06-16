@@ -114,6 +114,22 @@ Program& Program::cylinder(int sides, double radius, double height, const std::s
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::plane(double size_x, double size_y, const std::string& mark) {
+    json c{{"op", "plane"}, {"size_x", size_x}, {"size_y", size_y <= 0 ? size_x : size_y}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::del(const json& on) { return add(json{{"op", "delete"}, {"on", on}}); }
+Program& Program::bridge(const json& on, const std::string& mark) {
+    json c{{"op", "bridge"}, {"on", on}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::fill(const std::string& mark) {
+    json c{{"op", "fill"}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::extrude(const json& on, double distance, const std::string& mark) {
     json c{{"op", "extrude"}, {"on", on}, {"distance", distance}};
     if (!mark.empty()) c["mark"] = mark;
@@ -180,6 +196,10 @@ Mesh Program::build(std::string* last_tag_out) const {
                 mesh = make_cylinder(cmd.value("sides", 24), cmd.value("radius", 0.5), cmd.value("height", 1.0));
                 has = true;
                 for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (op == "plane") {
+                mesh = make_plane(cmd.value("size_x", 1.0), cmd.value("size_y", -1.0));
+                has = true;
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());
             } else if (!has) {
                 throw MeshLangError("op '" + op + "' before any primitive");
             } else if (op == "extrude") {
@@ -201,6 +221,16 @@ Mesh Program::build(std::string* last_tag_out) const {
             } else if (op == "edge_bevel") {
                 auto esel = resolve_edges(mesh, cmd.value("on", json{{"by", "all"}}), last_tag);
                 mesh = mirage::edge_bevel(mesh, esel, cmd.value("width", 0.15), out_tag);
+                outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "delete") {
+                auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
+                mesh = mirage::delete_faces(mesh, seln);  // outs stays empty (faces removed)
+            } else if (op == "bridge") {
+                auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
+                mesh = mirage::bridge_faces(mesh, seln, out_tag);
+                outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "fill") {
+                mesh = mirage::fill_holes(mesh, out_tag);
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "subdivide") {
                 const int levels = cmd.value("levels", 1);
@@ -273,6 +303,10 @@ std::string Program::label(const json& op) {
     if (k == "extrude") return "extrude  d=" + num(op.value("distance", 0.5)) + on_suffix(op);
     if (k == "loop_cut") return "loop_cut  " + op.value("axis", std::string("z")) + on_suffix(op);
     if (k == "edge_bevel") return "edge_bevel  w=" + num(op.value("width", 0.15)) + on_suffix(op);
+    if (k == "plane") return "plane  " + num(op.value("size_x", 1.0)) + "x" + num(op.value("size_y", 1.0));
+    if (k == "delete") return "delete" + on_suffix(op);
+    if (k == "bridge") return "bridge" + on_suffix(op);
+    if (k == "fill") return "fill  (cap holes)";
     if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
     if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
     if (k == "translate") return "translate" + on_suffix(op);

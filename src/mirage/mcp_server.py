@@ -300,7 +300,8 @@ def new_model(primitive: Optional[dict] = None) -> dict:
 @mcp.tool()
 def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
     """Append ONE meshlang op and rebuild. command = {op, on:<selector>, ...params, mark?}.
-    Ops: cube/cylinder (primitive); extrude{on,distance}; inset{on,thickness};
+    Ops: cube/cylinder/plane (primitive; plane is an OPEN mesh); extrude{on,distance}; inset{on,thickness};
+    delete{on} (remove faces -> open mesh); bridge{on} (tunnel 2 disjoint openings); fill (cap holes);
     bevel{on,width,depth} (chamfer the rim: inset + offset along the normal);
     loop_cut{on,axis} (insert an edge loop around a quad ring perpendicular to axis);
     edge_bevel{on,width} (round/chamfer selected EDGES; `on` is an EDGE selector:

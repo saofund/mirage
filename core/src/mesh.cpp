@@ -246,6 +246,13 @@ const Face* nearest_face(const Mesh& m, const std::array<double, 3>& p) {
     return best;
 }
 
+Mesh make_plane(double sx, double sy) {
+    if (sy <= 0) sy = sx;
+    const double hx = sx / 2.0, hy = sy / 2.0;
+    std::vector<std::array<double, 3>> p = {{-hx, -hy, 0}, {hx, -hy, 0}, {hx, hy, 0}, {-hx, hy, 0}};
+    return Mesh::from_pydata(p, {{0, 1, 2, 3}});
+}
+
 Mesh make_cylinder(int sides, double radius, double height) {
     constexpr double PI = 3.14159265358979323846;
     std::vector<std::array<double, 3>> pos;
@@ -513,6 +520,115 @@ Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double th
         new_tags.push_back(copy_tags(f, mark));
     }
     return Mesh::from_pydata(new_pos, new_faces, new_tags);
+}
+
+// --- open-mesh operators -----------------------------------------------------
+Mesh delete_faces(const Mesh& mesh, const std::vector<const Face*>& faces) {
+    std::set<const Face*> rem(faces.begin(), faces.end());
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::vector<std::vector<int>> nf;
+    std::vector<Tags> nt;
+    for (const auto& f : mesh.faces())
+        if (!rem.count(f.get())) {
+            std::vector<int> fv;
+            for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+            nf.push_back(fv); nt.push_back(copy_tags(f.get()));
+        }
+    if (nf.empty()) return Mesh();
+    return build_compact(pos, nf, nt);  // drops the orphaned verts
+}
+
+// Chain the boundary edges (1 incident loop) into ordered vertex cycles, each
+// wound opposite to the existing face (so a fill face is outward + manifold).
+static std::vector<std::vector<int>> boundary_loops(const Mesh& mesh) {
+    std::map<int, int> nxt;  // vert id -> next vert id around the hole (deterministic order)
+    for (const auto& e : mesh.edges()) {
+        auto loops = mesh.edge_loops(e.get());
+        if (loops.size() == 1) nxt[loops[0]->next->vert->id] = loops[0]->vert->id;  // hole: b->a
+    }
+    std::vector<std::vector<int>> out;
+    std::set<int> seen;
+    for (const auto& kv : nxt) {
+        int start = kv.first;
+        if (seen.count(start)) continue;
+        std::vector<int> loop;
+        int cur = start;
+        while (cur >= 0 && !seen.count(cur)) {
+            seen.insert(cur); loop.push_back(cur);
+            auto it = nxt.find(cur);
+            cur = (it == nxt.end()) ? -1 : it->second;
+            if (cur == start) break;
+        }
+        if (loop.size() >= 3) out.push_back(loop);
+    }
+    return out;
+}
+
+Mesh fill_holes(const Mesh& mesh, const std::string& mark) {
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::vector<std::vector<int>> nf;
+    std::vector<Tags> nt;
+    for (const auto& f : mesh.faces()) {
+        std::vector<int> fv;
+        for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+        nf.push_back(fv); nt.push_back(copy_tags(f.get()));
+    }
+    for (auto& loop : boundary_loops(mesh)) {
+        nf.push_back(loop);
+        nt.push_back(mark.empty() ? Tags{} : Tags{mark});
+    }
+    return Mesh::from_pydata(pos, nf, nt);
+}
+
+Mesh bridge_faces(const Mesh& mesh, const std::vector<const Face*>& faces, const std::string& mark) {
+    if (faces.size() < 2) return mesh.copy();
+    const Face* fa = faces[0];
+    const Face* fb = faces[1];
+    std::vector<int> la, lb;
+    for (Loop* lp : mesh.face_loops(fa)) la.push_back(lp->vert->id);
+    for (Loop* lp : mesh.face_loops(fb)) lb.push_back(lp->vert->id);
+    const int n = static_cast<int>(la.size());
+    if (fa == fb || static_cast<int>(lb.size()) != n) return mesh.copy();
+    std::set<int> sa(la.begin(), la.end()), sb(lb.begin(), lb.end());
+    for (int v : la) if (sb.count(v)) return mesh.copy();           // shared verts
+    for (const auto& e : mesh.edges()) {                            // edge joining the rims
+        const bool a1 = sa.count(e->v1->id), b1 = sb.count(e->v1->id);
+        const bool a2 = sa.count(e->v2->id), b2 = sb.count(e->v2->id);
+        if ((a1 && b2) || (b1 && a2)) return mesh.copy();
+    }
+    std::vector<int> lb_rev(lb.rbegin(), lb.rend());
+    auto co = [&](int vid) -> const A3& { return mesh.verts()[vid]->co; };
+    double best = 1e300;
+    std::vector<int> pair(n);
+    for (int off = 0; off < n; ++off) {                            // nearest correspondence
+        double cost = 0;
+        for (int i = 0; i < n; ++i) {
+            const A3& A = co(la[i]); const A3& B = co(lb_rev[(i + off) % n]);
+            cost += (A[0]-B[0])*(A[0]-B[0]) + (A[1]-B[1])*(A[1]-B[1]) + (A[2]-B[2])*(A[2]-B[2]);
+        }
+        if (cost < best) {
+            best = cost;
+            for (int i = 0; i < n; ++i) pair[i] = lb_rev[(i + off) % n];
+        }
+    }
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::vector<std::vector<int>> nf;
+    std::vector<Tags> nt;
+    for (const auto& f : mesh.faces())
+        if (f.get() != fa && f.get() != fb) {
+            std::vector<int> fv;
+            for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+            nf.push_back(fv); nt.push_back(copy_tags(f.get()));
+        }
+    for (int i = 0; i < n; ++i) {  // wall quads, wound for outward normals
+        const int j = (i + 1) % n;
+        nf.push_back({la[j], la[i], pair[i], pair[j]});
+        nt.push_back(copy_tags(fa, mark));
+    }
+    return build_compact(pos, nf, nt);
 }
 
 // Faces incident to vertex `vid`, in rotational (umbrella) order.

@@ -21,8 +21,9 @@ from __future__ import annotations
 import json
 
 from .kernel import (
-    Mesh, make_cube, make_cylinder_ngon, face_normal, faces_by_normal,
-    extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel, catmull_clark,
+    Mesh, make_cube, make_cylinder_ngon, make_plane, face_normal, faces_by_normal,
+    extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel,
+    delete_faces, bridge_faces, fill_holes, catmull_clark,
 )
 
 
@@ -301,6 +302,11 @@ class MeshProgram:
     def cube(self, size=1.0, mark=None): return self.add(**_cmd("cube", mark=mark, size=size))
     def cylinder(self, sides=24, radius=0.5, height=1.0, mark=None):
         return self.add(**_cmd("cylinder", mark=mark, sides=sides, radius=radius, height=height))
+    def plane(self, size_x=1.0, size_y=None, mark=None):
+        return self.add(**_cmd("plane", mark=mark, size_x=size_x, size_y=size_y if size_y is not None else size_x))
+    def delete(self, on): return self.add(**_cmd("delete", on=on))
+    def bridge(self, on, mark=None): return self.add(**_cmd("bridge", on=on, mark=mark))
+    def fill(self, mark=None): return self.add(**_cmd("fill", mark=mark))
     def extrude(self, on, distance=0.5, mark=None): return self.add(**_cmd("extrude", on=on, mark=mark, distance=distance))
     def inset(self, on, thickness=0.3, mark=None): return self.add(**_cmd("inset", on=on, mark=mark, thickness=thickness))
     def bevel(self, on, width=0.2, depth=0.1, mark=None): return self.add(**_cmd("bevel", on=on, mark=mark, width=width, depth=depth))
@@ -325,6 +331,9 @@ class MeshProgram:
                 elif op == "cylinder":
                     mesh = make_cylinder_ngon(cmd.get("sides", 24), cmd.get("radius", 0.5), cmd.get("height", 1.0))
                     outs = list(mesh.faces)
+                elif op == "plane":
+                    mesh = make_plane(cmd.get("size_x", 1.0), cmd.get("size_y"))
+                    outs = list(mesh.faces)
                 elif mesh is None:
                     raise MeshLangError(f"op '{op}' before any primitive")
                 elif op == "extrude":
@@ -346,6 +355,17 @@ class MeshProgram:
                 elif op == "edge_bevel":
                     esel = resolve_edges(mesh, cmd.get("on", {"by": "all"}), last_tag)
                     mesh = edge_bevel(mesh, esel, cmd.get("width", 0.15), mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "delete":
+                    sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
+                    mesh = delete_faces(mesh, sel)
+                    outs = []  # faces removed -> last_created undefined
+                elif op == "bridge":
+                    sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
+                    mesh = bridge_faces(mesh, sel, mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "fill":
+                    mesh = fill_holes(mesh, mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "subdivide":
                     for _ in range(cmd.get("levels", 1)):

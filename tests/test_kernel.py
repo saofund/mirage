@@ -5,8 +5,9 @@ import pytest
 import numpy as np
 
 from mirage.kernel import (
-    make_cube, make_cylinder_ngon, catmull_clark, extrude_faces, inset_faces, bevel_faces,
-    loop_cut, edge_bevel, face_normal, faces_by_normal,
+    make_cube, make_cylinder_ngon, make_plane, catmull_clark, extrude_faces, inset_faces,
+    bevel_faces, loop_cut, edge_bevel, delete_faces, bridge_faces, fill_holes,
+    face_normal, faces_by_normal,
 )
 from mirage.meshlang import resolve_edges, ESel
 
@@ -133,6 +134,49 @@ def test_edge_bevel_partial_selection_is_safe():
     b = edge_bevel(c, top_edges, width=0.2)
     b.validate()
     assert b.is_closed_manifold()  # valid regardless
+
+
+def test_plane_is_an_open_mesh():
+    p = make_plane(1.0)
+    p.validate()                                     # structurally valid...
+    assert not p.is_closed_manifold()                # ...but open (4 boundary edges)
+    assert p.stats()["faces"] == 1
+
+
+def test_delete_faces_opens_the_mesh():
+    c = make_cube(1.0)
+    opened = delete_faces(c, faces_by_normal(c, "z", 1.0))   # remove the top
+    opened.validate()
+    assert not opened.is_closed_manifold()           # a box open at the top
+    assert opened.stats()["faces"] == 5
+
+
+def test_delete_then_fill_recloses():
+    c = make_cube(1.0)
+    opened = delete_faces(c, faces_by_normal(c, "z", 1.0))
+    closed = fill_holes(opened)
+    closed.validate()
+    assert closed.is_closed_manifold() and closed.euler() == 2 and _all_outward(closed)
+
+
+def test_bridge_makes_a_closed_box():
+    c = make_cube(1.0)
+    sides = [f for f in c.faces if abs(face_normal(c, f)[2]) < 0.5]
+    opened = delete_faces(c, sides)                  # top + bottom (2 disjoint quads)
+    tube = bridge_faces(opened, list(opened.faces))  # bridge -> open tube
+    tube.validate()
+    assert tube.euler() == 0 and not tube.is_closed_manifold() and _all_outward(tube)
+    box = fill_holes(tube)                           # cap -> closed box
+    box.validate()
+    assert box.is_closed_manifold() and box.euler() == 2 and _all_outward(box)
+
+
+def test_bridge_rejects_adjacent_faces():
+    # two faces sharing an edge cannot be bridged cleanly -> safe no-op (copy)
+    c = make_cube(1.0)
+    adj = [faces_by_normal(c, "z", 1.0)[0], faces_by_normal(c, "x", 1.0)[0]]
+    out = bridge_faces(c, adj)
+    assert out.stats() == c.stats()
 
 
 def test_loop_cut_ngon_seed_is_noop():

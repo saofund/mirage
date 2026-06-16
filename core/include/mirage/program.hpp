@@ -46,6 +46,10 @@ public:
     // bare cube()/inset() does the obvious thing in a GUI.
     Program& cube(double size = 1.0, const std::string& mark = "");
     Program& cylinder(int sides = 24, double radius = 0.5, double height = 1.0, const std::string& mark = "");
+    Program& plane(double size_x = 1.0, double size_y = -1.0, const std::string& mark = "");
+    Program& del(const json& on);                  // delete the selected faces (open the mesh)
+    Program& bridge(const json& on, const std::string& mark = "");  // tunnel between two openings
+    Program& fill(const std::string& mark = "");   // cap every boundary loop
     Program& extrude(const json& on, double distance = 0.5, const std::string& mark = "");
     Program& inset(const json& on, double thickness = 0.3, const std::string& mark = "");
     Program& bevel(const json& on, double width = 0.2, double depth = 0.1, const std::string& mark = "");

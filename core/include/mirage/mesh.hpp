@@ -129,6 +129,8 @@ const Face* nearest_face(const Mesh& m, const std::array<double, 3>& p);
 Mesh make_cube(double size = 1.0);
 // Cylinder: an n-gon prism (two `sides`-vertex rings + caps); a closed 2-manifold.
 Mesh make_cylinder(int sides = 24, double radius = 0.5, double height = 1.0);
+// Plane: a single quad in z=0 (an OPEN mesh: 4 boundary edges). size_y <= 0 => square.
+Mesh make_plane(double size_x = 1.0, double size_y = -1.0);
 
 // Operators (built on the owned topology).
 // One level of Catmull-Clark subdivision — the classic test that a radial-edge
@@ -164,5 +166,14 @@ Mesh loop_cut(const Mesh& mesh, const std::vector<const Face*>& seed, const std:
 // keeps it watertight), so a cube with all edges selected -> a chamfered cube.
 Mesh edge_bevel(const Mesh& mesh, const std::vector<Edge*>& edges, double width = 0.15,
                 const std::string& mark = "");
+
+// Open-mesh operators — boundary edges (1 incident loop) are first-class.
+// delete_faces: remove the selected faces (opens the mesh); orphans compacted.
+Mesh delete_faces(const Mesh& mesh, const std::vector<const Face*>& faces);
+// fill_holes: cap every boundary loop with a single n-gon (close the holes).
+Mesh fill_holes(const Mesh& mesh, const std::string& mark = "");
+// bridge_faces: delete two vertex/edge-disjoint faces of equal vertex count and
+// connect their rims with a ring of quads (a tunnel between separate openings).
+Mesh bridge_faces(const Mesh& mesh, const std::vector<const Face*>& faces, const std::string& mark = "");
 
 }  // namespace mirage

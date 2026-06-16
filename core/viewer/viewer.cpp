@@ -680,6 +680,8 @@ int main(int argc, char** argv) {
         if (ImGui::Button("New Cube"))     { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::SameLine();
         if (ImGui::Button("New Cylinder")) { prog.clear(); prog.cylinder(24, 0.5, 1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("New Plane"))    { prog.clear(); prog.plane(1.0); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::Spacing();
         ImGui::TextDisabled("operators (on the highlighted target)");
         // act on the current selector; a pick then stacks on what the op produced
@@ -694,6 +696,10 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Subdivide")) { prog.subdivide(1); dirty = true; }
         // edge_bevel rounds every sharp edge (an edge selector, not a face one)
         if (ImGui::Button("Edge Bevel (sharp)")) { prog.edge_bevel(json{{"by", "sharp"}, {"angle", 30}}, 0.12); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Delete")) { prog.del(current_on()); g_sel_mode = SEL_NONE; dirty = true; }  // open the mesh
+        ImGui::SameLine();
+        if (ImGui::Button("Fill")) { prog.fill(); g_sel_mode = SEL_NONE; dirty = true; }                // cap holes
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();

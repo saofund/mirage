@@ -519,6 +519,117 @@ def loop_cut(mesh: Mesh, seed_faces, axis: str = "z", mark: str | None = None) -
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
+# --------------------------------------------------------------------------- #
+# Open meshes — boundary edges (1 incident loop) are first-class. These operators
+# cut, join and close them, which is what bridge / hole-filling need.
+# --------------------------------------------------------------------------- #
+def delete_faces(mesh: Mesh, faces, mark: str | None = None) -> Mesh:
+    """Remove the selected faces (opening the mesh: their edges become boundary).
+    Orphaned vertices are compacted away. The result may be an open mesh."""
+    rem = set(id(f) for f in faces)
+    new_pos = [list(v.co) for v in mesh.verts]
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:
+        if id(f) not in rem:
+            new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs))
+    if not new_faces:
+        return Mesh()  # everything deleted
+    new_pos, new_faces = _compact(new_pos, new_faces)
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
+def _boundary_loops(mesh: Mesh) -> list:
+    """Chain the boundary edges (1 incident face) into ordered vertex cycles, each
+    wound for an OUTWARD fill face (opposite to the existing face along each edge)."""
+    nxt = {}  # vert id -> next vert id around the hole
+    for e in mesh.edges:
+        loops = mesh.edge_loops(e)
+        if len(loops) == 1:
+            lp = loops[0]
+            a, b = lp.vert.id, lp.next.vert.id   # the face traverses a->b
+            nxt[b] = a                            # so the hole/fill goes b->a
+    out, seen = [], set()
+    for start in list(nxt):
+        if start in seen:
+            continue
+        loop, cur = [], start
+        while cur is not None and cur not in seen:
+            seen.add(cur); loop.append(cur); cur = nxt.get(cur)
+            if cur == start:
+                break
+        if len(loop) >= 3:
+            out.append(loop)
+    return out
+
+
+def fill_holes(mesh: Mesh, mark: str | None = None) -> Mesh:
+    """Close every boundary loop with a single n-gon face (cap the holes)."""
+    new_pos = [list(v.co) for v in mesh.verts]
+    new_faces = [[lp.vert.id for lp in mesh.face_loops(f)] for f in mesh.faces]
+    new_attrs = [_copy_attrs(f.attrs) for f in mesh.faces]
+    for loop in _boundary_loops(mesh):
+        # the loop is already wound opposite to the wall face along each edge -> an
+        # outward-facing cap that stays manifold.
+        new_faces.append(loop)
+        new_attrs.append({"tags": [mark]} if mark else {})
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
+def bridge_faces(mesh: Mesh, faces, mark: str | None = None) -> Mesh:
+    """Bridge two selected faces into a tunnel: delete both and connect their
+    boundary rims with a ring of quads. The two faces must have equal vertex count
+    and share no vertices or edges (separate openings — e.g. two disjoint quads, or
+    a cube's top+bottom after the sides are deleted). Vertices are paired by nearest
+    correspondence with the second rim reversed; wound to stay manifold."""
+    import numpy as np
+    sel = list(faces)
+    if len(sel) < 2:
+        return mesh.copy()
+    fa, fb = sel[0], sel[1]
+    la = [lp.vert.id for lp in mesh.face_loops(fa)]
+    lb = [lp.vert.id for lp in mesh.face_loops(fb)]
+    n = len(la)
+    if fa is fb or n != len(lb) or set(la) & set(lb):
+        return mesh.copy()                       # need two distinct, vertex-disjoint faces
+    # no existing edge may join the two rims (else a bridge quad would be the 3rd face on it)
+    sa, sb = set(la), set(lb)
+    for e in mesh.edges:
+        if (e.v1.id in sa and e.v2.id in sb) or (e.v1.id in sb and e.v2.id in sa):
+            return mesh.copy()
+
+    pa = [np.array(mesh.verts[i].co) for i in la]
+    lb_rev = lb[::-1]
+    pb = [np.array(mesh.verts[i].co) for i in lb_rev]
+    best = None
+    for off in range(n):                          # nearest rotational correspondence
+        rolled = lb_rev[off:] + lb_rev[:off]
+        rp = pb[off:] + pb[:off]
+        cost = sum(float(np.dot(pa[i] - rp[i], pa[i] - rp[i])) for i in range(n))
+        if best is None or cost < best[0]:
+            best = (cost, rolled)
+    pair = best[1]
+
+    new_pos = [list(v.co) for v in mesh.verts]
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:
+        if f is fa or f is fb:
+            continue                              # delete the two bridged faces
+        new_faces.append([lp.vert.id for lp in mesh.face_loops(f)]); new_attrs.append(_copy_attrs(f.attrs))
+    for i in range(n):                            # wall quads, wound for outward normals
+        j = (i + 1) % n
+        new_faces.append([la[j], la[i], pair[i], pair[j]]); new_attrs.append(_copy_attrs(fa.attrs, add_tag=mark))
+    new_pos, new_faces = _compact(new_pos, new_faces)
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
+def make_plane(size_x: float = 1.0, size_y: float | None = None) -> Mesh:
+    """A single quad in the z=0 plane (an open mesh: 4 boundary edges)."""
+    sy = size_x if size_y is None else size_y
+    hx, hy = size_x / 2.0, sy / 2.0
+    p = [(-hx, -hy, 0.0), (hx, -hy, 0.0), (hx, hy, 0.0), (-hx, hy, 0.0)]
+    return Mesh.from_pydata(p, [[0, 1, 2, 3]])
+
+
 def _faces_around_vertex(mesh: Mesh, vid: int) -> list:
     """The faces incident to vertex ``vid``, in rotational (umbrella) order — walk
     from face to face across the edges that meet at the vertex."""
