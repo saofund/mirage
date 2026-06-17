@@ -663,63 +663,103 @@ static std::vector<const Face*> faces_around_vertex(const Mesh& mesh, int vid) {
     return ordered;
 }
 
+// The two edges of face f incident to vertex vid.
+static std::set<Edge*> vertex_face_edges(const Mesh& mesh, const Face* f, int vid) {
+    for (Loop* lp : mesh.face_loops(f))
+        if (lp->vert->id == vid) return {lp->prev->edge, lp->edge};
+    return {};
+}
+
 Mesh edge_bevel(const Mesh& mesh, const std::vector<Edge*>& edges, double width, const std::string& mark) {
     std::set<const Edge*> sel(edges.begin(), edges.end());
     if (sel.empty()) return mesh.copy();
+    width = std::min(std::max(width, 1e-3), 0.49);
 
-    std::unordered_map<int, std::vector<Edge*>> vert_edges;
+    // interior vertices only (a boundary vertex has an open umbrella the sector
+    // walk can't handle); their edges are pruned so open meshes never crash.
+    std::unordered_map<int, bool> vinterior;
     for (const auto& e : mesh.edges()) {
-        vert_edges[e->v1->id].push_back(e.get());
-        vert_edges[e->v2->id].push_back(e.get());
-    }
-    std::set<int> beveled;  // fixpoint: keep only fully-selected vertex stars
-    while (true) {
-        beveled.clear();
-        for (const auto& kv : vert_edges) {
-            bool all_in = true;
-            for (Edge* e : kv.second) if (!sel.count(e)) { all_in = false; break; }
-            if (all_in) beveled.insert(kv.first);
+        const bool man = mesh.edge_faces(e.get()).size() == 2;
+        for (int vid : {e->v1->id, e->v2->id}) {
+            auto it = vinterior.find(vid);
+            vinterior[vid] = (it == vinterior.end() ? true : it->second) && man;
         }
+    }
+    while (true) {  // prune edges with a lone-cut (<2) or boundary endpoint
+        std::unordered_map<int, int> deg;
+        for (const auto& e : mesh.edges())
+            if (sel.count(e.get())) { deg[e->v1->id]++; deg[e->v2->id]++; }
         std::set<const Edge*> new_sel;
         for (const auto& e : mesh.edges())
-            if (sel.count(e.get()) && beveled.count(e->v1->id) && beveled.count(e->v2->id))
+            if (sel.count(e.get()) && vinterior[e->v1->id] && vinterior[e->v2->id] &&
+                deg[e->v1->id] >= 2 && deg[e->v2->id] >= 2)
                 new_sel.insert(e.get());
         if (new_sel == sel) break;
         sel = std::move(new_sel);
     }
-    if (beveled.empty()) return mesh.copy();
-    width = std::min(std::max(width, 1e-3), 0.49);
+    if (sel.empty()) return mesh.copy();
+
+    std::set<int> bevel_vert;
+    for (const auto& e : mesh.edges())
+        if (sel.count(e.get())) { bevel_vert.insert(e->v1->id); bevel_vert.insert(e->v2->id); }
 
     std::vector<A3> pos;
     for (const auto& v : mesh.verts()) pos.push_back(v->co);
-    std::map<std::pair<const Face*, int>, int> copy;  // per-face copy of a bevelled corner
-    for (const auto& fp : mesh.faces()) {
-        const Face* f = fp.get();
-        std::vector<Vert*> vs = mesh.face_verts(f);
-        A3 c{0, 0, 0};
-        for (Vert* v : vs) c = a3add(c, v->co);
-        c = a3scale(c, 1.0 / static_cast<double>(vs.size()));
-        for (Vert* v : vs) {
-            if (beveled.count(v->id)) {
-                copy[{f, v->id}] = static_cast<int>(pos.size());
-                pos.push_back({v->co[0] + (c[0] - v->co[0]) * width,
-                               v->co[1] + (c[1] - v->co[1]) * width,
-                               v->co[2] + (c[2] - v->co[2]) * width});
-            } else {
-                copy[{f, v->id}] = v->id;
-            }
+    std::map<std::pair<int, int>, int> sector_corner;          // (vid, sector) -> new vid
+    std::map<std::pair<int, const Face*>, int> face_sector;    // (vid, face) -> sector
+    std::map<int, int> vert_ns;                                // vid -> number of sectors
+    std::map<int, const Face*> vert_repface;                   // vid -> a face (for the corner tag)
+
+    for (int vid : bevel_vert) {  // split each star into sectors, one moved corner each
+        auto ring = faces_around_vertex(mesh, vid);
+        const int k = static_cast<int>(ring.size());
+        if (k == 0) continue;
+        std::vector<bool> cut(k);
+        for (int i = 0; i < k; ++i) {
+            auto a = vertex_face_edges(mesh, ring[i], vid);
+            auto b = vertex_face_edges(mesh, ring[(i + 1) % k], vid);
+            bool c = false;
+            for (Edge* e : a) if (b.count(e) && sel.count(e)) c = true;
+            cut[i] = c;
+        }
+        int start = 0;
+        for (int i = 0; i < k; ++i) if (cut[(i - 1 + k) % k]) { start = i; break; }
+        std::vector<std::vector<const Face*>> sectors;
+        std::vector<const Face*> cur;
+        int idx = start;
+        for (int s = 0; s < k; ++s) {
+            cur.push_back(ring[idx]);
+            if (cut[idx]) { sectors.push_back(cur); cur.clear(); }
+            idx = (idx + 1) % k;
+        }
+        if (!cur.empty()) sectors.push_back(cur);
+        vert_ns[vid] = static_cast<int>(sectors.size());
+        vert_repface[vid] = ring.front();
+        const A3 vco = mesh.verts()[vid]->co;
+        for (int si = 0; si < static_cast<int>(sectors.size()); ++si) {
+            A3 avg{0, 0, 0};
+            for (const Face* f : sectors[si]) avg = a3add(avg, face_centroid(mesh, f));
+            avg = a3scale(avg, 1.0 / static_cast<double>(sectors[si].size()));
+            sector_corner[{vid, si}] = static_cast<int>(pos.size());
+            pos.push_back({vco[0] + (avg[0] - vco[0]) * width, vco[1] + (avg[1] - vco[1]) * width,
+                           vco[2] + (avg[2] - vco[2]) * width});
+            for (const Face* f : sectors[si]) face_sector[{vid, f}] = si;
         }
     }
 
+    auto corner_of = [&](int vid, const Face* f) -> int {
+        return bevel_vert.count(vid) ? sector_corner[{vid, face_sector[{vid, f}]}] : vid;
+    };
+
     std::vector<std::vector<int>> faces;
     std::vector<Tags> tags;
-    for (const auto& fp : mesh.faces()) {  // shrunk faces
+    for (const auto& fp : mesh.faces()) {  // shrunk faces (corners moved per sector)
         const Face* f = fp.get();
         std::vector<int> poly;
-        for (Loop* lp : mesh.face_loops(f)) poly.push_back(copy[{f, lp->vert->id}]);
+        for (Loop* lp : mesh.face_loops(f)) poly.push_back(corner_of(lp->vert->id, f));
         faces.push_back(poly); tags.push_back(copy_tags(f));
     }
-    for (const auto& ep : mesh.edges()) {  // chamfer quad per bevelled edge
+    for (const auto& ep : mesh.edges()) {  // chamfer quad per selected edge
         Edge* e = ep.get();
         if (!sel.count(e)) continue;
         std::vector<Face*> fs = mesh.edge_faces(e);
@@ -728,15 +768,15 @@ Mesh edge_bevel(const Mesh& mesh, const std::vector<Edge*>& edges, double width,
         Loop* lp1 = nullptr;
         for (Loop* l : mesh.face_loops(f1)) if (l->edge == e) { lp1 = l; break; }
         const int u = lp1->vert->id, w = lp1->next->vert->id;
-        faces.push_back({copy[{f1, w}], copy[{f1, u}], copy[{f2, u}], copy[{f2, w}]});
+        faces.push_back({corner_of(w, f1), corner_of(u, f1), corner_of(u, f2), corner_of(w, f2)});
         tags.push_back(copy_tags(f1, mark));
     }
-    for (int vid : beveled) {  // corner face (reversed umbrella -> outward winding)
-        auto ring = faces_around_vertex(mesh, vid);
-        if (ring.size() < 3) continue;
+    for (int vid : bevel_vert) {  // corner face fills the sector-corner cycle (>=3 sectors)
+        auto it = vert_ns.find(vid);
+        if (it == vert_ns.end() || it->second < 3) continue;  // 2 sectors: chamfers share the cross-edge
         std::vector<int> poly;
-        for (auto it = ring.rbegin(); it != ring.rend(); ++it) poly.push_back(copy[{*it, vid}]);
-        faces.push_back(poly); tags.push_back(copy_tags(ring.front(), mark));
+        for (int si = it->second - 1; si >= 0; --si) poly.push_back(sector_corner[{vid, si}]);  // reversed -> outward
+        faces.push_back(poly); tags.push_back(copy_tags(vert_repface[vid], mark));
     }
     return build_compact(pos, faces, tags);  // drop the now-orphaned original verts
 }

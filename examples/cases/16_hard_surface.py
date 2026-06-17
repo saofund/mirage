@@ -1,0 +1,55 @@
+"""Case 16 — the hard-surface + open-mesh operator set.
+
+Everything here is one op-log (the single source of truth a human GUI and an AI
+both edit), replayed by the kernel. The same JSON runs identically in the native
+C++ engine (differential-tested). Run:
+
+    uv run python examples/cases/16_hard_surface.py
+"""
+from mirage.meshlang import MeshProgram, Sel, ESel
+
+
+def show(label, prog):
+    s = prog.build().stats()
+    print(f"  {label:34} v={s['verts']:3} e={s['edges']:3} f={s['faces']:3} "
+          f"euler={s['euler']} {'closed' if s['closed_manifold'] else 'OPEN'}")
+
+
+def main():
+    print("hard-surface operators (selection-as-query, never an index):")
+
+    # loop_cut: a watertight edge ring around a quad strip
+    show("cube -> loop_cut(z) -> extrude band",
+         MeshProgram().cube(1.0)
+         .loop_cut(Sel.normal("x", 1.0), axis="z", mark="band")
+         .extrude(Sel.tag("band"), 0.12))
+
+    # edge_bevel: round EVERY sharp edge (full) -> a chamfered cube
+    show("cube -> edge_bevel(sharp) [full]",
+         MeshProgram().cube(1.0).edge_bevel(ESel.sharp(30), width=0.18))
+
+    # edge_bevel: round ONLY the top loop (mixed valence) -> sharp sides
+    show("cube -> edge_bevel(top loop) [mixed]",
+         MeshProgram().cube(1.2).edge_bevel(ESel.on_face(Sel.normal("z", 1.0)), width=0.22))
+
+    # edge_bevel a cylinder's top rim only (a loop)
+    show("cyl -> edge_bevel(top rim) [mixed]",
+         MeshProgram().cylinder(12, 0.5, 1.0).edge_bevel(ESel.on_face(Sel.normal("z", 1.0)), width=0.08))
+
+    print("\nopen meshes (boundary edges are first-class):")
+
+    # plane is an open mesh; delete opens a closed one; bridge tunnels; fill caps
+    show("plane (open quad)", MeshProgram().plane(1.0))
+    show("cube -> delete(top) [open box]",
+         MeshProgram().cube(1.0).delete(Sel.normal("z", 1.0)))
+    show("cube -> del sides -> bridge -> fill [closed box]",
+         MeshProgram().cube(1.0)
+         .delete(Sel.NOT(Sel.OR(Sel.normal("z", 1.0), Sel.normal("z", -1.0))))
+         .bridge(Sel.all())
+         .fill())
+
+    print("\none op-log, two engines, a human and an AI both editing it.")
+
+
+if __name__ == "__main__":
+    main()

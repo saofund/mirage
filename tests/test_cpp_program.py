@@ -132,6 +132,41 @@ OPLOGS = {
         {"op": "cylinder", "sides": 8, "radius": 0.5, "height": 1.0},
         {"op": "edge_bevel", "on": {"by": "sharp", "angle": 20}, "width": 0.12},
     ],
+    "edge_bevel_top_loop_mixed": [
+        {"op": "cube", "size": 1.0},
+        # only the 4 top edges (a closed loop) -> rounded top rim, sharp sides
+        {"op": "edge_bevel", "on": {"by": "on_face", "face": {"by": "normal", "axis": "z", "sign": 1.0}}, "width": 0.2},
+    ],
+    "edge_bevel_cyl_rim_mixed": [
+        {"op": "cylinder", "sides": 10, "radius": 0.5, "height": 1.2},
+        {"op": "edge_bevel", "on": {"by": "on_face", "face": {"by": "normal", "axis": "z", "sign": 1.0}}, "width": 0.08},
+    ],
+    "edge_bevel_lonely_noop": [
+        {"op": "cube", "size": 1.0},
+        # the 4 vertical edges are pairwise disjoint -> lone cuts -> pruned -> no-op
+        {"op": "edge_bevel", "on": {"by": "axis", "axis": "z"}, "width": 0.2},
+    ],
+    # regression: subdivided mesh has >=3-sector vertices (was manifold-lost before the corner-face fix)
+    "edge_bevel_subdiv_sharp": [
+        {"op": "cube", "size": 1.0},
+        {"op": "subdivide", "levels": 1},
+        {"op": "edge_bevel", "on": {"by": "sharp", "angle": 30}, "width": 0.08},
+    ],
+    "edge_bevel_subdiv_loop": [
+        {"op": "cube", "size": 1.0},
+        {"op": "subdivide", "levels": 1},
+        {"op": "edge_bevel", "on": {"by": "on_face", "face": {"by": "normal", "axis": "z", "sign": 1.0}}, "width": 0.06},
+    ],
+    "edge_bevel_inset_rim": [   # inset makes inner-rim loops -> >=3-sector verts
+        {"op": "cube", "size": 1.0},
+        {"op": "inset", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "thickness": 0.3},
+        {"op": "edge_bevel", "on": {"by": "sharp", "angle": 30}, "width": 0.1},
+    ],
+    "edge_bevel_open_box": [    # open mesh: boundary verts pruned -> no crash, valid
+        {"op": "cube", "size": 1.0},
+        {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},
+        {"op": "edge_bevel", "on": {"by": "all"}, "width": 0.1},
+    ],
     "edge_bevel_then_extrude": [
         {"op": "cube", "size": 1.0},
         {"op": "edge_bevel", "on": {"by": "all"}, "width": 0.18, "mark": "rounded"},

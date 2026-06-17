@@ -657,55 +657,104 @@ def _faces_around_vertex(mesh: Mesh, vid: int) -> list:
     return ordered
 
 
-def edge_bevel(mesh: Mesh, edges, width: float = 0.15, mark: str | None = None) -> Mesh:
-    """Bevel (round/chamfer) selected edges. Each face is shrunk at its bevelled
-    corners, each bevelled edge becomes a chamfer quad, and each bevelled vertex
-    becomes a corner face — so a cube with all edges selected becomes a chamfered
-    cube (26 faces), still a closed 2-manifold.
+def _vertex_face_edges(mesh: Mesh, f, vid: int) -> set:
+    """The two edges of face ``f`` incident to vertex ``vid`` (as a set of ids)."""
+    for lp in mesh.face_loops(f):
+        if lp.vert.id == vid:
+            return {id(lp.prev.edge), id(lp.edge)}
+    return set()
 
-    Only vertices whose *entire* edge-star is selected are bevelled (a fixpoint
-    prunes the rest), which keeps the result watertight: a partial selection on a
-    closed mesh bevels its clean core (often all-or-nothing). This is the dominant
-    hard-surface use — `edge_bevel(resolve_edges(m, {"by":"sharp"}))` rounds every
-    hard edge. Selected edges are found via the edge-selection grammar."""
+
+def edge_bevel(mesh: Mesh, edges, width: float = 0.15, mark: str | None = None) -> Mesh:
+    """Bevel (round/chamfer) any set of selected edges — general mixed valence.
+
+    At each touched vertex the edge-star is split into SECTORS by the selected
+    edges: a run of faces joined by *un*-selected edges shares one inward-moved
+    corner (so those edges stay manifold), while each selected edge is a sector
+    boundary that becomes a chamfer quad linking the two sectors' corners. A vertex
+    whose entire star is selected closes into a corner face; a partially-selected
+    vertex's sectors are stitched by the chamfers alone (no corner face).
+
+    A selected edge is only bevelled where BOTH endpoints carry >=2 selected edges
+    (a lone cut can't separate its two faces) — a fixpoint prunes the rest. So this
+    rounds closed edge loops and whole-face / region edges (`edge_bevel(sharp)`
+    rounds every hard edge; `edge_bevel(top_four)` rounds just that loop), and
+    safely no-ops on an open edge path or a single edge. Always watertight."""
     import numpy as np
-    sel_ids = set(id(e) for e in edges)
-    if not sel_ids:
+    sel = set(id(e) for e in edges)
+    if not sel:
         return mesh.copy()
-    vert_edges = {}
-    for e in mesh.edges:
-        vert_edges.setdefault(e.v1.id, []).append(e)
-        vert_edges.setdefault(e.v2.id, []).append(e)
-    beveled = set()
-    while True:  # keep only edges whose BOTH endpoints have a fully-selected star
-        beveled = {vid for vid, es in vert_edges.items() if all(id(e) in sel_ids for e in es)}
-        new_sel = {id(e) for e in mesh.edges
-                   if id(e) in sel_ids and e.v1.id in beveled and e.v2.id in beveled}
-        if new_sel == sel_ids:
-            break
-        sel_ids = new_sel
-    if not beveled:
-        return mesh.copy()  # nothing cleanly bevelable
     t = min(max(float(width), 1e-3), 0.49)
 
+    # a vertex is interior only if its WHOLE star is 2-manifold; boundary vertices
+    # (on an open mesh) have an open umbrella the sector walk can't handle, so we
+    # never bevel them (their edges are pruned -> safe, never a crash).
+    vinterior = {}
+    for e in mesh.edges:
+        man = len(mesh.edge_faces(e)) == 2
+        for vid in (e.v1.id, e.v2.id):
+            vinterior[vid] = vinterior.get(vid, True) and man
+
+    while True:  # prune edges whose endpoint is a lone cut (<2) or a boundary vertex
+        deg = {}
+        for e in mesh.edges:
+            if id(e) in sel:
+                deg[e.v1.id] = deg.get(e.v1.id, 0) + 1
+                deg[e.v2.id] = deg.get(e.v2.id, 0) + 1
+        new_sel = {id(e) for e in mesh.edges
+                   if id(e) in sel and vinterior.get(e.v1.id) and vinterior.get(e.v2.id)
+                   and deg.get(e.v1.id, 0) >= 2 and deg.get(e.v2.id, 0) >= 2}
+        if new_sel == sel:
+            break
+        sel = new_sel
+    if not sel:
+        return mesh.copy()
+
+    bevel_vert = {e.v1.id for e in mesh.edges if id(e) in sel} | {e.v2.id for e in mesh.edges if id(e) in sel}
+
     new_pos = [list(v.co) for v in mesh.verts]
-    copy = {}  # (face_id, vert_id) -> vertex id (a moved per-face copy for bevelled verts)
-    for f in mesh.faces:
-        vs = mesh.face_verts(f)
-        c = np.mean([v.co for v in vs], axis=0)
-        for v in vs:
-            if v.id in beveled:
-                p = np.array(v.co) + (c - np.array(v.co)) * t
-                copy[(id(f), v.id)] = len(new_pos); new_pos.append([float(p[0]), float(p[1]), float(p[2])])
-            else:
-                copy[(id(f), v.id)] = v.id
+    sector_corner = {}   # (vid, sector_index) -> new vertex id
+    face_sector = {}     # (vid, face_id) -> sector_index
+    vert_ns = {}         # vid -> number of sectors
+    vert_repface = {}    # vid -> a representative incident face (for the corner tag)
+
+    for vid in sorted(bevel_vert):
+        ring = _faces_around_vertex(mesh, vid)
+        k = len(ring)
+        if k == 0:
+            continue
+        # cut[i]: the edge shared by ring[i] and ring[i+1] (at vid) is selected
+        cut = [any(eid in sel for eid in
+                   _vertex_face_edges(mesh, ring[i], vid) & _vertex_face_edges(mesh, ring[(i + 1) % k], vid))
+               for i in range(k)]
+        start = next((i for i in range(k) if cut[(i - 1) % k]), 0)  # begin a sector after a cut
+        sectors, cur, idx = [], [], start
+        for _ in range(k):
+            cur.append(ring[idx])
+            if cut[idx]:
+                sectors.append(cur); cur = []
+            idx = (idx + 1) % k
+        if cur:
+            sectors.append(cur)
+        vert_ns[vid] = len(sectors)
+        vert_repface[vid] = ring[0]
+        vco = np.array(mesh.verts[vid].co)
+        for si, sec in enumerate(sectors):
+            avg = np.mean([np.mean([w.co for w in mesh.face_verts(f)], axis=0) for f in sec], axis=0)
+            p = vco + (avg - vco) * t
+            sector_corner[(vid, si)] = len(new_pos); new_pos.append([float(p[0]), float(p[1]), float(p[2])])
+            for f in sec:
+                face_sector[(vid, id(f))] = si
+
+    def corner_of(vid, f):  # the vertex face f uses in place of vid (its sector corner)
+        return sector_corner[(vid, face_sector[(vid, id(f))])] if vid in bevel_vert else vid
 
     new_faces, new_attrs = [], []
-    for f in mesh.faces:  # the shrunk original faces
-        new_faces.append([copy[(id(f), lp.vert.id)] for lp in mesh.face_loops(f)])
+    for f in mesh.faces:  # the shrunk original faces (corners moved per sector)
+        new_faces.append([corner_of(lp.vert.id, f) for lp in mesh.face_loops(f)])
         new_attrs.append(_copy_attrs(f.attrs))
-    for e in mesh.edges:  # a chamfer quad per bevelled edge
-        if id(e) not in sel_ids:
+    for e in mesh.edges:  # a chamfer quad per selected edge (linking the two sectors)
+        if id(e) not in sel:
             continue
         fs = mesh.edge_faces(e)
         if len(fs) != 2:
@@ -713,18 +762,16 @@ def edge_bevel(mesh: Mesh, edges, width: float = 0.15, mark: str | None = None) 
         f1, f2 = fs
         lp1 = next(lp for lp in mesh.face_loops(f1) if lp.edge is e)
         u, w = lp1.vert.id, lp1.next.vert.id      # f1 traverses u->w along the edge
-        u1, w1 = copy[(id(f1), u)], copy[(id(f1), w)]
-        u2, w2 = copy[(id(f2), u)], copy[(id(f2), w)]
+        u1, w1 = corner_of(u, f1), corner_of(w, f1)
+        u2, w2 = corner_of(u, f2), corner_of(w, f2)
         new_faces.append([w1, u1, u2, w2])        # opposite to f1's u1->w1 -> manifold
         new_attrs.append(_copy_attrs(f1.attrs, add_tag=mark))
-    for vid in beveled:  # a corner face per bevelled vertex
-        ring = _faces_around_vertex(mesh, vid)
-        if len(ring) < 3:
+    for vid in sorted(bevel_vert):  # corner face fills the sector-corner cycle (>=3 sectors)
+        ns = vert_ns.get(vid, 0)
+        if ns < 3:  # 2 sectors -> the two chamfers already share the lone cross-edge
             continue
-        # the umbrella walk runs clockwise as seen from outside; reverse for an
-        # outward-facing corner polygon (consistent winding with the rest).
-        new_faces.append([copy[(id(f), vid)] for f in reversed(ring)])
-        new_attrs.append(_copy_attrs(ring[0].attrs, add_tag=mark))
+        new_faces.append([sector_corner[(vid, si)] for si in reversed(range(ns))])  # reversed -> outward
+        new_attrs.append(_copy_attrs(vert_repface[vid].attrs, add_tag=mark))
     new_pos, new_faces = _compact(new_pos, new_faces)  # drop the now-orphaned original verts
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 

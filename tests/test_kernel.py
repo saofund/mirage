@@ -125,15 +125,51 @@ def test_edge_bevel_cylinder_sharp_stays_closed():
     assert b.euler() == 2 and b.is_closed_manifold() and _all_outward(b)
 
 
-def test_edge_bevel_partial_selection_is_safe():
-    # the top 4 edges alone don't form complete vertex stars on a closed cube,
-    # so the fixpoint prunes them -> a safe no-op (never a torn mesh).
+def test_edge_bevel_top_loop_mixed():
+    # the 4 top edges form a closed LOOP -> round just the top rim, sides stay sharp
     c = make_cube(1.0)
-    top_edges = resolve_edges(c, ESel.on_face({"by": "normal", "axis": "z", "sign": 1.0}))
-    # intersect with sharp to keep just the rim; still not a full star -> no-op
-    b = edge_bevel(c, top_edges, width=0.2)
+    top = resolve_edges(c, ESel.on_face({"by": "normal", "axis": "z", "sign": 1.0}))
+    b = edge_bevel(c, top, width=0.2)
     b.validate()
-    assert b.is_closed_manifold()  # valid regardless
+    assert b.euler() == 2 and b.is_closed_manifold() and _all_outward(b)
+    assert b.stats()["faces"] == 10            # 4 unchanged sides + top + 4 chamfers + the inset top? -> 10
+    # the bottom verts are untouched (no selected edge there)
+    assert any(abs(v.co[2] + 0.5) < 1e-9 and abs(v.co[0]) == 0.5 for v in b.verts)
+
+
+def test_edge_bevel_lonely_edges_are_safe_noop():
+    # 4 pairwise-disjoint vertical edges are lone cuts at every vertex -> pruned
+    c = make_cube(1.0)
+    out = edge_bevel(c, resolve_edges(c, ESel.axis("z")), width=0.2)
+    out.validate()
+    assert out.stats() == c.stats()            # nothing cleanly bevelable -> unchanged
+
+
+def test_edge_bevel_subdivided_stays_closed():
+    # subdivided meshes have >=3-sector vertices: each needs a corner face or the
+    # mesh tears open (the stress-test bug). Must stay a closed 2-manifold.
+    sc = catmull_clark(make_cube(1.0))
+    for sel in (resolve_edges(sc, ESel.sharp(30)), resolve_edges(sc, ESel.on_face({"by": "normal", "axis": "z", "sign": 1.0}))):
+        b = edge_bevel(sc, sel, width=0.06)
+        b.validate()
+        assert b.euler() == 2 and b.is_closed_manifold()
+
+
+def test_edge_bevel_inset_rim_loop_stays_closed():
+    c = make_cube(1.0)
+    ip = inset_faces(c, faces_by_normal(c, "z", 1.0), 0.3)
+    b = edge_bevel(ip, resolve_edges(ip, ESel.sharp(30)), width=0.1)
+    b.validate()
+    assert b.euler() == 2 and b.is_closed_manifold()
+
+
+def test_edge_bevel_open_mesh_never_crashes():
+    # boundary vertices are pruned -> beveling an open mesh is a safe no-/partial-op
+    c = make_cube(1.0)
+    ob = delete_faces(c, faces_by_normal(c, "z", 1.0))     # open box
+    for esel in (ESel.all(), ESel.sharp(30)):
+        b = edge_bevel(ob, resolve_edges(ob, esel), width=0.1)
+        b.validate()                                        # must not crash, must validate
 
 
 def test_plane_is_an_open_mesh():
