@@ -92,11 +92,16 @@ static Gpu build_gpu(const Mesh& m) {
     if (g.radius < 1e-3f) g.radius = 1;
     for (const auto& f : m.faces()) {
         auto vs = m.face_verts(f.get());
+        const Material& fm = f->material;  // bake the face's material into its verts (loc 2,3)
+        const float ar = fm.set ? (float)fm.color[0] : -1.0f;  // r<0 -> "no material, use the slider"
+        const float ag = (float)fm.color[1], ab = (float)fm.color[2];
+        const float met = (float)fm.metallic, rgh = (float)fm.roughness;
         for (size_t i = 1; i + 1 < vs.size(); ++i) {
             Vert* tri[3] = {vs[0], vs[i], vs[i + 1]};
             for (Vert* v : tri) {
                 V3 n = vn[v];
-                g.data.insert(g.data.end(), {(float)v->co[0], (float)v->co[1], (float)v->co[2], n[0], n[1], n[2]});
+                g.data.insert(g.data.end(), {(float)v->co[0], (float)v->co[1], (float)v->co[2], n[0], n[1], n[2],
+                                             ar, ag, ab, met, rgh});
                 g.verts++;
             }
         }
@@ -128,12 +133,17 @@ static GLuint make_program(const char* vs, const char* fs) {
 static const char* VERT = R"(#version 330 core
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
+layout(location=2) in vec3 aAlbedo;     // per-face material (r<0 -> use the slider uniforms)
+layout(location=3) in vec2 aMetRough;
 uniform mat4 uMVP;
 uniform mat4 uLightVP;
 out vec3 vN;
 out vec3 vWorld;
 out vec4 vLightPos;
-void main(){ vWorld=aPos; vN=aNormal; vLightPos=uLightVP*vec4(aPos,1.0); gl_Position=uMVP*vec4(aPos,1.0); }
+out vec3 vMatAlbedo;
+out vec2 vMatMR;
+void main(){ vWorld=aPos; vN=aNormal; vMatAlbedo=aAlbedo; vMatMR=aMetRough;
+  vLightPos=uLightVP*vec4(aPos,1.0); gl_Position=uMVP*vec4(aPos,1.0); }
 )";
 // Physically-based viewport: Cook-Torrance microfacet specular (GGX/Trowbridge-
 // Reitz NDF, Smith height-correlated geometry, Schlick Fresnel) + Lambert
@@ -142,6 +152,7 @@ void main(){ vWorld=aPos; vN=aNormal; vLightPos=uLightVP*vec4(aPos,1.0); gl_Posi
 // normals from screen-space derivatives (true faceting, no geometry change).
 static const char* FRAG = R"(#version 330 core
 in vec3 vN; in vec3 vWorld; in vec4 vLightPos;
+in vec3 vMatAlbedo; in vec2 vMatMR;
 out vec4 frag;
 uniform vec3 uEye;
 uniform vec3 uAlbedo;
@@ -190,14 +201,19 @@ void main(){
   vec3 N = (uFlat==1) ? normalize(cross(dFdx(vWorld), dFdy(vWorld))) : normalize(vN);
   vec3 V = normalize(uEye - vWorld);
   if(dot(N,V) < 0.0) N = -N;                       // two-sided shading
+  // per-face material if assigned (albedo.r >= 0), else the global slider
+  bool hasMat = vMatAlbedo.r >= 0.0;
+  vec3 albedo   = hasMat ? vMatAlbedo : uAlbedo;
+  float metallic= hasMat ? vMatMR.x   : uMetallic;
+  float rough   = hasMat ? vMatMR.y   : uRough;
   vec3 key = )" KEY_LIGHT R"(;
   float vis = shadow_vis(vLightPos, max(dot(N,key),0.0));
   vec3 col = vec3(0.0);
-  col += vis * brdf(N,V, key,                       vec3(3.0,2.9,2.7), uAlbedo,uMetallic,uRough); // key (shadowed)
-  col += brdf(N,V, normalize(vec3(-0.6, 0.2, 0.3)), vec3(0.5,0.6,0.8), uAlbedo,uMetallic,uRough); // fill (cool)
-  col += brdf(N,V, normalize(vec3( 0.1,-0.7, 0.4)), vec3(0.5,0.45,0.4), uAlbedo,uMetallic,uRough); // rim (warm)
+  col += vis * brdf(N,V, key,                       vec3(3.0,2.9,2.7), albedo,metallic,rough); // key (shadowed)
+  col += brdf(N,V, normalize(vec3(-0.6, 0.2, 0.3)), vec3(0.5,0.6,0.8), albedo,metallic,rough); // fill (cool)
+  col += brdf(N,V, normalize(vec3( 0.1,-0.7, 0.4)), vec3(0.5,0.45,0.4), albedo,metallic,rough); // rim (warm)
   float hemi = 0.5+0.5*N.z;                          // sky/ground hemispherical ambient
-  col += mix(vec3(0.10,0.10,0.12), vec3(0.32,0.35,0.40), hemi) * uAlbedo * (1.0-uMetallic*0.7);
+  col += mix(vec3(0.10,0.10,0.12), vec3(0.32,0.35,0.40), hemi) * albedo * (1.0-metallic*0.7);
   frag = vec4(pow(aces(col), vec3(0.4545)), 1.0);
 }
 )";
@@ -441,13 +457,17 @@ int main(int argc, char** argv) {
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo);
     glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);  // 11 floats: pos3 normal3 albedo3 metallic1 roughness1
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(float), (void*)(6 * sizeof(float)));  // albedo (r<0 = use slider)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 11 * sizeof(float), (void*)(9 * sizeof(float)));  // metallic, roughness
+    glEnableVertexAttribArray(3);
 
-    GLuint hvao, hvbo; int hl_verts = 0;  // selection highlight geometry
+    GLuint hvao, hvbo; int hl_verts = 0;  // selection highlight geometry (pos3 normal3)
     glGenVertexArrays(1, &hvao); glGenBuffers(1, &hvbo);
     glBindVertexArray(hvao);
     glBindBuffer(GL_ARRAY_BUFFER, hvbo);
