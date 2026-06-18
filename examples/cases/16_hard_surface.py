@@ -48,6 +48,17 @@ def main():
          .bridge(Sel.all())
          .fill())
 
+    print("\nper-face materials (the path tracer renders them; assign after geometry):")
+    p = (MeshProgram().cube(1.2)
+         .inset(Sel.normal("z", 1.0), 0.3).extrude(Sel.last(), 0.5)
+         .material(Sel.last(), color=[1.0, 0.78, 0.34], metallic=1.0, roughness=0.18)  # gold metal boss
+         .material(Sel.NOT(Sel.OR(Sel.normal("z", 1.0), Sel.normal("z", -1.0))),       # red base sides
+                   color=[0.8, 0.12, 0.12], roughness=0.45))
+    mesh = p.build()
+    n_mat = sum(1 for f in mesh.faces if f.attrs.get("material"))
+    print(f"  gold metal boss + red base: {n_mat}/{len(mesh.faces)} faces carry a material")
+    print("  render it:  mirage_render --oplog mirage_oplog.json --out shot.ppm --spp 160")
+
     print("\none op-log, two engines, a human and an AI both editing it.")
 
 

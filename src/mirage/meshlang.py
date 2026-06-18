@@ -314,6 +314,8 @@ class MeshProgram:
     def edge_bevel(self, on, width=0.15, mark=None): return self.add(**_cmd("edge_bevel", on=on, mark=mark, width=width))
     def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
+    def material(self, on, color=(0.8, 0.8, 0.8), metallic=0.0, roughness=0.5):
+        return self.add(**_cmd("material", on=on, color=list(color), metallic=metallic, roughness=roughness))
     def translate(self, on, by): return self.add(**_cmd("translate", on=on, by=list(by)))
     def scale(self, on, by): return self.add(**_cmd("scale", on=on, by=list(by)))
     def assert_(self, **kw): return self.add(**_cmd("assert", **kw))
@@ -375,6 +377,13 @@ class MeshProgram:
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
                     for f in sel:
                         f.attrs.setdefault("tags", []).append(cmd["name"])
+                    outs = sel
+                elif op == "material":
+                    sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
+                    mat = {"color": list(cmd.get("color", [0.8, 0.8, 0.8])),
+                           "metallic": cmd.get("metallic", 0.0), "roughness": cmd.get("roughness", 0.5)}
+                    for f in sel:
+                        f.attrs["material"] = mat
                     outs = sel
                 elif op in ("translate", "scale"):
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)

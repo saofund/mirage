@@ -29,6 +29,17 @@ PYBIND11_MODULE(_mirage_core, mod) {
             d["euler"] = m.euler();
             d["closed_manifold"] = m.is_closed_manifold();
             return d;
+        })
+        // Per-face material: [r, g, b, metallic, roughness, set?] for each face,
+        // for differential-testing the `material` op against the Python engine.
+        .def("face_materials", [](const Mesh& m) {
+            py::list out;
+            for (const auto& f : m.faces()) {
+                const Material& mat = f->material;
+                out.append(py::make_tuple(mat.color[0], mat.color[1], mat.color[2], mat.metallic,
+                                          mat.roughness, mat.set));
+            }
+            return out;
         });
 
     mod.def("make_cube", &make_cube, py::arg("size") = 1.0);

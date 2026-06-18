@@ -277,6 +277,43 @@ def test_op_before_primitive_raises():
         cpp.replay_json(json.dumps([{"op": "inset", "on": {"by": "all"}, "thickness": 0.3}]))
 
 
+# ----- per-face material (the `material` op) checked against the Python engine ---
+MATERIAL_OPLOGS = {
+    "cube_top_gold": [
+        {"op": "cube", "size": 1.0},
+        {"op": "material", "on": {"by": "normal", "axis": "z", "sign": 1.0},
+         "color": [1.0, 0.78, 0.34], "metallic": 1.0, "roughness": 0.2},
+    ],
+    "boss_two_materials": [
+        {"op": "cube", "size": 1.2},
+        {"op": "inset", "on": {"by": "normal", "axis": "z"}, "thickness": 0.3},
+        {"op": "extrude", "on": {"by": "last_created"}, "distance": 0.5},
+        {"op": "material", "on": {"by": "last_created"}, "color": [0.85, 0.1, 0.1], "metallic": 0.0, "roughness": 0.4},
+        {"op": "material", "on": {"by": "normal", "axis": "z", "sign": -1.0}, "color": [0.1, 0.2, 0.9]},
+    ],
+}
+
+
+def _py_face_materials(ops):
+    out = []
+    for f in MeshProgram(ops).build().faces:
+        mat = f.attrs.get("material")
+        if mat:
+            out.append((mat["color"][0], mat["color"][1], mat["color"][2],
+                        mat["metallic"], mat["roughness"], True))
+        else:
+            out.append((0.8, 0.8, 0.8, 0.0, 0.5, False))  # the C++ default Material
+    return out
+
+
+@pytest.mark.parametrize("name", list(MATERIAL_OPLOGS))
+def test_material_matches_python(name):
+    ops = MATERIAL_OPLOGS[name]
+    py = _py_face_materials(ops)
+    cp = [tuple(t) for t in cpp.replay_json(json.dumps(ops)).face_materials()]
+    assert cp == py, f"material '{name}' diverged: C++ {cp} vs Python {py}"
+
+
 # ----- the native lint pass, checked against the Python one -------------------
 from mirage.repair import lint_program  # noqa: E402
 

@@ -307,7 +307,9 @@ def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
     edge_bevel{on,width} (round/chamfer selected EDGES; `on` is an EDGE selector:
       {"by":"sharp","angle":30} | {"by":"axis","axis":"z"} | {"by":"boundary"} |
       {"by":"on_face","face":<face-selector>} | {"by":"all"} + and/or/not);
-    subdivide{levels}; tag{on,name}; scale/translate{on,by}; assert{closed_manifold,euler}.
+    subdivide{levels}; tag{on,name}; scale/translate{on,by}; assert{closed_manifold,euler};
+    material{on,color:[r,g,b],metallic,roughness} (per-face PBR material the path tracer
+      renders; assign it AFTER the geometry ops — it does not propagate through later rebuilds).
     Selectors (the `on` value): {"by":"normal","axis":"z","sign":1} | {"by":"tag","name":..} |
     {"by":"extreme","axis":"z","which":"max"} | {"by":"last_created"} | {"by":"all"} |
     {"and":[..]} / {"or":[..]} / {"not":..}.

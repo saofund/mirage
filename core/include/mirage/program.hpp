@@ -57,6 +57,7 @@ public:
     Program& edge_bevel(const json& on, double width = 0.15, const std::string& mark = "");
     Program& subdivide(int levels = 1);
     Program& tag(const json& on, const std::string& name);
+    Program& material(const json& on, const std::array<double, 3>& color, double metallic = 0.0, double roughness = 0.5);
     Program& translate(const json& on, const std::array<double, 3>& by);
     Program& scale(const json& on, const std::array<double, 3>& by);
     Program& assert_(const json& cond);  // {"closed_manifold": true} and/or {"euler": n}

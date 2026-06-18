@@ -38,7 +38,7 @@ from .kernel import Mesh, face_normal, _compact, _copy_attrs
 from .meshlang import MeshProgram, SelectorEmpty, describe, resolve, _tags
 
 KNOWN_OPS = ["cube", "cylinder", "plane", "extrude", "inset", "bevel", "loop_cut", "edge_bevel",
-             "delete", "bridge", "fill", "subdivide", "tag", "translate", "scale", "assert"]
+             "delete", "bridge", "fill", "subdivide", "tag", "material", "translate", "scale", "assert"]
 KNOWN_BY = ["all", "normal", "tag", "extreme", "side", "last_created"]
 _PARAM_SIG = {  # a param key -> the op it most likely belongs to (for op-name inference)
     "distance": "extrude", "thickness": "inset", "width": "bevel", "depth": "bevel",

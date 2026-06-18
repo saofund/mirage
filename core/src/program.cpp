@@ -159,6 +159,10 @@ Program& Program::subdivide(int levels) { return add(json{{"op", "subdivide"}, {
 Program& Program::tag(const json& on, const std::string& name) {
     return add(json{{"op", "tag"}, {"on", on}, {"name", name}});
 }
+Program& Program::material(const json& on, const std::array<double, 3>& color, double metallic, double roughness) {
+    return add(json{{"op", "material"}, {"on", on}, {"color", {color[0], color[1], color[2]}},
+                    {"metallic", metallic}, {"roughness", roughness}});
+}
 Program& Program::translate(const json& on, const std::array<double, 3>& by) {
     return add(json{{"op", "translate"}, {"on", on}, {"by", {by[0], by[1], by[2]}}});
 }
@@ -242,6 +246,18 @@ Mesh Program::build(std::string* last_tag_out) const {
                 const std::string name = cmd.at("name").get<std::string>();
                 for (const Face* f : seln) add_tag(f, name);
                 outs = seln;
+            } else if (op == "material") {
+                auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
+                Material m;
+                if (cmd.contains("color")) {
+                    const json& c = cmd.at("color");
+                    m.color = {c[0].get<double>(), c[1].get<double>(), c[2].get<double>()};
+                }
+                m.metallic = cmd.value("metallic", 0.0);
+                m.roughness = cmd.value("roughness", 0.5);
+                m.set = true;
+                for (const Face* f : seln) const_cast<Face*>(f)->material = m;
+                outs = seln;
             } else if (op == "translate" || op == "scale") {
                 auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
                 const std::array<double, 3> dflt = op == "scale" ? std::array<double, 3>{1, 1, 1}
@@ -309,6 +325,7 @@ std::string Program::label(const json& op) {
     if (k == "fill") return "fill  (cap holes)";
     if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
     if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
+    if (k == "material") return "material  m=" + num(op.value("metallic", 0.0)) + " r=" + num(op.value("roughness", 0.5)) + on_suffix(op);
     if (k == "translate") return "translate" + on_suffix(op);
     if (k == "scale") return "scale" + on_suffix(op);
     if (k == "assert") return "assert";

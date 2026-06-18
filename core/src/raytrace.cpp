@@ -25,8 +25,9 @@ double len(const V3& a) { return std::sqrt(dot(a, a)); }
 V3 norm(const V3& a) { double l = len(a); return l > 0 ? a * (1.0 / l) : a; }
 
 // Triangle soup with per-triangle geometric normal (the mesh is triangulated by
-// fanning each face; flat normals match the hard-surface kernel).
-struct Tri { V3 a, b, c, n; };
+// fanning each face; flat normals match the hard-surface kernel) and the face's
+// PBR material baked in (the `material` op assigns it; default = scene material).
+struct Tri { V3 a, b, c, n; V3 albedo; double metallic; double rough; };
 
 // Axis-aligned bounding box + a binary BVH so intersection is O(log n), not O(n)
 // per ray — the difference between seconds and minutes on a subdivided mesh.
@@ -201,7 +202,7 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
                 if (tt > 0 && tt < h.t) {
                     h.t = tt;
                     V3 nn = t.n; if (dot(nn, d) > 0) nn = nn * -1.0;  // two-sided
-                    h.n = nn; h.albedo = sc.albedo; h.metallic = sc.metallic; h.rough = sc.roughness;
+                    h.n = nn; h.albedo = t.albedo; h.metallic = t.metallic; h.rough = t.rough;
                     h.is_ground = false;
                 }
             }
@@ -316,12 +317,17 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     for (const auto& f : mesh.faces()) {
         std::vector<Vert*> vs = mesh.face_verts(f.get());
         V3 n = [&] { auto a = face_normal(mesh, f.get()); return V3{a[0], a[1], a[2]}; }();
+        const Material& fm = f->material;  // per-face material, or the scene default
+        const V3 alb = fm.set ? V3{fm.color[0], fm.color[1], fm.color[2]} : sc.albedo;
+        const double met = fm.set ? fm.metallic : sc.metallic;
+        const double rgh = fm.set ? fm.roughness : sc.roughness;
         for (std::size_t i = 1; i + 1 < vs.size(); ++i) {
             Tri t;
             t.a = {vs[0]->co[0], vs[0]->co[1], vs[0]->co[2]};
             t.b = {vs[i]->co[0], vs[i]->co[1], vs[i]->co[2]};
             t.c = {vs[i + 1]->co[0], vs[i + 1]->co[1], vs[i + 1]->co[2]};
             t.n = n;
+            t.albedo = alb; t.metallic = met; t.rough = rgh;
             sc.tris.push_back(t);
         }
     }

@@ -65,6 +65,22 @@ def test_selector_extreme_picks_top_face():
     assert len(resolve(make_cube(1.0), Sel.extreme("z", "max"))) == 1
 
 
+def test_material_assigns_to_final_faces():
+    m = (MeshProgram().cube(1.0)
+         .material(Sel.normal("z", 1), color=[1.0, 0.0, 0.0], metallic=0.5)).build()
+    mats = [f.attrs.get("material") for f in m.faces if f.attrs.get("material")]
+    assert len(mats) == 1 and mats[0]["color"] == [1.0, 0.0, 0.0] and mats[0]["metallic"] == 0.5
+
+
+def test_material_does_not_propagate_through_rebuilds():
+    # unlike tags, material is a final-mesh assignment (matches the C++ engine):
+    # a geometry op after `material` rebuilds the mesh and drops it.
+    m = (MeshProgram().cube(1.0)
+         .material(Sel.all(), color=[1.0, 0.0, 0.0])
+         .subdivide(levels=1)).build()
+    assert all(f.attrs.get("material") is None for f in m.faces)
+
+
 def test_last_created_after_scale():
     # regression: scale/translate/tag set last_tag but never stamped it onto the
     # faces, so `last_created` on the NEXT op matched 0 (goblet-flare repro).

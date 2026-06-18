@@ -45,6 +45,16 @@ struct Loop {
     Loop* radial_prev = nullptr;
 };
 
+// A PBR material assigned to a face (base colour + metallic + roughness). `set`
+// false means "use the renderer's default material". Mirrors a face's
+// attrs["material"] on the Python side.
+struct Material {
+    std::array<double, 3> color{0.8, 0.8, 0.8};
+    double metallic = 0.0;
+    double roughness = 0.5;
+    bool set = false;
+};
+
 struct Face {
     int id = 0;
     Loop* loop = nullptr;  // entry into the loop cycle
@@ -53,6 +63,7 @@ struct Face {
     // copied to descendant faces across rebuilds and are what selectors (`tag`,
     // `last_created`) resolve. Mirrors Python Face.attrs["tags"].
     std::vector<std::string> tags;
+    Material material;  // per-face PBR material (assigned by the `material` op)
 };
 
 // A mesh owns its elements (vector<unique_ptr>) and links them by raw pointers,

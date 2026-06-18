@@ -26,8 +26,10 @@ from typing import Iterator, Optional
 
 def _copy_attrs(attrs, add_tag=None):
     """Copy a face's attrs (the 'tags' list is copied, not shared); optionally append
-    a tag — the durable handle that survives an operator's mesh rebuild."""
-    out = {k: (list(v) if isinstance(v, list) else v) for k, v in attrs.items()}
+    a tag — the durable handle that survives an operator's mesh rebuild. ``material``
+    is intentionally NOT propagated: it is a final-mesh assignment (matching the C++
+    engine), so assign materials after the geometry ops."""
+    out = {k: (list(v) if isinstance(v, list) else v) for k, v in attrs.items() if k != "material"}
     if add_tag is not None:
         out.setdefault("tags", []).append(add_tag)
     return out
