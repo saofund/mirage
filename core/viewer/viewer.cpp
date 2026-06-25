@@ -702,6 +702,13 @@ int main(int argc, char** argv) {
         if (ImGui::Button("New Cylinder")) { prog.clear(); prog.cylinder(24, 0.5, 1.0); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::SameLine();
         if (ImGui::Button("New Plane"))    { prog.clear(); prog.plane(1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        if (ImGui::Button("New Sphere"))   { prog.clear(); prog.uv_sphere(24, 16, 0.6); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("New Cone"))     { prog.clear(); prog.cone(24, 0.5, 1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("New Torus"))    { prog.clear(); prog.torus(24, 12, 0.6, 0.22); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("New Grid"))     { prog.clear(); prog.grid(1.0, 1.0, 10, 10); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::Spacing();
         ImGui::TextDisabled("operators (on the highlighted target)");
         // act on the current selector; a pick then stacks on what the op produced
@@ -758,11 +765,22 @@ int main(int argc, char** argv) {
             if (ImGui::SmallButton("reset to top")) { g_sel_mode = SEL_NONE; rebuild_highlight(); }
         }
         ImGui::Spacing();
-        ImGui::TextDisabled("material (PBR viewport)");
+        ImGui::TextDisabled("material — color / metallic / roughness");
         ImGui::SetNextItemWidth(220); ImGui::ColorEdit3("albedo", g_albedo);
         ImGui::SetNextItemWidth(220); ImGui::SliderFloat("metallic", &g_metallic, 0.0f, 1.0f);
         ImGui::SetNextItemWidth(220); ImGui::SliderFloat("roughness", &g_rough, 0.04f, 1.0f);
         ImGui::Checkbox("flat shading (faceted)", &g_flat);
+        // Bake these as a PER-FACE `material` op on the current selection. It writes
+        // to the op-log SoT, so the same assignment shows in the viewport (build_gpu
+        // bakes it), the path tracer, and the glTF export. Unassigned faces keep the
+        // sliders above as their live fallback. Assign materials AFTER the geometry.
+        if (ImGui::Button("Assign material to selection")) {
+            prog.material(current_on(), {g_albedo[0], g_albedo[1], g_albedo[2]}, g_metallic, g_rough);
+            if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK;  // keep the highlight on the just-painted face
+            dirty = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(targets the orange selection)");
         // Ground-truth render: path-trace the current model from this camera. The
         // realtime view above is the preview; this is the Cycles-class render.
         if (ImGui::Button("Render (path-traced -> mirage_render.ppm)")) {
