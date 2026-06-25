@@ -386,6 +386,24 @@ def repair_mesh_geometry(eps: float = 1e-6) -> dict:
 
 
 @mcp.tool()
+def export_gltf(path: Optional[str] = None) -> dict:
+    """Export the current model to a glTF 2.0 binary (.glb) — the interop format
+    Blender, three.js, model-viewer, Unreal and Omniverse all read. Per-face PBR
+    materials (the `material` op) are carried through as glTF pbrMetallicRoughness,
+    so the asset renders the same elsewhere. Default path: <project>/mirage_export.glb."""
+    from .gltf_export import export_glb
+    p = path or os.path.join(os.path.dirname(_SHARED_OPLOG), "mirage_export.glb")
+    try:
+        mesh = _model.build()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    try:
+        return {"ok": True, **export_glb(mesh, p)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
 def get_mesh_program() -> list:
     """The current op-log program (the canonical model)."""
     return _model.ops

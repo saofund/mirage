@@ -43,3 +43,6 @@ core/build/
 
 # shared op-log runtime artifact (Save/Load round-trips it; not source)
 mirage_oplog.json
+
+# ImGui runtime layout (generated)
+imgui.ini

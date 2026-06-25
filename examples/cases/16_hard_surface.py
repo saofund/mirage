@@ -59,6 +59,12 @@ def main():
     print(f"  gold metal boss + red base: {n_mat}/{len(mesh.faces)} faces carry a material")
     print("  render it:  mirage_render --oplog mirage_oplog.json --out shot.ppm --spp 160")
 
+    print("\nglTF export (the asset leaves the building — Blender/three.js/model-viewer):")
+    from mirage.gltf_export import export_glb
+    info = export_glb(mesh, "boss.glb")
+    print(f"  wrote {info['path']}: {info['bytes']} bytes, {info['triangles']} tris, "
+          f"{info['materials']} materials (per-face PBR carried through)")
+
     print("\none op-log, two engines, a human and an AI both editing it.")
 
 
