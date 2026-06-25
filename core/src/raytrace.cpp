@@ -147,6 +147,9 @@ struct Scene {
     V3 ground_albedo{0.40, 0.42, 0.46};
     V3 albedo{0.8, 0.8, 0.8};
     double metallic = 0.0, roughness = 0.5;
+    double env_intensity = 1.0;     // scales the sky image-based fill
+    double sun_intensity = 1.0;     // scales the NEE directional key
+    double clamp_indirect = 12.0;   // firefly cap on indirect contributions (0 = off)
 };
 
 // Recursive median-split BVH build. Returns the node index of the built subtree.
@@ -249,9 +252,18 @@ V3 jittered_sun(Rng& rng) {
 // next-event estimation at each hit (crisp shadows + sharp speculars, low noise).
 V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
     V3 L{0, 0, 0}, beta{1, 1, 1};
+    // Add a light contribution, clamping its luminance on INDIRECT bounces so a rare
+    // hot specular sample can't leave a firefly (direct, bounce 0, stays crisp).
+    auto add = [&](V3 c, int bounce) {
+        if (sc.clamp_indirect > 0 && bounce >= 1) {
+            const double lm = luminance(c);
+            if (lm > sc.clamp_indirect) c = c * (sc.clamp_indirect / lm);
+        }
+        L = L + c;
+    };
     for (int bounce = 0; bounce < max_bounce; ++bounce) {
         Hit h = intersect(sc, o, d);
-        if (h.t > 1e29) { L = L + mulv(beta, sky(d)); break; }  // escaped -> sky fill
+        if (h.t > 1e29) { add(mulv(beta, sky(d) * sc.env_intensity), bounce); break; }  // escaped -> sky fill
         const V3 N = h.n, V = d * -1.0;
         const double NoV = std::max(dot(N, V), 1e-4);
         const double a = std::max(h.rough * h.rough, 1e-3);
@@ -268,7 +280,7 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
             const V3 F = fresnel(VoH, f0);
             const V3 spec = F * (D_ggx(NoH, a) * G_smith(NoV, NoL, a) / (4 * NoV * NoL + 1e-6));
             const V3 fr = diff_alb * (1.0 / PI) + spec;
-            L = L + mulv(mulv(beta, fr), SUN_E) * NoL;
+            add(mulv(mulv(beta, fr), SUN_E * sc.sun_intensity) * NoL, bounce);
         }
 
         // indirect: stochastically pick the diffuse or specular lobe
@@ -313,6 +325,9 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     sc.metallic = settings.metallic;
     sc.roughness = settings.roughness;
     sc.ground = settings.ground;
+    sc.env_intensity = settings.env_intensity;
+    sc.sun_intensity = settings.sun_intensity;
+    sc.clamp_indirect = settings.clamp_indirect;
     V3 lo{1e30, 1e30, 1e30}, hi{-1e30, -1e30, -1e30};
     for (const auto& f : mesh.faces()) {
         std::vector<Vert*> vs = mesh.face_verts(f.get());
@@ -381,7 +396,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                     const V3 d = norm(fwd + right * u + up2 * v);
                     acc = acc + radiance(sc, eye, d, settings.max_bounce, rng);
                 }
-                acc = aces(acc * (1.0 / settings.spp));
+                acc = aces(acc * (settings.exposure / settings.spp));
                 unsigned char* px = &img.rgb[(std::size_t(y) * img.w + x) * 3];
                 for (int k = 0; k < 3; ++k)
                     px[k] = (unsigned char)(std::pow(std::clamp(acc[k], 0.0, 1.0), 1.0 / 2.2) * 255.0 + 0.5);

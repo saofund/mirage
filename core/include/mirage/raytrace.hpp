@@ -32,6 +32,17 @@ struct RenderSettings {
     double metallic = 0.0;    // 0 = dielectric, 1 = metal (albedo tints the specular)
     double roughness = 0.5;   // microfacet roughness (GGX)
     bool ground = true;       // an implicit diffuse floor under the model
+
+    // Environment & post. The sky is a gradient image-based light: it fills shadows
+    // and bounces colour (the sun is added separately by NEE). env_intensity scales
+    // that ambient fill; sun_intensity scales the directional key.
+    double env_intensity = 1.0;
+    double sun_intensity = 1.0;
+    double exposure = 1.0;    // linear stops applied before the ACES tonemap
+    // Firefly clamp: cap the luminance of INDIRECT (bounce>=1) contributions so a
+    // rare high-variance specular bounce can't leave a white speckle. 0 = off. The
+    // first hit's direct light is never clamped, so highlights stay crisp.
+    double clamp_indirect = 12.0;
 };
 
 struct Image {

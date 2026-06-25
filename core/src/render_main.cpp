@@ -35,6 +35,10 @@ int main(int argc, char** argv) {
         else if (a == "--bounce") s.max_bounce = int(next(s.max_bounce));
         else if (a == "--metallic") s.metallic = next(s.metallic);
         else if (a == "--rough") s.roughness = next(s.roughness);
+        else if (a == "--env") s.env_intensity = next(s.env_intensity);
+        else if (a == "--sun") s.sun_intensity = next(s.sun_intensity);
+        else if (a == "--exposure") s.exposure = next(s.exposure);
+        else if (a == "--clamp") s.clamp_indirect = next(s.clamp_indirect);
     }
 
     Program prog;
