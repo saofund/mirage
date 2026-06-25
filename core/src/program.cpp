@@ -119,6 +119,29 @@ Program& Program::plane(double size_x, double size_y, const std::string& mark) {
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::uv_sphere(int segments, int rings, double radius, const std::string& mark) {
+    json c{{"op", "uv_sphere"}, {"segments", segments}, {"rings", rings}, {"radius", radius}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::cone(int sides, double radius, double height, const std::string& mark) {
+    json c{{"op", "cone"}, {"sides", sides}, {"radius", radius}, {"height", height}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::torus(int major_segments, int minor_segments, double major_radius,
+                        double minor_radius, const std::string& mark) {
+    json c{{"op", "torus"}, {"major_segments", major_segments}, {"minor_segments", minor_segments},
+           {"major_radius", major_radius}, {"minor_radius", minor_radius}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::grid(double size_x, double size_y, int x_div, int y_div, const std::string& mark) {
+    json c{{"op", "grid"}, {"size_x", size_x}, {"size_y", size_y <= 0 ? size_x : size_y},
+           {"x_div", x_div}, {"y_div", y_div <= 0 ? x_div : y_div}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::del(const json& on) { return add(json{{"op", "delete"}, {"on", on}}); }
 Program& Program::bridge(const json& on, const std::string& mark) {
     json c{{"op", "bridge"}, {"on", on}};
@@ -202,6 +225,24 @@ Mesh Program::build(std::string* last_tag_out) const {
                 for (const auto& f : mesh.faces()) outs.push_back(f.get());
             } else if (op == "plane") {
                 mesh = make_plane(cmd.value("size_x", 1.0), cmd.value("size_y", -1.0));
+                has = true;
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (op == "uv_sphere") {
+                mesh = make_uv_sphere(cmd.value("segments", 24), cmd.value("rings", 16), cmd.value("radius", 0.5));
+                has = true;
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (op == "cone") {
+                mesh = make_cone(cmd.value("sides", 24), cmd.value("radius", 0.5), cmd.value("height", 1.0));
+                has = true;
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (op == "torus") {
+                mesh = make_torus(cmd.value("major_segments", 24), cmd.value("minor_segments", 12),
+                                  cmd.value("major_radius", 0.5), cmd.value("minor_radius", 0.2));
+                has = true;
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (op == "grid") {
+                mesh = make_grid(cmd.value("size_x", 1.0), cmd.value("size_y", -1.0),
+                                 cmd.value("x_div", 10), cmd.value("y_div", -1));
                 has = true;
                 for (const auto& f : mesh.faces()) outs.push_back(f.get());
             } else if (!has) {
@@ -320,6 +361,18 @@ std::string Program::label(const json& op) {
     if (k == "loop_cut") return "loop_cut  " + op.value("axis", std::string("z")) + on_suffix(op);
     if (k == "edge_bevel") return "edge_bevel  w=" + num(op.value("width", 0.15)) + on_suffix(op);
     if (k == "plane") return "plane  " + num(op.value("size_x", 1.0)) + "x" + num(op.value("size_y", 1.0));
+    if (k == "uv_sphere")
+        return "uv_sphere  seg=" + std::to_string(op.value("segments", 24)) +
+               " rings=" + std::to_string(op.value("rings", 16)) + " r=" + num(op.value("radius", 0.5));
+    if (k == "cone")
+        return "cone  n=" + std::to_string(op.value("sides", 24)) + " r=" + num(op.value("radius", 0.5)) +
+               " h=" + num(op.value("height", 1.0));
+    if (k == "torus")
+        return "torus  M=" + std::to_string(op.value("major_segments", 24)) +
+               " N=" + std::to_string(op.value("minor_segments", 12)) +
+               " R=" + num(op.value("major_radius", 0.5)) + " r=" + num(op.value("minor_radius", 0.2));
+    if (k == "grid")
+        return "grid  " + std::to_string(op.value("x_div", 10)) + "x" + std::to_string(op.value("y_div", 10));
     if (k == "delete") return "delete" + on_suffix(op);
     if (k == "bridge") return "bridge" + on_suffix(op);
     if (k == "fill") return "fill  (cap holes)";

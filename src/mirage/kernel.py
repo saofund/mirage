@@ -801,3 +801,94 @@ def make_cylinder_ngon(sides: int = 24, radius: float = 0.5, height: float = 1.0
         j = (i + 1) % sides
         m.add_face([vb[i], vb[j], vt[j], vt[i]])  # side quad
     return m
+
+
+def make_uv_sphere(segments: int = 24, rings: int = 16, radius: float = 0.5) -> Mesh:
+    """A UV sphere: ``segments`` longitudinal slices, ``rings`` latitudinal bands.
+    Triangle fans at the poles, quad strips between. A closed 2-manifold (euler 2).
+
+    Vertex order (so the C++ engine matches exactly): north pole, then ``rings-1``
+    interior latitude circles of ``segments`` verts each, then south pole."""
+    import math
+    S, R = max(int(segments), 3), max(int(rings), 2)
+    m = Mesh()
+    north = m.add_vert((0.0, 0.0, radius))
+    circ = []                                 # circ[i] = verts of interior ring i (i in 0..R-2)
+    for i in range(1, R):
+        theta = math.pi * i / R               # polar angle from +z
+        z, rr = radius * math.cos(theta), radius * math.sin(theta)
+        circ.append([m.add_vert((rr * math.cos(2 * math.pi * j / S),
+                                 rr * math.sin(2 * math.pi * j / S), z)) for j in range(S)])
+    south = m.add_vert((0.0, 0.0, -radius))
+    for j in range(S):                        # north cap fan
+        jn = (j + 1) % S
+        m.add_face([circ[0][j], circ[0][jn], north])
+    for i in range(R - 2):                     # quad bands (upper ring i, lower ring i+1)
+        up, lo = circ[i], circ[i + 1]
+        for j in range(S):
+            jn = (j + 1) % S
+            m.add_face([lo[j], lo[jn], up[jn], up[j]])
+    for j in range(S):                        # south cap fan
+        jn = (j + 1) % S
+        m.add_face([south, circ[R - 2][jn], circ[R - 2][j]])
+    return m
+
+
+def make_cone(sides: int = 24, radius: float = 0.5, height: float = 1.0) -> Mesh:
+    """A cone: an ``sides``-gon base capped by triangles meeting at the apex.
+    Base ring at z=-h/2, apex at z=+h/2 (centered, like the cylinder)."""
+    import math
+    half = height / 2.0
+    m = Mesh()
+    vb = [m.add_vert((radius * math.cos(2 * math.pi * i / sides),
+                      radius * math.sin(2 * math.pi * i / sides), -half)) for i in range(sides)]
+    apex = m.add_vert((0.0, 0.0, half))
+    m.add_face(list(reversed(vb)))             # base cap (normal -z)
+    for i in range(sides):
+        j = (i + 1) % sides
+        m.add_face([vb[i], vb[j], apex])       # side triangle
+    return m
+
+
+def make_torus(major_segments: int = 24, minor_segments: int = 12,
+               major_radius: float = 0.5, minor_radius: float = 0.2) -> Mesh:
+    """A torus (genus-1 closed manifold, euler 0) — a grid of quads wrapped in both
+    directions. ``major_segments`` around the ring, ``minor_segments`` around the tube.
+    Vertex index = i*minor + j, so the C++ engine matches exactly."""
+    import math
+    M, N = max(int(major_segments), 3), max(int(minor_segments), 3)
+    m = Mesh()
+    grid = []
+    for i in range(M):
+        u = 2 * math.pi * i / M
+        row = []
+        for j in range(N):
+            v = 2 * math.pi * j / N
+            cr = major_radius + minor_radius * math.cos(v)
+            row.append(m.add_vert((cr * math.cos(u), cr * math.sin(u), minor_radius * math.sin(v))))
+        grid.append(row)
+    for i in range(M):
+        ii = (i + 1) % M
+        for j in range(N):
+            jn = (j + 1) % N
+            m.add_face([grid[i][j], grid[i][jn], grid[ii][jn], grid[ii][j]])
+    return m
+
+
+def make_grid(size_x: float = 1.0, size_y: float | None = None,
+              x_div: int = 10, y_div: int | None = None) -> Mesh:
+    """A subdivided quad in z=0 (an OPEN mesh: a boundary loop of edges). ``x_div`` by
+    ``y_div`` cells; vertex index = iy*(x_div+1) + ix."""
+    sy = size_x if size_y is None else size_y
+    nx, ny = max(int(x_div), 1), max(int(x_div if y_div is None else y_div), 1)
+    hx, hy = size_x / 2.0, sy / 2.0
+    pos = []
+    for iy in range(ny + 1):
+        for ix in range(nx + 1):
+            pos.append((-hx + size_x * ix / nx, -hy + sy * iy / ny, 0.0))
+    faces = []
+    for iy in range(ny):
+        for ix in range(nx):
+            a = iy * (nx + 1) + ix
+            faces.append([a, a + 1, a + nx + 2, a + nx + 1])
+    return Mesh.from_pydata(pos, faces)

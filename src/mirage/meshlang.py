@@ -21,7 +21,8 @@ from __future__ import annotations
 import json
 
 from .kernel import (
-    Mesh, make_cube, make_cylinder_ngon, make_plane, face_normal, faces_by_normal,
+    Mesh, make_cube, make_cylinder_ngon, make_plane, make_uv_sphere, make_cone,
+    make_torus, make_grid, face_normal, faces_by_normal,
     extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel,
     delete_faces, bridge_faces, fill_holes, catmull_clark,
 )
@@ -304,6 +305,16 @@ class MeshProgram:
         return self.add(**_cmd("cylinder", mark=mark, sides=sides, radius=radius, height=height))
     def plane(self, size_x=1.0, size_y=None, mark=None):
         return self.add(**_cmd("plane", mark=mark, size_x=size_x, size_y=size_y if size_y is not None else size_x))
+    def uv_sphere(self, segments=24, rings=16, radius=0.5, mark=None):
+        return self.add(**_cmd("uv_sphere", mark=mark, segments=segments, rings=rings, radius=radius))
+    def cone(self, sides=24, radius=0.5, height=1.0, mark=None):
+        return self.add(**_cmd("cone", mark=mark, sides=sides, radius=radius, height=height))
+    def torus(self, major_segments=24, minor_segments=12, major_radius=0.5, minor_radius=0.2, mark=None):
+        return self.add(**_cmd("torus", mark=mark, major_segments=major_segments, minor_segments=minor_segments,
+                               major_radius=major_radius, minor_radius=minor_radius))
+    def grid(self, size_x=1.0, size_y=None, x_div=10, y_div=None, mark=None):
+        return self.add(**_cmd("grid", mark=mark, size_x=size_x, size_y=size_y if size_y is not None else size_x,
+                               x_div=x_div, y_div=y_div if y_div is not None else x_div))
     def delete(self, on): return self.add(**_cmd("delete", on=on))
     def bridge(self, on, mark=None): return self.add(**_cmd("bridge", on=on, mark=mark))
     def fill(self, mark=None): return self.add(**_cmd("fill", mark=mark))
@@ -335,6 +346,20 @@ class MeshProgram:
                     outs = list(mesh.faces)
                 elif op == "plane":
                     mesh = make_plane(cmd.get("size_x", 1.0), cmd.get("size_y"))
+                    outs = list(mesh.faces)
+                elif op == "uv_sphere":
+                    mesh = make_uv_sphere(cmd.get("segments", 24), cmd.get("rings", 16), cmd.get("radius", 0.5))
+                    outs = list(mesh.faces)
+                elif op == "cone":
+                    mesh = make_cone(cmd.get("sides", 24), cmd.get("radius", 0.5), cmd.get("height", 1.0))
+                    outs = list(mesh.faces)
+                elif op == "torus":
+                    mesh = make_torus(cmd.get("major_segments", 24), cmd.get("minor_segments", 12),
+                                      cmd.get("major_radius", 0.5), cmd.get("minor_radius", 0.2))
+                    outs = list(mesh.faces)
+                elif op == "grid":
+                    mesh = make_grid(cmd.get("size_x", 1.0), cmd.get("size_y"),
+                                     cmd.get("x_div", 10), cmd.get("y_div"))
                     outs = list(mesh.faces)
                 elif mesh is None:
                     raise MeshLangError(f"op '{op}' before any primitive")

@@ -300,7 +300,10 @@ def new_model(primitive: Optional[dict] = None) -> dict:
 @mcp.tool()
 def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
     """Append ONE meshlang op and rebuild. command = {op, on:<selector>, ...params, mark?}.
-    Ops: cube/cylinder/plane (primitive; plane is an OPEN mesh); extrude{on,distance}; inset{on,thickness};
+    Ops: primitives cube{size} / cylinder{sides,radius,height} / plane{size_x,size_y} (OPEN) /
+    uv_sphere{segments,rings,radius} / cone{sides,radius,height} / torus{major_segments,minor_segments,
+    major_radius,minor_radius} (genus-1, euler 0) / grid{size_x,size_y,x_div,y_div} (OPEN);
+    extrude{on,distance}; inset{on,thickness};
     delete{on} (remove faces -> open mesh); bridge{on} (tunnel 2 disjoint openings); fill (cap holes);
     bevel{on,width,depth} (chamfer the rim: inset + offset along the normal);
     loop_cut{on,axis} (insert an edge loop around a quad ring perpendicular to axis);

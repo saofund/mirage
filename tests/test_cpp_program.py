@@ -175,6 +175,40 @@ OPLOGS = {
     "plane": [
         {"op": "plane", "size_x": 1.5, "size_y": 1.0},
     ],
+    "uv_sphere": [
+        {"op": "uv_sphere", "segments": 12, "rings": 8, "radius": 0.6},
+    ],
+    "uv_sphere_min": [   # rings=2 -> just two triangle fans (a bipyramid), no quad bands
+        {"op": "uv_sphere", "segments": 5, "rings": 2, "radius": 0.5},
+    ],
+    "cone": [
+        {"op": "cone", "sides": 16, "radius": 0.5, "height": 1.2},
+    ],
+    "torus": [   # genus-1: euler 0, still a closed manifold
+        {"op": "torus", "major_segments": 16, "minor_segments": 10, "major_radius": 0.6, "minor_radius": 0.22},
+    ],
+    "grid": [
+        {"op": "grid", "size_x": 2.0, "size_y": 1.0, "x_div": 6, "y_div": 4},
+    ],
+    # primitives feed the operators identically in both engines (order-sensitive ops
+    # would diverge instantly if the vertex/face ordering differed):
+    "sphere_inset_extrude": [
+        {"op": "uv_sphere", "segments": 10, "rings": 6, "radius": 0.5},
+        {"op": "inset", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "thickness": 0.3},
+        {"op": "extrude", "on": {"by": "last_created"}, "distance": 0.4},
+    ],
+    "cone_edge_bevel_sharp": [
+        {"op": "cone", "sides": 8, "radius": 0.5, "height": 1.0},
+        {"op": "edge_bevel", "on": {"by": "sharp", "angle": 20}, "width": 0.05},
+    ],
+    "torus_loop_cut": [
+        {"op": "torus", "major_segments": 12, "minor_segments": 8, "major_radius": 0.6, "minor_radius": 0.2},
+        {"op": "subdivide", "levels": 1},
+    ],
+    "grid_extrude": [
+        {"op": "grid", "size_x": 2.0, "size_y": 2.0, "x_div": 4, "y_div": 4},
+        {"op": "extrude", "on": {"by": "all"}, "distance": 0.2},
+    ],
     "cube_open_top": [
         {"op": "cube", "size": 1.0},
         {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},   # an open box

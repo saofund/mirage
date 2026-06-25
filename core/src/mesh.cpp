@@ -253,6 +253,102 @@ Mesh make_plane(double sx, double sy) {
     return Mesh::from_pydata(p, {{0, 1, 2, 3}});
 }
 
+Mesh make_uv_sphere(int segments, int rings, double radius) {
+    constexpr double PI = 3.14159265358979323846;
+    const int S = std::max(segments, 3), R = std::max(rings, 2);
+    Mesh m;
+    Vert* north = m.add_vert(0.0, 0.0, radius);
+    std::vector<std::vector<Vert*>> circ;       // interior rings 0..R-2
+    for (int i = 1; i < R; ++i) {
+        const double theta = PI * i / R;
+        const double z = radius * std::cos(theta), rr = radius * std::sin(theta);
+        std::vector<Vert*> ring;
+        for (int j = 0; j < S; ++j) {
+            const double a = 2.0 * PI * j / S;
+            ring.push_back(m.add_vert(rr * std::cos(a), rr * std::sin(a), z));
+        }
+        circ.push_back(ring);
+    }
+    Vert* south = m.add_vert(0.0, 0.0, -radius);
+    for (int j = 0; j < S; ++j) {               // north cap fan
+        const int jn = (j + 1) % S;
+        m.add_face({circ[0][j], circ[0][jn], north});
+    }
+    for (int i = 0; i < R - 2; ++i) {           // quad bands
+        auto& up = circ[i]; auto& lo = circ[i + 1];
+        for (int j = 0; j < S; ++j) {
+            const int jn = (j + 1) % S;
+            m.add_face({lo[j], lo[jn], up[jn], up[j]});
+        }
+    }
+    for (int j = 0; j < S; ++j) {               // south cap fan
+        const int jn = (j + 1) % S;
+        m.add_face({south, circ[R - 2][jn], circ[R - 2][j]});
+    }
+    return m;
+}
+
+Mesh make_cone(int sides, double radius, double height) {
+    constexpr double PI = 3.14159265358979323846;
+    const double half = height / 2.0;
+    Mesh m;
+    std::vector<Vert*> vb;
+    for (int i = 0; i < sides; ++i) {
+        const double a = 2.0 * PI * i / sides;
+        vb.push_back(m.add_vert(radius * std::cos(a), radius * std::sin(a), -half));
+    }
+    Vert* apex = m.add_vert(0.0, 0.0, half);
+    std::vector<Vert*> base(vb.rbegin(), vb.rend());
+    m.add_face(base);                            // base cap (normal -z)
+    for (int i = 0; i < sides; ++i) {
+        const int j = (i + 1) % sides;
+        m.add_face({vb[i], vb[j], apex});        // side triangle
+    }
+    return m;
+}
+
+Mesh make_torus(int major_segments, int minor_segments, double major_radius, double minor_radius) {
+    constexpr double PI = 3.14159265358979323846;
+    const int M = std::max(major_segments, 3), N = std::max(minor_segments, 3);
+    Mesh m;
+    std::vector<std::vector<Vert*>> grid;
+    for (int i = 0; i < M; ++i) {
+        const double u = 2.0 * PI * i / M;
+        std::vector<Vert*> row;
+        for (int j = 0; j < N; ++j) {
+            const double v = 2.0 * PI * j / N;
+            const double cr = major_radius + minor_radius * std::cos(v);
+            row.push_back(m.add_vert(cr * std::cos(u), cr * std::sin(u), minor_radius * std::sin(v)));
+        }
+        grid.push_back(row);
+    }
+    for (int i = 0; i < M; ++i) {
+        const int ii = (i + 1) % M;
+        for (int j = 0; j < N; ++j) {
+            const int jn = (j + 1) % N;
+            m.add_face({grid[i][j], grid[i][jn], grid[ii][jn], grid[ii][j]});
+        }
+    }
+    return m;
+}
+
+Mesh make_grid(double size_x, double size_y, int x_div, int y_div) {
+    if (size_y <= 0) size_y = size_x;
+    const int nx = std::max(x_div, 1), ny = std::max(y_div <= 0 ? x_div : y_div, 1);
+    const double hx = size_x / 2.0, hy = size_y / 2.0;
+    std::vector<std::array<double, 3>> pos;
+    for (int iy = 0; iy <= ny; ++iy)
+        for (int ix = 0; ix <= nx; ++ix)
+            pos.push_back({-hx + size_x * ix / nx, -hy + size_y * iy / ny, 0.0});
+    std::vector<std::vector<int>> faces;
+    for (int iy = 0; iy < ny; ++iy)
+        for (int ix = 0; ix < nx; ++ix) {
+            const int a = iy * (nx + 1) + ix;
+            faces.push_back({a, a + 1, a + nx + 2, a + nx + 1});
+        }
+    return Mesh::from_pydata(pos, faces);
+}
+
 Mesh make_cylinder(int sides, double radius, double height) {
     constexpr double PI = 3.14159265358979323846;
     std::vector<std::array<double, 3>> pos;

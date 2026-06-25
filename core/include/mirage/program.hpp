@@ -47,6 +47,12 @@ public:
     Program& cube(double size = 1.0, const std::string& mark = "");
     Program& cylinder(int sides = 24, double radius = 0.5, double height = 1.0, const std::string& mark = "");
     Program& plane(double size_x = 1.0, double size_y = -1.0, const std::string& mark = "");
+    Program& uv_sphere(int segments = 24, int rings = 16, double radius = 0.5, const std::string& mark = "");
+    Program& cone(int sides = 24, double radius = 0.5, double height = 1.0, const std::string& mark = "");
+    Program& torus(int major_segments = 24, int minor_segments = 12, double major_radius = 0.5,
+                   double minor_radius = 0.2, const std::string& mark = "");
+    Program& grid(double size_x = 1.0, double size_y = -1.0, int x_div = 10, int y_div = -1,
+                  const std::string& mark = "");
     Program& del(const json& on);                  // delete the selected faces (open the mesh)
     Program& bridge(const json& on, const std::string& mark = "");  // tunnel between two openings
     Program& fill(const std::string& mark = "");   // cap every boundary loop

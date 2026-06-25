@@ -142,6 +142,19 @@ Mesh make_cube(double size = 1.0);
 Mesh make_cylinder(int sides = 24, double radius = 0.5, double height = 1.0);
 // Plane: a single quad in z=0 (an OPEN mesh: 4 boundary edges). size_y <= 0 => square.
 Mesh make_plane(double size_x = 1.0, double size_y = -1.0);
+// UV sphere: `segments` longitudinal slices, `rings` latitudinal bands. Triangle
+// fans at the poles, quad strips between; closed 2-manifold (euler 2). Vertex order
+// matches the Python kernel: north pole, rings-1 interior circles, south pole.
+Mesh make_uv_sphere(int segments = 24, int rings = 16, double radius = 0.5);
+// Cone: an `sides`-gon base (z=-h/2) capped by triangles meeting at the apex (z=+h/2).
+Mesh make_cone(int sides = 24, double radius = 0.5, double height = 1.0);
+// Torus: genus-1 closed manifold (euler 0). `major_segments` around the ring,
+// `minor_segments` around the tube; vertex index = i*minor + j (matches Python).
+Mesh make_torus(int major_segments = 24, int minor_segments = 12,
+                double major_radius = 0.5, double minor_radius = 0.2);
+// Grid: a subdivided quad in z=0 (an OPEN mesh). `x_div` by `y_div` cells; vertex
+// index = iy*(x_div+1)+ix (matches Python). size_y <= 0 => square; y_div <= 0 => x_div.
+Mesh make_grid(double size_x = 1.0, double size_y = -1.0, int x_div = 10, int y_div = -1);
 
 // Operators (built on the owned topology).
 // One level of Catmull-Clark subdivision — the classic test that a radial-edge

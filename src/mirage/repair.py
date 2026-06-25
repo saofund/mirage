@@ -37,14 +37,19 @@ from dataclasses import dataclass, field
 from .kernel import Mesh, face_normal, _compact, _copy_attrs
 from .meshlang import MeshProgram, SelectorEmpty, describe, resolve, _tags
 
-KNOWN_OPS = ["cube", "cylinder", "plane", "extrude", "inset", "bevel", "loop_cut", "edge_bevel",
+KNOWN_OPS = ["cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid",
+             "extrude", "inset", "bevel", "loop_cut", "edge_bevel",
              "delete", "bridge", "fill", "subdivide", "tag", "material", "translate", "scale", "assert"]
 KNOWN_BY = ["all", "normal", "tag", "extreme", "side", "last_created"]
 _PARAM_SIG = {  # a param key -> the op it most likely belongs to (for op-name inference)
     "distance": "extrude", "thickness": "inset", "width": "bevel", "depth": "bevel",
     "levels": "subdivide", "size": "cube",
     "sides": "cylinder", "radius": "cylinder", "height": "cylinder",
+    "segments": "uv_sphere", "rings": "uv_sphere",
+    "major_segments": "torus", "minor_segments": "torus", "major_radius": "torus", "minor_radius": "torus",
+    "x_div": "grid", "y_div": "grid",
 }
+PRIMITIVE_OPS = ("cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid")
 MAX_SUBDIVIDE = 6
 _DEGENERATE = 1e-9
 
@@ -743,7 +748,7 @@ def lint_program(program) -> list:
                 warn(i, "subdivide_explosive", f"levels={lv} grows faces ~4^levels (very large/slow)",
                      f"keep levels <= {MAX_SUBDIVIDE}")
         lint_selector(i, sel)
-        if isinstance(sel, dict) and sel.get("by") == "last_created" and prev_op in (None, "cube", "cylinder", "subdivide"):
+        if isinstance(sel, dict) and sel.get("by") == "last_created" and prev_op in (None, "subdivide", *PRIMITIVE_OPS):
             warn(i, "last_created_broad", "last_created right after a primitive/subdivide resolves to the "
                  "WHOLE surface (every face inherits the step tag)", "use an explicit selector")
         prev_op = name

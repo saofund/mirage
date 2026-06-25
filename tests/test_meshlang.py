@@ -65,6 +65,39 @@ def test_selector_extreme_picks_top_face():
     assert len(resolve(make_cube(1.0), Sel.extreme("z", "max"))) == 1
 
 
+def test_new_primitives_are_valid():
+    sphere = MeshProgram().uv_sphere(12, 8, 0.6).build()
+    sphere.validate()
+    assert sphere.is_closed_manifold() and sphere.euler() == 2
+
+    cone = MeshProgram().cone(16, 0.5, 1.0).build()
+    cone.validate()
+    assert cone.is_closed_manifold() and cone.euler() == 2
+
+    torus = MeshProgram().torus(16, 10, 0.6, 0.22).build()
+    torus.validate()
+    assert torus.is_closed_manifold() and torus.euler() == 0   # genus-1
+
+    grid = MeshProgram().grid(2.0, 1.0, 6, 4).build()
+    grid.validate()
+    assert not grid.is_closed_manifold() and grid.stats()["faces"] == 24   # open, 6x4 quads
+
+
+def test_uv_sphere_min_rings_is_a_bipyramid():
+    # rings=2 -> two triangle fans, no quad bands; verts = 2 poles + 1 ring
+    m = MeshProgram().uv_sphere(6, 2, 0.5).build()
+    m.validate()
+    assert m.stats()["verts"] == 8 and m.stats()["faces"] == 12 and m.is_closed_manifold()
+
+
+def test_primitive_parametric_edit():
+    base = MeshProgram().uv_sphere(8, 6, 0.5)
+    edited = MeshProgram.from_json(base.to_json())
+    edited.ops[0]["segments"] = 16
+    assert edited.build().stats()["faces"] != base.build().stats()["faces"]
+    assert edited.build().is_closed_manifold()
+
+
 def test_material_assigns_to_final_faces():
     m = (MeshProgram().cube(1.0)
          .material(Sel.normal("z", 1), color=[1.0, 0.0, 0.0], metallic=0.5)).build()
