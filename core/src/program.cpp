@@ -188,6 +188,21 @@ Program& Program::edge_bevel(const json& on, double width, const std::string& ma
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::solidify(double thickness, const std::string& mark) {
+    json c{{"op", "solidify"}, {"thickness", thickness}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::mirror(const std::string& axis, const std::string& mark) {
+    json c{{"op", "mirror"}, {"axis", axis}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
+Program& Program::array(int count, const std::array<double, 3>& offset, const std::string& mark) {
+    json c{{"op", "array"}, {"count", count}, {"offset", {offset[0], offset[1], offset[2]}}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::subdivide(int levels) { return add(json{{"op", "subdivide"}, {"levels", levels}}); }
 Program& Program::tag(const json& on, const std::string& name) {
     return add(json{{"op", "tag"}, {"on", on}, {"name", name}});
@@ -319,6 +334,18 @@ Mesh Program::build(std::string* last_tag_out) const {
             } else if (op == "fill") {
                 mesh = mirage::fill_holes(mesh, out_tag);
                 outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "solidify") {
+                mesh = mirage::solidify(mesh, cmd.value("thickness", 0.1), out_tag);
+                outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "mirror") {
+                mesh = mirage::mirror(mesh, cmd.value("axis", std::string("x")), out_tag);
+                outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "array") {
+                auto off = cmd.value("offset", std::vector<double>{1.1, 0.0, 0.0});
+                std::array<double, 3> o{off.size() > 0 ? off[0] : 1.1, off.size() > 1 ? off[1] : 0.0,
+                                        off.size() > 2 ? off[2] : 0.0};
+                mesh = mirage::array(mesh, cmd.value("count", 3), o, out_tag);
+                outs = faces_with_tag(mesh, out_tag);
             } else if (op == "subdivide") {
                 const int levels = cmd.value("levels", 1);
                 for (int k = 0; k < levels; ++k) mesh = catmull_clark(mesh);
@@ -423,6 +450,9 @@ std::string Program::label(const json& op) {
     if (k == "delete") return "delete" + on_suffix(op);
     if (k == "bridge") return "bridge" + on_suffix(op);
     if (k == "fill") return "fill  (cap holes)";
+    if (k == "solidify") return "solidify  t=" + num(op.value("thickness", 0.1));
+    if (k == "mirror") return "mirror  " + op.value("axis", std::string("x"));
+    if (k == "array") return "array  x" + std::to_string(op.value("count", 3));
     if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
     if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
     if (k == "material") return "material  m=" + num(op.value("metallic", 0.0)) + " r=" + num(op.value("roughness", 0.5)) + on_suffix(op);

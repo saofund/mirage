@@ -200,4 +200,16 @@ Mesh fill_holes(const Mesh& mesh, const std::string& mark = "");
 // connect their rims with a ring of quads (a tunnel between separate openings).
 Mesh bridge_faces(const Mesh& mesh, const std::vector<const Face*>& faces, const std::string& mark = "");
 
+// Whole-mesh operators.
+// solidify: give a surface thickness — an inner shell offset along the inverted
+// vertex normals (reversed winding) + a wall quad per boundary edge, so an open
+// surface (plane/grid/open box) becomes watertight. Verts: outer then inner.
+Mesh solidify(const Mesh& mesh, double thickness = 0.1, const std::string& mark = "");
+// mirror: reflect across the axis=0 plane and weld the seam (verts on the plane are
+// shared; off-plane verts get a reflected, reversed-winding copy).
+Mesh mirror(const Mesh& mesh, const std::string& axis = "x", const std::string& mark = "");
+// array: `count` copies, copy c shifted by offset*c (disjoint; last copy gets mark).
+Mesh array(const Mesh& mesh, int count = 3, const std::array<double, 3>& offset = {1.1, 0.0, 0.0},
+           const std::string& mark = "");
+
 }  // namespace mirage

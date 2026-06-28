@@ -727,6 +727,12 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Delete")) { prog.del(current_on()); g_sel_mode = SEL_NONE; dirty = true; }  // open the mesh
         ImGui::SameLine();
         if (ImGui::Button("Fill")) { prog.fill(); g_sel_mode = SEL_NONE; dirty = true; }                // cap holes
+        // whole-mesh operators (no selection needed)
+        if (ImGui::Button("Solidify")) { prog.solidify(0.1); g_sel_mode = SEL_NONE; dirty = true; }     // shell open surfaces
+        ImGui::SameLine();
+        if (ImGui::Button("Mirror X")) { prog.mirror("x"); g_sel_mode = SEL_NONE; dirty = true; }       // reflect + weld seam
+        ImGui::SameLine();
+        if (ImGui::Button("Array x3")) { prog.array(3, {1.2, 0.0, 0.0}); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();

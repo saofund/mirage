@@ -222,6 +222,39 @@ OPLOGS = {
         {"op": "mesh", "verts": [[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]], "faces": [[0, 1, 2, 3]]},
         {"op": "extrude", "on": {"by": "all"}, "distance": 0.5},     # operators stack on imported geometry
     ],
+    # whole-mesh operators: solidify / mirror / array
+    "plane_solidify": [
+        {"op": "plane", "size_x": 1.0},
+        {"op": "solidify", "thickness": 0.2},                        # an open quad -> a closed box
+    ],
+    "grid_solidify": [
+        {"op": "grid", "size_x": 1.0, "x_div": 3, "y_div": 3},
+        {"op": "solidify", "thickness": 0.15},
+    ],
+    "openbox_solidify": [
+        {"op": "cube", "size": 1.0},
+        {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},
+        {"op": "solidify", "thickness": 0.1},                        # shell with walls round the opening
+    ],
+    "cube_array": [
+        {"op": "cube", "size": 1.0},
+        {"op": "array", "count": 3, "offset": [1.2, 0.0, 0.0]},
+    ],
+    "mirror_plane": [
+        {"op": "plane", "size_x": 1.0},
+        {"op": "translate", "on": {"by": "all"}, "by": [0.5, 0.0, 0.0]},   # push a left edge onto x=0
+        {"op": "mirror", "axis": "x"},                              # weld the seam -> a 2-wide sheet
+    ],
+    "mirror_halfcyl": [
+        {"op": "cylinder", "sides": 8, "radius": 0.5, "height": 1.0},
+        {"op": "delete", "on": {"by": "side", "axis": "x", "sign": -1.0}},
+        {"op": "mirror", "axis": "x"},
+    ],
+    "solidify_then_bevel": [
+        {"op": "grid", "size_x": 1.0, "x_div": 2, "y_div": 2},
+        {"op": "solidify", "thickness": 0.2},
+        {"op": "bevel", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "width": 0.1, "depth": 0.05},
+    ],
     "cube_open_top": [
         {"op": "cube", "size": 1.0},
         {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},   # an open box

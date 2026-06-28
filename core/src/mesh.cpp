@@ -971,6 +971,112 @@ Mesh loop_cut(const Mesh& mesh, const std::vector<const Face*>& seed_v, const st
     return Mesh::from_pydata(pos, faces, tags);
 }
 
+Mesh solidify(const Mesh& mesh, double thickness, const std::string& mark) {
+    const int n = static_cast<int>(mesh.num_verts());
+    if (n == 0 || std::fabs(thickness) < 1e-9) return mesh.copy();
+    std::vector<A3> acc(n, A3{0, 0, 0});
+    for (const auto& f : mesh.faces()) {
+        auto fn = face_normal(mesh, f.get());
+        for (Vert* v : mesh.face_verts(f.get()))
+            for (int k = 0; k < 3; ++k) acc[v->id][k] += fn[k];
+    }
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::vector<A3> np = pos;
+    for (int vid = 0; vid < n; ++vid) {  // inner verts: pos - normal*thickness
+        const A3& a = acc[vid];
+        double l = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+        A3 d = l > 1e-9 ? A3{a[0] / l * thickness, a[1] / l * thickness, a[2] / l * thickness} : A3{0, 0, 0};
+        np.push_back({pos[vid][0] - d[0], pos[vid][1] - d[1], pos[vid][2] - d[2]});
+    }
+    auto inner = [&](int i) { return i + n; };
+    std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
+    for (const auto& f : mesh.faces()) {  // outer shell
+        std::vector<int> fv;
+        for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+        faces.push_back(fv); tags.push_back(copy_tags(f.get()));
+    }
+    for (const auto& f : mesh.faces()) {  // inner shell (reversed winding)
+        std::vector<int> ids;
+        for (Loop* lp : mesh.face_loops(f.get())) ids.push_back(lp->vert->id);
+        std::vector<int> fv;
+        for (auto it = ids.rbegin(); it != ids.rend(); ++it) fv.push_back(inner(*it));
+        faces.push_back(fv); tags.push_back(copy_tags(f.get(), mark));
+    }
+    for (const auto& e : mesh.edges()) {  // walls bridge the boundary (1-face edges)
+        auto fs = mesh.edge_faces(e.get());
+        if (fs.size() == 1) {
+            Loop* lp = nullptr;
+            for (Loop* l : mesh.face_loops(fs[0])) if (l->edge == e.get()) { lp = l; break; }
+            int a = lp->vert->id, b = lp->next->vert->id;
+            faces.push_back({b, a, inner(a), inner(b)});
+            tags.push_back(copy_tags(fs[0], mark));
+        }
+    }
+    return build_compact(np, faces, tags);
+}
+
+Mesh mirror(const Mesh& mesh, const std::string& axis, const std::string& mark) {
+    const int k = axis == "x" ? 0 : axis == "y" ? 1 : 2;
+    const double tol = 1e-6;
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::vector<A3> np = pos;
+    std::vector<int> mir(pos.size());
+    for (int vid = 0; vid < static_cast<int>(pos.size()); ++vid) {
+        if (std::fabs(pos[vid][k]) < tol) {
+            mir[vid] = vid;                       // on the plane -> shared seam vertex
+        } else {
+            mir[vid] = static_cast<int>(np.size());
+            A3 p = pos[vid]; p[k] = -p[k]; np.push_back(p);
+        }
+    }
+    std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
+    for (const auto& f : mesh.faces()) {          // original half
+        std::vector<int> fv;
+        for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+        faces.push_back(fv); tags.push_back(copy_tags(f.get()));
+    }
+    for (const auto& f : mesh.faces()) {          // reflected half (reversed winding)
+        std::vector<int> ids;
+        for (Loop* lp : mesh.face_loops(f.get())) ids.push_back(lp->vert->id);
+        std::vector<int> fv;
+        for (auto it = ids.rbegin(); it != ids.rend(); ++it) fv.push_back(mir[*it]);
+        faces.push_back(fv); tags.push_back(copy_tags(f.get(), mark));
+    }
+    return build_compact(np, faces, tags);
+}
+
+Mesh array(const Mesh& mesh, int count, const std::array<double, 3>& offset, const std::string& mark) {
+    count = std::max(count, 1);
+    const int n = static_cast<int>(mesh.num_verts());
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::vector<std::vector<int>> faces0;
+    std::vector<const Face*> fptr;
+    for (const auto& f : mesh.faces()) {
+        std::vector<int> fv;
+        for (Loop* lp : mesh.face_loops(f.get())) fv.push_back(lp->vert->id);
+        faces0.push_back(fv); fptr.push_back(f.get());
+    }
+    std::vector<A3> np;
+    std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
+    for (int c = 0; c < count; ++c) {
+        double ox = offset[0] * c, oy = offset[1] * c, oz = offset[2] * c;
+        for (const auto& p : pos) np.push_back({p[0] + ox, p[1] + oy, p[2] + oz});
+        for (std::size_t fi = 0; fi < faces0.size(); ++fi) {
+            std::vector<int> fv;
+            for (int i : faces0[fi]) fv.push_back(i + c * n);
+            faces.push_back(fv);
+            tags.push_back(c == count - 1 ? copy_tags(fptr[fi], mark) : copy_tags(fptr[fi]));
+        }
+    }
+    return Mesh::from_pydata(np, faces, tags);
+}
+
 Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region_v, double width, double depth,
            const std::string& mark) {
     std::set<const Face*> region(region_v.begin(), region_v.end());

@@ -98,6 +98,29 @@ def test_primitive_parametric_edit():
     assert edited.build().is_closed_manifold()
 
 
+def test_solidify_turns_open_surface_into_solid():
+    # an open plane (1 quad) shelled -> a watertight box (2 caps + 4 walls)
+    m = MeshProgram().plane(1.0).solidify(0.2).build()
+    m.validate()
+    assert m.is_closed_manifold() and m.euler() == 2 and m.stats()["faces"] == 6
+
+
+def test_mirror_welds_the_seam():
+    # a plane pushed so a left edge sits on x=0, mirrored: the 2 seam verts are shared
+    m = (MeshProgram().plane(1.0)
+         .translate(Sel.all(), [0.5, 0.0, 0.0])
+         .mirror("x")).build()
+    m.validate()
+    assert m.stats()["verts"] == 6 and m.stats()["faces"] == 2     # 4+4 - 2 welded
+
+
+def test_array_makes_disjoint_copies():
+    m = MeshProgram().cube(1.0).array(4, (1.3, 0.0, 0.0)).build()
+    m.validate()
+    s = m.stats()
+    assert s["verts"] == 32 and s["faces"] == 24 and s["euler"] == 8   # 4 closed cubes
+
+
 def test_material_assigns_to_final_faces():
     m = (MeshProgram().cube(1.0)
          .material(Sel.normal("z", 1), color=[1.0, 0.0, 0.0], metallic=0.5)).build()

@@ -778,6 +778,95 @@ def edge_bevel(mesh: Mesh, edges, width: float = 0.15, mark: str | None = None) 
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
+def solidify(mesh: Mesh, thickness: float = 0.1, mark: str | None = None) -> Mesh:
+    """Give a surface thickness — a shell. Builds an inner copy offset along the
+    inverted vertex normals (reversed winding) and bridges every boundary edge with
+    a wall quad, so an OPEN surface (a plane, a grid, an open box) becomes a watertight
+    solid. Vertex order: all outer verts, then the matching inner verts."""
+    import numpy as np
+    n = len(mesh.verts)
+    if n == 0 or abs(thickness) < 1e-9:
+        return mesh.copy()
+    vacc = {v.id: np.zeros(3) for v in mesh.verts}
+    for f in mesh.faces:
+        fn = np.array(face_normal(mesh, f))
+        for v in mesh.face_verts(f):
+            vacc[v.id] += fn
+    pos = [list(v.co) for v in mesh.verts]
+    new_pos = list(pos)
+    for vid in range(n):                       # inner verts: pos - normal*thickness
+        a = vacc[vid]; l = float(np.linalg.norm(a))
+        d = (a / l) * thickness if l > 1e-9 else np.zeros(3)
+        new_pos.append([pos[vid][0] - d[0], pos[vid][1] - d[1], pos[vid][2] - d[2]])
+
+    def inner(i): return i + n
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:                       # outer shell (original)
+        new_faces.append([lp.vert.id for lp in mesh.face_loops(f)])
+        new_attrs.append(_copy_attrs(f.attrs))
+    for f in mesh.faces:                       # inner shell (reversed winding)
+        ids = [lp.vert.id for lp in mesh.face_loops(f)]
+        new_faces.append([inner(i) for i in reversed(ids)])
+        new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))
+    for e in mesh.edges:                       # walls bridge the boundary (1-face edges)
+        fs = mesh.edge_faces(e)
+        if len(fs) == 1:
+            lp = next(l for l in mesh.face_loops(fs[0]) if l.edge is e)
+            a, b = lp.vert.id, lp.next.vert.id
+            new_faces.append([b, a, inner(a), inner(b)])  # opposite to the outer edge -> manifold
+            new_attrs.append(_copy_attrs(fs[0].attrs, add_tag=mark))
+    new_pos, new_faces = _compact(new_pos, new_faces)
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
+def mirror(mesh: Mesh, axis: str = "x", mark: str | None = None) -> Mesh:
+    """Mirror the mesh across the axis=0 plane and weld the seam. Verts ON the plane
+    are shared (the join), off-plane verts get a reflected copy with reversed winding
+    (a reflection flips orientation). Model a symmetric half whose open boundary lies
+    on the plane, mirror it, and the seam edges merge into a watertight whole."""
+    k = "xyz".index(axis)
+    tol = 1e-6
+    pos = [list(v.co) for v in mesh.verts]
+    new_pos = list(pos)
+    mir = {}                                   # original vid -> its mirrored vid
+    for vid in range(len(pos)):
+        if abs(pos[vid][k]) < tol:
+            mir[vid] = vid                     # on the plane -> shared seam vertex
+        else:
+            mir[vid] = len(new_pos)
+            p = list(pos[vid]); p[k] = -p[k]
+            new_pos.append(p)
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:                       # the original half
+        new_faces.append([lp.vert.id for lp in mesh.face_loops(f)])
+        new_attrs.append(_copy_attrs(f.attrs))
+    for f in mesh.faces:                       # the reflected half (reversed winding)
+        ids = [lp.vert.id for lp in mesh.face_loops(f)]
+        new_faces.append([mir[i] for i in reversed(ids)])
+        new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))
+    new_pos, new_faces = _compact(new_pos, new_faces)
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
+def array(mesh: Mesh, count: int = 3, offset=(1.1, 0.0, 0.0), mark: str | None = None) -> Mesh:
+    """Linear array: ``count`` copies of the mesh, copy c shifted by offset*c. Copies
+    are disjoint (no weld); the last copy's faces carry ``mark``."""
+    count = max(int(count), 1)
+    n = len(mesh.verts)
+    pos = [list(v.co) for v in mesh.verts]
+    faces0 = [[lp.vert.id for lp in mesh.face_loops(f)] for f in mesh.faces]
+    attrs0 = [f.attrs for f in mesh.faces]
+    new_pos, new_faces, new_attrs = [], [], []
+    for c in range(count):
+        ox, oy, oz = offset[0] * c, offset[1] * c, offset[2] * c
+        for p in pos:
+            new_pos.append([p[0] + ox, p[1] + oy, p[2] + oz])
+        for fi, f in enumerate(faces0):
+            new_faces.append([i + c * n for i in f])
+            new_attrs.append(_copy_attrs(attrs0[fi], add_tag=(mark if c == count - 1 else None)))
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
 def make_cube(size: float = 1.0) -> Mesh:
     s = size / 2.0
     p = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),

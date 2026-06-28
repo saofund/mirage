@@ -25,6 +25,7 @@ from .kernel import (
     make_torus, make_grid, face_normal, faces_by_normal,
     extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel,
     delete_faces, bridge_faces, fill_holes, catmull_clark,
+    solidify, mirror, array,
 )
 
 
@@ -328,6 +329,10 @@ class MeshProgram:
     def bevel(self, on, width=0.2, depth=0.1, mark=None): return self.add(**_cmd("bevel", on=on, mark=mark, width=width, depth=depth))
     def loop_cut(self, on, axis="z", mark=None): return self.add(**_cmd("loop_cut", on=on, mark=mark, axis=axis))
     def edge_bevel(self, on, width=0.15, mark=None): return self.add(**_cmd("edge_bevel", on=on, mark=mark, width=width))
+    def solidify(self, thickness=0.1, mark=None): return self.add(**_cmd("solidify", mark=mark, thickness=thickness))
+    def mirror(self, axis="x", mark=None): return self.add(**_cmd("mirror", mark=mark, axis=axis))
+    def array(self, count=3, offset=(1.1, 0.0, 0.0), mark=None):
+        return self.add(**_cmd("array", mark=mark, count=count, offset=list(offset)))
     def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
     def material(self, on, color=(0.8, 0.8, 0.8), metallic=0.0, roughness=0.5):
@@ -413,6 +418,15 @@ class MeshProgram:
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "fill":
                     mesh = fill_holes(mesh, mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "solidify":
+                    mesh = solidify(mesh, cmd.get("thickness", 0.1), mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "mirror":
+                    mesh = mirror(mesh, cmd.get("axis", "x"), mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "array":
+                    mesh = array(mesh, cmd.get("count", 3), cmd.get("offset", [1.1, 0.0, 0.0]), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "subdivide":
                     for _ in range(cmd.get("levels", 1)):
