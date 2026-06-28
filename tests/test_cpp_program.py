@@ -318,6 +318,34 @@ def test_selector_count_matches_python(selector):
     assert cpp_n == py_n, f"selector {selector} matched {cpp_n} faces (C++) vs {py_n} (Python)"
 
 
+# material + connected need a richer mesh than a bare cube (a materialed array).
+# materials are applied AFTER array (a final-mesh assignment doesn't survive a rebuild).
+RICH_OPLOG = [
+    {"op": "cube", "size": 1.0},
+    {"op": "array", "count": 3, "offset": [1.5, 0.0, 0.0]},
+    {"op": "material", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "color": [1.0, 0.0, 0.0]},
+    {"op": "material", "on": {"by": "normal", "axis": "z", "sign": -1.0}, "color": [0.0, 1.0, 0.0]},
+]
+RICH_SELECTORS = [
+    {"by": "material"},
+    {"by": "material", "color": [1.0, 0.0, 0.0]},
+    {"by": "material", "color": [0.0, 1.0, 0.0]},
+    {"by": "connected", "which": "largest"},
+    {"by": "connected", "which": "smallest"},
+    {"by": "connected", "seed": {"by": "extreme", "axis": "x", "which": "max"}},
+    {"and": [{"by": "connected", "seed": {"by": "extreme", "axis": "x", "which": "max"}}, {"by": "material"}]},
+]
+
+
+@pytest.mark.parametrize("selector", RICH_SELECTORS)
+def test_material_connected_selectors_match_python(selector):
+    py_mesh = MeshProgram(RICH_OPLOG).build()
+    cpp_mesh = cpp.replay_json(json.dumps(RICH_OPLOG))
+    py_n = len(resolve(py_mesh, selector))
+    cpp_n = cpp.selector_count(cpp_mesh, json.dumps(selector))
+    assert cpp_n == py_n, f"selector {selector} matched {cpp_n} (C++) vs {py_n} (Python)"
+
+
 from mirage.meshlang import resolve_edges  # noqa: E402
 
 EDGE_SELECTORS = [

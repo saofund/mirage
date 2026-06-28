@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace mirage {
@@ -160,6 +162,67 @@ std::vector<const Face*> resolve_inner(const Mesh& mesh, const json& sel, const 
         const Face* f = nearest_face(mesh, p);
         if (f == nullptr) return {};
         return {f};
+    }
+    if (by == "material") {
+        const bool has_col = sel.contains("color");
+        std::array<double, 3> col{0, 0, 0};
+        if (has_col) col = json_point(sel.at("color"), "material 'color'");
+        const double tol = sel.value("tol", 0.02);
+        std::vector<const Face*> out;
+        for (const auto& f : mesh.faces()) {
+            const Material& m = f->material;
+            if (!m.set) continue;
+            if (!has_col || (std::abs(m.color[0] - col[0]) <= tol && std::abs(m.color[1] - col[1]) <= tol &&
+                             std::abs(m.color[2] - col[2]) <= tol))
+                out.push_back(f.get());
+        }
+        return out;
+    }
+    if (by == "connected") {
+        // union-find over edge-shared faces (components keyed by their lowest face id,
+        // matching the Python kernel's deterministic ordering + first-wins tie-break)
+        std::unordered_map<int, int> parent;
+        for (const auto& f : mesh.faces()) parent[f->id] = f->id;
+        std::function<int(int)> find = [&](int x) {
+            while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+            return x;
+        };
+        for (const auto& e : mesh.edges()) {
+            auto fs = mesh.edge_faces(e.get());
+            for (std::size_t i = 1; i < fs.size(); ++i) {
+                int ra = find(fs[0]->id), rb = find(fs[i]->id);
+                if (ra != rb) parent[ra] = rb;
+            }
+        }
+        std::unordered_map<int, std::vector<const Face*>> groups;
+        std::unordered_map<int, int> minid;
+        for (const auto& f : mesh.faces()) {
+            int r = find(f->id);
+            groups[r].push_back(f.get());
+            auto it = minid.find(r);
+            if (it == minid.end() || f->id < it->second) minid[r] = f->id;
+        }
+        std::vector<int> roots;
+        for (auto& kv : groups) roots.push_back(kv.first);
+        std::sort(roots.begin(), roots.end(), [&](int a, int b) { return minid[a] < minid[b]; });
+        if (roots.empty()) return {};
+        if (sel.contains("seed")) {
+            std::vector<const Face*> seedv = resolve_inner(mesh, sel.at("seed"), last_tag);
+            std::unordered_set<const Face*> seed(seedv.begin(), seedv.end());
+            std::vector<const Face*> out;
+            for (int r : roots) {
+                bool hit = false;
+                for (const Face* f : groups[r]) if (seed.count(f)) { hit = true; break; }
+                if (hit) for (const Face* f : groups[r]) out.push_back(f);
+            }
+            return out;
+        }
+        const bool largest = sel.value("which", std::string("largest")) == "largest";
+        int best = roots[0];
+        for (int r : roots)  // strict comparison keeps the FIRST (lowest-min-id) on ties
+            if (largest ? groups[r].size() > groups[best].size() : groups[r].size() < groups[best].size())
+                best = r;
+        return groups[best];
     }
     throw MeshLangError("unknown selector " + sel.dump());
 }

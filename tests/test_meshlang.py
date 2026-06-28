@@ -121,6 +121,21 @@ def test_array_makes_disjoint_copies():
     assert s["verts"] == 32 and s["faces"] == 24 and s["euler"] == 8   # 4 closed cubes
 
 
+def test_material_selector_picks_materialed_faces():
+    m = (MeshProgram().cube(1.0)
+         .material(Sel.normal("z", 1), color=[1, 0, 0])
+         .material(Sel.normal("z", -1), color=[0, 1, 0])).build()
+    assert len(resolve(m, Sel.material())) == 2           # both materialed faces
+    assert len(resolve(m, Sel.material([1, 0, 0]))) == 1  # red only
+
+
+def test_connected_selector_isolates_one_component():
+    m = MeshProgram().cube(1.0).array(3, (1.5, 0.0, 0.0)).build()
+    assert len(resolve(m, Sel.connected("largest"))) == 6     # one cube out of three
+    # the component containing the +x-most face is exactly one cube
+    assert len(resolve(m, Sel.component_of(Sel.extreme("x", "max")))) == 6
+
+
 def test_material_assigns_to_final_faces():
     m = (MeshProgram().cube(1.0)
          .material(Sel.normal("z", 1), color=[1.0, 0.0, 0.0], metallic=0.5)).build()

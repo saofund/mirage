@@ -128,7 +128,50 @@ def _resolve(mesh, sel, last_tag):
         lo, hi = _bbox(mesh)
         mid = (lo[ax] + hi[ax]) / 2
         return [f for f in mesh.faces if (_centroid(mesh, f)[ax] - mid) * sel.get("sign", 1.0) > 0]
+    if by == "material":
+        col, tol = sel.get("color"), sel.get("tol", 0.02)
+        out = []
+        for f in mesh.faces:
+            mat = f.attrs.get("material")
+            if not mat:
+                continue
+            if col is None or all(abs(mat["color"][k] - col[k]) <= tol for k in range(3)):
+                out.append(f)
+        return out
+    if by == "connected":
+        comps = _connected_components(mesh)
+        if not comps:
+            return []
+        if "seed" in sel:
+            seed = set(map(id, _resolve(mesh, sel["seed"], last_tag)))
+            return [f for comp in comps if any(id(g) in seed for g in comp) for f in comp]
+        which = sel.get("which", "largest")
+        return list(max(comps, key=len) if which == "largest" else min(comps, key=len))
     raise MeshLangError(f"unknown selector {sel!r}")
+
+
+def _connected_components(mesh):
+    """Partition faces into edge-connected components (union-find over shared edges),
+    returned sorted by each component's lowest face id (deterministic in both engines)."""
+    parent = {}
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]; x = parent[x]
+        return x
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+    for f in mesh.faces:
+        parent[f.id] = f.id
+    for e in mesh.edges:
+        fs = mesh.edge_faces(e)
+        for i in range(1, len(fs)):
+            union(fs[0].id, fs[i].id)
+    groups = {}
+    for f in mesh.faces:
+        groups.setdefault(find(f.id), []).append(f)
+    return sorted(groups.values(), key=lambda g: min(x.id for x in g))
 
 
 # --------------------------------------------------------------------------- #
@@ -208,6 +251,10 @@ class Sel:
     tag = staticmethod(lambda name: {"by": "tag", "name": name})
     extreme = staticmethod(lambda axis="z", which="max": {"by": "extreme", "axis": axis, "which": which})
     side = staticmethod(lambda axis="x", sign=1.0: {"by": "side", "axis": axis, "sign": sign})
+    material = staticmethod(lambda color=None, tol=0.02: ({"by": "material"} if color is None
+                            else {"by": "material", "color": list(color), "tol": tol}))
+    connected = staticmethod(lambda which="largest": {"by": "connected", "which": which})
+    component_of = staticmethod(lambda seed: {"by": "connected", "seed": seed})
     all = staticmethod(lambda: {"by": "all"})
     last = staticmethod(lambda: {"by": "last_created"})
     AND = staticmethod(lambda *s: {"and": list(s)})

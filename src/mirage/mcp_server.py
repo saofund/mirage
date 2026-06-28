@@ -318,6 +318,9 @@ def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
       renders; assign it AFTER the geometry ops — it does not propagate through later rebuilds).
     Selectors (the `on` value): {"by":"normal","axis":"z","sign":1} | {"by":"tag","name":..} |
     {"by":"extreme","axis":"z","which":"max"} | {"by":"last_created"} | {"by":"all"} |
+    {"by":"material","color":[r,g,b]} (faces carrying a material; omit color for any) |
+    {"by":"connected","which":"largest"|"smallest"} | {"by":"connected","seed":<selector>}
+      (a whole edge-connected component — e.g. pick one part out of an array) |
     {"and":[..]} / {"or":[..]} / {"not":..}.
 
     On success returns the new state (with `warnings` from the lint pass). On failure,
