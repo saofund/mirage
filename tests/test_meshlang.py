@@ -136,6 +136,26 @@ def test_connected_selector_isolates_one_component():
     assert len(resolve(m, Sel.component_of(Sel.extreme("x", "max")))) == 6
 
 
+def test_bisect_cuts_and_optionally_fills():
+    # cut a cube at z=0: the bottom half is an open 5-face box ...
+    openm = MeshProgram().cube(1.0).bisect((0, 0, 0), (0, 0, 1)).build()
+    openm.validate()
+    assert not openm.is_closed_manifold() and openm.stats()["faces"] == 5
+    # ... and with fill it is capped back into a closed manifold
+    closed = MeshProgram().cube(1.0).bisect((0, 0, 0), (0, 0, 1), fill=True).build()
+    closed.validate()
+    assert closed.is_closed_manifold() and closed.euler() == 2
+
+
+def test_describe_reports_materials_and_components():
+    from mirage.meshlang import describe
+    m = (MeshProgram().cube(1.0).array(3, (1.5, 0.0, 0.0))
+         .material(Sel.normal("z", 1), color=[1.0, 0.0, 0.0])).build()
+    d = describe(m)
+    assert d["components"] == [6, 6, 6]          # three separate cubes
+    assert d["materials"].get("rgb(1.00,0.00,0.00)") == 3   # the painted top of each
+
+
 def test_material_assigns_to_final_faces():
     m = (MeshProgram().cube(1.0)
          .material(Sel.normal("z", 1), color=[1.0, 0.0, 0.0], metallic=0.5)).build()

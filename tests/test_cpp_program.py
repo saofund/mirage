@@ -255,6 +255,33 @@ OPLOGS = {
         {"op": "solidify", "thickness": 0.2},
         {"op": "bevel", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "width": 0.1, "depth": 0.05},
     ],
+    # bisect: plane cut (Sutherland-Hodgman clip + shared edge intersections)
+    "bisect_cube_open": [
+        {"op": "cube", "size": 1.0},
+        {"op": "bisect", "point": [0, 0, 0], "normal": [0, 0, 1]},        # keep the bottom half (open)
+    ],
+    "bisect_cube_fill": [
+        {"op": "cube", "size": 1.0},
+        {"op": "bisect", "point": [0, 0, 0], "normal": [0, 0, 1], "fill": True},   # capped -> closed
+    ],
+    "bisect_diagonal": [
+        {"op": "cube", "size": 1.0},
+        {"op": "bisect", "point": [0, 0, 0], "normal": [1, 1, 1], "fill": True},
+    ],
+    "bisect_sphere_dome": [
+        {"op": "uv_sphere", "segments": 12, "rings": 8, "radius": 0.6},
+        {"op": "bisect", "point": [0, 0, 0], "normal": [0, 0, 1], "fill": True},
+    ],
+    "bisect_corner": [   # two cuts -> a clipped corner
+        {"op": "cube", "size": 1.0},
+        {"op": "bisect", "point": [0.2, 0, 0], "normal": [1, 0, 0], "fill": True},
+        {"op": "bisect", "point": [0, 0.2, 0], "normal": [0, 1, 0], "fill": True},
+    ],
+    "bisect_then_extrude": [
+        {"op": "cube", "size": 1.0},
+        {"op": "bisect", "point": [0, 0, 0], "normal": [0, 0, 1], "fill": True},
+        {"op": "extrude", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "distance": 0.3},
+    ],
     "cube_open_top": [
         {"op": "cube", "size": 1.0},
         {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},   # an open box

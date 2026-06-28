@@ -25,7 +25,7 @@ from .kernel import (
     make_torus, make_grid, face_normal, faces_by_normal,
     extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel,
     delete_faces, bridge_faces, fill_holes, catmull_clark,
-    solidify, mirror, array,
+    solidify, mirror, array, bisect,
 )
 
 
@@ -290,12 +290,23 @@ def describe(mesh: Mesh) -> dict:
         for t in _tags(f):
             if not t.startswith("__"):
                 tags[t] = tags.get(t, 0) + 1
+    # material groups (so the agent can re-select by paint) and connected components
+    # (so it knows how many separate parts there are before selecting one)
+    materials = {}
+    for f in mesh.faces:
+        mat = f.attrs.get("material")
+        if mat:
+            key = "rgb(%.2f,%.2f,%.2f)" % tuple(mat["color"])
+            materials[key] = materials.get(key, 0) + 1
+    comps = _connected_components(mesh)
     return {
         "stats": mesh.stats(),
         "size": [round(hi[k] - lo[k], 3) for k in range(3)],
         "bbox": [[round(x, 3) for x in lo], [round(x, 3) for x in hi]],
         "normal_groups": groups,
         "tags": tags,
+        "materials": materials,
+        "components": [len(c) for c in comps],   # face count of each separate part
     }
 
 
@@ -380,6 +391,8 @@ class MeshProgram:
     def mirror(self, axis="x", mark=None): return self.add(**_cmd("mirror", mark=mark, axis=axis))
     def array(self, count=3, offset=(1.1, 0.0, 0.0), mark=None):
         return self.add(**_cmd("array", mark=mark, count=count, offset=list(offset)))
+    def bisect(self, point=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0), fill=False, mark=None):
+        return self.add(**_cmd("bisect", mark=mark, point=list(point), normal=list(normal), fill=fill))
     def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
     def material(self, on, color=(0.8, 0.8, 0.8), metallic=0.0, roughness=0.5):
@@ -474,6 +487,10 @@ class MeshProgram:
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "array":
                     mesh = array(mesh, cmd.get("count", 3), cmd.get("offset", [1.1, 0.0, 0.0]), mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "bisect":
+                    mesh = bisect(mesh, cmd.get("point", [0.0, 0.0, 0.0]), cmd.get("normal", [0.0, 0.0, 1.0]),
+                                  cmd.get("fill", False), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "subdivide":
                     for _ in range(cmd.get("levels", 1)):

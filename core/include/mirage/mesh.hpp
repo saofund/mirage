@@ -211,5 +211,11 @@ Mesh mirror(const Mesh& mesh, const std::string& axis = "x", const std::string& 
 // array: `count` copies, copy c shifted by offset*c (disjoint; last copy gets mark).
 Mesh array(const Mesh& mesh, int count = 3, const std::array<double, 3>& offset = {1.1, 0.0, 0.0},
            const std::string& mark = "");
+// bisect: cut by a plane (point, normal); keep the half the normal points away from,
+// clipping crossing faces (a shared vertex per crossing edge). fill caps the cut —
+// the foundation of a plane/mesh boolean.
+Mesh bisect(const Mesh& mesh, const std::array<double, 3>& point = {0, 0, 0},
+            const std::array<double, 3>& normal = {0, 0, 1}, bool fill = false,
+            const std::string& mark = "");
 
 }  // namespace mirage

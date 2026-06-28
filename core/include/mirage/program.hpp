@@ -67,6 +67,9 @@ public:
     Program& mirror(const std::string& axis = "x", const std::string& mark = "");
     Program& array(int count = 3, const std::array<double, 3>& offset = {1.1, 0.0, 0.0},
                    const std::string& mark = "");
+    Program& bisect(const std::array<double, 3>& point = {0, 0, 0},
+                    const std::array<double, 3>& normal = {0, 0, 1}, bool fill = false,
+                    const std::string& mark = "");
     Program& subdivide(int levels = 1);
     Program& tag(const json& on, const std::string& name);
     Program& material(const json& on, const std::array<double, 3>& color, double metallic = 0.0, double roughness = 0.5);

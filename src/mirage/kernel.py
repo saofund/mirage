@@ -867,6 +867,64 @@ def array(mesh: Mesh, count: int = 3, offset=(1.1, 0.0, 0.0), mark: str | None =
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
+def bisect(mesh: Mesh, point=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0),
+           fill: bool = False, mark: str | None = None) -> Mesh:
+    """Cut the mesh with a plane and keep the half-space the normal points AWAY from
+    (dot(co-point, normal) <= 0). Faces wholly on the kept side stay; faces crossing
+    the plane are clipped (Sutherland-Hodgman), with one shared intersection vertex
+    per crossing edge so the cut stays manifold; faces on the far side are dropped.
+    ``fill`` caps the planar cut into a watertight solid — the foundation of a
+    plane/mesh boolean."""
+    px, py, pz = float(point[0]), float(point[1]), float(point[2])
+    nx, ny, nz = (float(c) for c in normal)
+    nl = (nx * nx + ny * ny + nz * nz) ** 0.5 or 1.0
+    nx, ny, nz = nx / nl, ny / nl, nz / nl
+    eps = 1e-7
+    pos = [list(v.co) for v in mesh.verts]
+    dist = [(pos[i][0] - px) * nx + (pos[i][1] - py) * ny + (pos[i][2] - pz) * nz for i in range(len(pos))]
+    side = [1 if d > eps else (-1 if d < -eps else 0) for d in dist]   # +1 removed, -1 kept, 0 on plane
+
+    new_pos = list(pos)
+    cut = {}                                   # edge id -> intersection vertex id (shared between faces)
+    for e in mesh.edges:
+        a, b = e.v1.id, e.v2.id
+        if side[a] * side[b] < 0:               # strictly crossing
+            t = dist[a] / (dist[a] - dist[b])
+            cut[id(e)] = len(new_pos)
+            new_pos.append([pos[a][k] + (pos[b][k] - pos[a][k]) * t for k in range(3)])
+
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:
+        loops = list(mesh.face_loops(f))
+        verts = [lp.vert.id for lp in loops]
+        if all(side[v] >= 0 for v in verts) and any(side[v] > 0 for v in verts):
+            continue                            # wholly on the removed side -> drop
+        if all(side[v] <= 0 for v in verts):
+            new_faces.append(verts); new_attrs.append(_copy_attrs(f.attrs))
+            continue                            # wholly kept (incl. lying on the plane)
+        poly = []                               # clip to the side <= 0 half-space
+        for lp in loops:
+            a, b = lp.vert.id, lp.next.vert.id
+            if side[a] <= 0:
+                poly.append(a)
+            if side[a] * side[b] < 0:
+                poly.append(cut[id(lp.edge)])
+        clipped = []
+        for v in poly:                          # drop consecutive duplicates
+            if not clipped or clipped[-1] != v:
+                clipped.append(v)
+        if len(clipped) >= 2 and clipped[0] == clipped[-1]:
+            clipped.pop()
+        if len(clipped) >= 3:
+            new_faces.append(clipped); new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))
+
+    new_pos, new_faces = _compact(new_pos, new_faces)
+    m = Mesh.from_pydata(new_pos, new_faces, new_attrs)
+    if fill:
+        m = fill_holes(m, mark=mark)
+    return m
+
+
 def make_cube(size: float = 1.0) -> Mesh:
     s = size / 2.0
     p = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),

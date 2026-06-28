@@ -1077,6 +1077,63 @@ Mesh array(const Mesh& mesh, int count, const std::array<double, 3>& offset, con
     return Mesh::from_pydata(np, faces, tags);
 }
 
+Mesh bisect(const Mesh& mesh, const std::array<double, 3>& point, const std::array<double, 3>& normal,
+            bool fill, const std::string& mark) {
+    double nx = normal[0], ny = normal[1], nz = normal[2];
+    double nl = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (nl == 0.0) nl = 1.0;
+    nx /= nl; ny /= nl; nz /= nl;
+    const double eps = 1e-7;
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    const int n = static_cast<int>(pos.size());
+    std::vector<double> dist(n);
+    std::vector<int> side(n);
+    for (int i = 0; i < n; ++i) {
+        dist[i] = (pos[i][0] - point[0]) * nx + (pos[i][1] - point[1]) * ny + (pos[i][2] - point[2]) * nz;
+        side[i] = dist[i] > eps ? 1 : (dist[i] < -eps ? -1 : 0);
+    }
+    std::vector<A3> np = pos;
+    std::unordered_map<const Edge*, int> cut;   // crossing edge -> shared intersection vertex
+    for (const auto& e : mesh.edges()) {
+        int a = e->v1->id, b = e->v2->id;
+        if (side[a] * side[b] < 0) {
+            double t = dist[a] / (dist[a] - dist[b]);
+            cut[e.get()] = static_cast<int>(np.size());
+            np.push_back({pos[a][0] + (pos[b][0] - pos[a][0]) * t,
+                          pos[a][1] + (pos[b][1] - pos[a][1]) * t,
+                          pos[a][2] + (pos[b][2] - pos[a][2]) * t});
+        }
+    }
+    std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
+    for (const auto& f : mesh.faces()) {
+        std::vector<Loop*> loops = mesh.face_loops(f.get());
+        std::vector<int> verts;
+        for (Loop* lp : loops) verts.push_back(lp->vert->id);
+        bool any_out = false, all_ge0 = true, all_le0 = true;
+        for (int v : verts) { any_out |= side[v] > 0; all_ge0 &= side[v] >= 0; all_le0 &= side[v] <= 0; }
+        if (all_ge0 && any_out) continue;       // wholly removed
+        if (all_le0) {                          // wholly kept
+            faces.push_back(verts); tags.push_back(copy_tags(f.get()));
+            continue;
+        }
+        std::vector<int> poly;                  // clip to side <= 0
+        for (Loop* lp : loops) {
+            int a = lp->vert->id, b = lp->next->vert->id;
+            if (side[a] <= 0) poly.push_back(a);
+            if (side[a] * side[b] < 0) poly.push_back(cut[lp->edge]);
+        }
+        std::vector<int> clipped;
+        for (int v : poly) if (clipped.empty() || clipped.back() != v) clipped.push_back(v);
+        if (clipped.size() >= 2 && clipped.front() == clipped.back()) clipped.pop_back();
+        if (clipped.size() >= 3) { faces.push_back(clipped); tags.push_back(copy_tags(f.get(), mark)); }
+    }
+    Mesh m = build_compact(np, faces, tags);
+    if (fill) m = fill_holes(m, mark);
+    return m;
+}
+
 Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region_v, double width, double depth,
            const std::string& mark) {
     std::set<const Face*> region(region_v.begin(), region_v.end());

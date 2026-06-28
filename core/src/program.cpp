@@ -203,6 +203,13 @@ Program& Program::array(int count, const std::array<double, 3>& offset, const st
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::bisect(const std::array<double, 3>& point, const std::array<double, 3>& normal,
+                         bool fill, const std::string& mark) {
+    json c{{"op", "bisect"}, {"point", {point[0], point[1], point[2]}},
+           {"normal", {normal[0], normal[1], normal[2]}}, {"fill", fill}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::subdivide(int levels) { return add(json{{"op", "subdivide"}, {"levels", levels}}); }
 Program& Program::tag(const json& on, const std::string& name) {
     return add(json{{"op", "tag"}, {"on", on}, {"name", name}});
@@ -346,6 +353,15 @@ Mesh Program::build(std::string* last_tag_out) const {
                                         off.size() > 2 ? off[2] : 0.0};
                 mesh = mirage::array(mesh, cmd.value("count", 3), o, out_tag);
                 outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "bisect") {
+                auto pt = cmd.value("point", std::vector<double>{0.0, 0.0, 0.0});
+                auto nm = cmd.value("normal", std::vector<double>{0.0, 0.0, 1.0});
+                std::array<double, 3> p{pt.size() > 0 ? pt[0] : 0.0, pt.size() > 1 ? pt[1] : 0.0,
+                                        pt.size() > 2 ? pt[2] : 0.0};
+                std::array<double, 3> nrm{nm.size() > 0 ? nm[0] : 0.0, nm.size() > 1 ? nm[1] : 0.0,
+                                          nm.size() > 2 ? nm[2] : 1.0};
+                mesh = mirage::bisect(mesh, p, nrm, cmd.value("fill", false), out_tag);
+                outs = faces_with_tag(mesh, out_tag);
             } else if (op == "subdivide") {
                 const int levels = cmd.value("levels", 1);
                 for (int k = 0; k < levels; ++k) mesh = catmull_clark(mesh);
@@ -453,6 +469,7 @@ std::string Program::label(const json& op) {
     if (k == "solidify") return "solidify  t=" + num(op.value("thickness", 0.1));
     if (k == "mirror") return "mirror  " + op.value("axis", std::string("x"));
     if (k == "array") return "array  x" + std::to_string(op.value("count", 3));
+    if (k == "bisect") return std::string("bisect") + (op.value("fill", false) ? " +fill" : "");
     if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
     if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
     if (k == "material") return "material  m=" + num(op.value("metallic", 0.0)) + " r=" + num(op.value("roughness", 0.5)) + on_suffix(op);
