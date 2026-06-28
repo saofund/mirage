@@ -315,6 +315,8 @@ def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
     array{count,offset} (count copies, each shifted by offset*c);
     bisect{point,normal,fill} (cut by a plane, keep the side the normal points away from;
       fill caps the cut — a plane/mesh boolean foundation);
+    spin{axis,steps,angle} (lathe: revolve an open profile's boundary around an axis;
+      angle>=360 makes a watertight surface of revolution — a vase/tube);
     subdivide{levels}; tag{on,name}; scale/translate{on,by}; assert{closed_manifold,euler};
     material{on,color:[r,g,b],metallic,roughness} (per-face PBR material the path tracer
       renders; assign it AFTER the geometry ops — it does not propagate through later rebuilds).

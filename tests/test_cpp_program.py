@@ -282,6 +282,29 @@ OPLOGS = {
         {"op": "bisect", "point": [0, 0, 0], "normal": [0, 0, 1], "fill": True},
         {"op": "extrude", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "distance": 0.3},
     ],
+    # spin (lathe): revolve an open profile's boundary edges around an axis
+    "spin_rect_tube": [   # a rectangle cross-section -> a hollow tube (genus-1)
+        {"op": "mesh", "verts": [[0.4, 0, -0.5], [0.6, 0, -0.5], [0.6, 0, 0.5], [0.4, 0, 0.5]], "faces": [[0, 1, 2, 3]]},
+        {"op": "spin", "axis": "z", "steps": 16, "angle": 360},
+    ],
+    "spin_partial_open": [
+        {"op": "mesh", "verts": [[0.4, 0, -0.5], [0.6, 0, -0.5], [0.6, 0, 0.5], [0.4, 0, 0.5]], "faces": [[0, 1, 2, 3]]},
+        {"op": "spin", "axis": "z", "steps": 8, "angle": 90},
+    ],
+    "spin_profile_to_axis": [   # profile touching the axis -> a closed solid of revolution
+        {"op": "mesh", "verts": [[0.0, 0, -0.5], [0.5, 0, -0.3], [0.5, 0, 0.3], [0.0, 0, 0.5]], "faces": [[0, 1, 2, 3]]},
+        {"op": "spin", "axis": "z", "steps": 16, "angle": 360},
+    ],
+    "spin_then_solidify": [
+        {"op": "mesh", "verts": [[0.4, 0, -0.5], [0.6, 0, -0.5], [0.6, 0, 0.5], [0.4, 0, 0.5]], "faces": [[0, 1, 2, 3]]},
+        {"op": "spin", "axis": "z", "steps": 12, "angle": 360},
+        {"op": "solidify", "thickness": 0.05},
+    ],
+    "spin_y_axis": [   # a plane pushed off the y-axis, revolved around it
+        {"op": "plane", "size_x": 0.3},
+        {"op": "translate", "on": {"by": "all"}, "by": [0.6, 0.0, 0.0]},
+        {"op": "spin", "axis": "y", "steps": 16, "angle": 360},
+    ],
     "cube_open_top": [
         {"op": "cube", "size": 1.0},
         {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},   # an open box

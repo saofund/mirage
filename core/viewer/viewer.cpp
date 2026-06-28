@@ -832,6 +832,8 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Array x3")) { prog.array(3, {1.2, 0.0, 0.0}); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::SameLine();
         if (ImGui::Button("Bisect Z")) { prog.bisect({0, 0, 0}, {0, 0, 1}, true); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Spin Z")) { prog.spin("z", 32, 360.0); g_sel_mode = SEL_NONE; dirty = true; }  // lathe an open profile
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();

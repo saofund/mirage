@@ -210,6 +210,11 @@ Program& Program::bisect(const std::array<double, 3>& point, const std::array<do
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::spin(const std::string& axis, int steps, double angle, const std::string& mark) {
+    json c{{"op", "spin"}, {"axis", axis}, {"steps", steps}, {"angle", angle}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::subdivide(int levels) { return add(json{{"op", "subdivide"}, {"levels", levels}}); }
 Program& Program::tag(const json& on, const std::string& name) {
     return add(json{{"op", "tag"}, {"on", on}, {"name", name}});
@@ -362,6 +367,10 @@ Mesh Program::build(std::string* last_tag_out) const {
                                           nm.size() > 2 ? nm[2] : 1.0};
                 mesh = mirage::bisect(mesh, p, nrm, cmd.value("fill", false), out_tag);
                 outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "spin") {
+                mesh = mirage::spin(mesh, cmd.value("axis", std::string("z")), cmd.value("steps", 24),
+                                    cmd.value("angle", 360.0), out_tag);
+                outs = faces_with_tag(mesh, out_tag);
             } else if (op == "subdivide") {
                 const int levels = cmd.value("levels", 1);
                 for (int k = 0; k < levels; ++k) mesh = catmull_clark(mesh);
@@ -470,6 +479,9 @@ std::string Program::label(const json& op) {
     if (k == "mirror") return "mirror  " + op.value("axis", std::string("x"));
     if (k == "array") return "array  x" + std::to_string(op.value("count", 3));
     if (k == "bisect") return std::string("bisect") + (op.value("fill", false) ? " +fill" : "");
+    if (k == "spin")
+        return "spin  " + op.value("axis", std::string("z")) + " " + num(op.value("angle", 360.0)) +
+               "deg x" + std::to_string(op.value("steps", 24));
     if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
     if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
     if (k == "material") return "material  m=" + num(op.value("metallic", 0.0)) + " r=" + num(op.value("roughness", 0.5)) + on_suffix(op);

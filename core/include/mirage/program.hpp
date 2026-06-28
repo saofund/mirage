@@ -70,6 +70,8 @@ public:
     Program& bisect(const std::array<double, 3>& point = {0, 0, 0},
                     const std::array<double, 3>& normal = {0, 0, 1}, bool fill = false,
                     const std::string& mark = "");
+    Program& spin(const std::string& axis = "z", int steps = 24, double angle = 360.0,
+                  const std::string& mark = "");
     Program& subdivide(int levels = 1);
     Program& tag(const json& on, const std::string& name);
     Program& material(const json& on, const std::array<double, 3>& color, double metallic = 0.0, double roughness = 0.5);

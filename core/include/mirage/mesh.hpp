@@ -217,5 +217,10 @@ Mesh array(const Mesh& mesh, int count = 3, const std::array<double, 3>& offset 
 Mesh bisect(const Mesh& mesh, const std::array<double, 3>& point = {0, 0, 0},
             const std::array<double, 3>& normal = {0, 0, 1}, bool fill = false,
             const std::string& mark = "");
+// spin (lathe): revolve a profile's boundary edges around an axis. Axis verts weld
+// to a pole; angle>=360 wraps into a watertight surface of revolution, a partial
+// angle leaves an open swept sheet.
+Mesh spin(const Mesh& mesh, const std::string& axis = "z", int steps = 24,
+          double angle = 360.0, const std::string& mark = "");
 
 }  // namespace mirage

@@ -925,6 +925,67 @@ def bisect(mesh: Mesh, point=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0),
     return m
 
 
+def spin(mesh: Mesh, axis: str = "z", steps: int = 24, angle: float = 360.0,
+         mark: str | None = None) -> Mesh:
+    """Revolve a profile around an axis (the lathe). The profile is the BOUNDARY edge
+    loops of an open mesh; each boundary edge sweeps into a ring of quads. A vertex on
+    the axis is welded to a single shared point (a pole), so a profile that touches the
+    axis closes cleanly. angle>=360 wraps into a watertight surface of revolution
+    (vase / tube); a partial angle leaves an open swept sheet. Output verts: per input
+    vertex, its angular copies in order (1 if on-axis)."""
+    import math
+    k = "xyz".index(axis)
+    i, j = (k + 1) % 3, (k + 2) % 3              # the two axes perpendicular to `axis`
+    steps = max(int(steps), 3)
+    full = angle >= 359.999
+    rings = steps if full else steps + 1
+    eps = 1e-12
+    pos = [list(v.co) for v in mesh.verts]
+    on_axis = [(pos[v][i] ** 2 + pos[v][j] ** 2) < eps for v in range(len(pos))]
+
+    new_pos, base = [], {}
+    for v in range(len(pos)):
+        base[v] = len(new_pos)
+        if on_axis[v]:
+            new_pos.append(list(pos[v]))         # a pole: one shared copy
+            continue
+        for r in range(rings):
+            theta = math.radians(angle) * r / steps
+            c, s = math.cos(theta), math.sin(theta)
+            p = list(pos[v])
+            ci, cj = pos[v][i], pos[v][j]
+            p[i] = ci * c - cj * s
+            p[j] = ci * s + cj * c
+            new_pos.append(p)
+
+    def outid(v, r):
+        if on_axis[v]:
+            return base[v]
+        return base[v] + (r % steps if full else r)
+
+    new_faces, new_attrs = [], []
+    for e in mesh.edges:
+        fs = mesh.edge_faces(e)
+        if len(fs) != 1:                          # boundary edges only (the silhouette)
+            continue
+        a, b = e.v1.id, e.v2.id
+        if on_axis[a] and on_axis[b]:
+            continue                              # an edge lying on the axis sweeps nothing
+        for r in range(steps):
+            quad = [outid(a, r), outid(b, r), outid(b, r + 1), outid(a, r + 1)]
+            poly = []
+            for x in quad:                        # collapse the coincident corner at a pole
+                if not poly or poly[-1] != x:
+                    poly.append(x)
+            if len(poly) >= 2 and poly[0] == poly[-1]:
+                poly.pop()
+            if len(poly) >= 3:
+                new_faces.append(poly); new_attrs.append(_copy_attrs(fs[0].attrs, add_tag=mark))
+
+    new_pos, new_faces = _compact(new_pos, new_faces)
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
 def make_cube(size: float = 1.0) -> Mesh:
     s = size / 2.0
     p = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),

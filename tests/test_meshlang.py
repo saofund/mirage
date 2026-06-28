@@ -147,6 +147,21 @@ def test_bisect_cuts_and_optionally_fills():
     assert closed.is_closed_manifold() and closed.euler() == 2
 
 
+def test_spin_revolves_a_profile_into_a_solid():
+    # a profile touching the axis, revolved 360 -> a watertight surface of revolution
+    profile = [[0.0, 0, -0.5], [0.5, 0, -0.3], [0.5, 0, 0.3], [0.0, 0, 0.5]]
+    m = MeshProgram().mesh(profile, [[0, 1, 2, 3]]).spin("z", 16, 360).build()
+    m.validate()
+    assert m.is_closed_manifold() and m.euler() == 2
+
+
+def test_spin_partial_angle_is_open():
+    profile = [[0.4, 0, -0.5], [0.6, 0, -0.5], [0.6, 0, 0.5], [0.4, 0, 0.5]]
+    m = MeshProgram().mesh(profile, [[0, 1, 2, 3]]).spin("z", 8, 120).build()
+    m.validate()
+    assert not m.is_closed_manifold()      # a partial sweep leaves an open sheet
+
+
 def test_describe_reports_materials_and_components():
     from mirage.meshlang import describe
     m = (MeshProgram().cube(1.0).array(3, (1.5, 0.0, 0.0))
