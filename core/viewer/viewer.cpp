@@ -14,8 +14,11 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -271,6 +274,94 @@ void main(){
 }
 )";
 
+// --- glTF (.glb) import: parse baked geometry into one replayable `mesh` op ----
+// The native parity for the AI's import_gltf MCP tool: a human at the GUI can load
+// a .glb directly. We weld the triangle soup back into shared-vertex topology and
+// invert the Y-up axis swap, lowering to the same `mesh` op both engines replay.
+static Program program_from_glb(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) throw std::runtime_error("cannot open " + path);
+    std::vector<unsigned char> blob((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    auto u32 = [&](std::size_t o) -> std::uint32_t {
+        return blob[o] | (blob[o + 1] << 8) | (blob[o + 2] << 16) | (std::uint32_t(blob[o + 3]) << 24);
+    };
+    if (blob.size() < 20 || u32(0) != 0x46546C67u) throw std::runtime_error("not a .glb file");
+    const std::uint32_t jlen = u32(12);
+    json g = json::parse(std::string(reinterpret_cast<char*>(&blob[20]), jlen));
+    const unsigned char* bin = blob.data() + 20 + jlen + 8;  // skip JSON + BIN chunk headers
+
+    auto comp_size = [](int ct) { return ct == 5120 || ct == 5121 ? 1 : ct == 5122 || ct == 5123 ? 2 : 4; };
+    auto acc_base = [&](const json& acc) {
+        const json& bv = g["bufferViews"][acc.at("bufferView").get<int>()];
+        return std::size_t(bv.value("byteOffset", 0)) + std::size_t(acc.value("byteOffset", 0));
+    };
+    auto read_index = [&](int ct, const unsigned char* p) -> std::uint32_t {
+        if (ct == 5121) return *p;
+        if (ct == 5123) { std::uint16_t v; std::memcpy(&v, p, 2); return v; }
+        std::uint32_t v; std::memcpy(&v, p, 4); return v;
+    };
+
+    std::vector<std::array<double, 3>> verts;
+    std::map<std::array<long long, 3>, int> weld;
+    json faces = json::array(), fmats = json::array();
+    bool any_mat = false;
+    auto weld_vertex = [&](double X, double Y, double Z) {  // glTF Y-up -> Mirage Z-up
+        std::array<double, 3> p{X, -Z, Y};
+        std::array<long long, 3> key{std::llround(p[0] * 1e5), std::llround(p[1] * 1e5), std::llround(p[2] * 1e5)};
+        auto it = weld.find(key);
+        if (it != weld.end()) return it->second;
+        int id = int(verts.size());
+        weld[key] = id; verts.push_back(p);
+        return id;
+    };
+
+    for (const auto& m : g.value("meshes", json::array())) {
+        for (const auto& prim : m.value("primitives", json::array())) {
+            if (prim.value("mode", 4) != 4) continue;  // TRIANGLES only
+            const json& pacc = g["accessors"][prim["attributes"]["POSITION"].get<int>()];
+            const std::size_t pbase = acc_base(pacc);
+            const int pcount = pacc.at("count").get<int>();
+            std::vector<std::array<double, 3>> pos(pcount);
+            for (int i = 0; i < pcount; ++i) {
+                float xyz[3];
+                std::memcpy(xyz, bin + pbase + std::size_t(i) * 12, 12);
+                pos[i] = {xyz[0], xyz[1], xyz[2]};
+            }
+            std::vector<std::uint32_t> idx;
+            if (prim.contains("indices")) {
+                const json& iacc = g["accessors"][prim["indices"].get<int>()];
+                const int ct = iacc.at("componentType").get<int>(), cs = comp_size(ct);
+                const std::size_t ibase = acc_base(iacc);
+                const int icount = iacc.at("count").get<int>();
+                for (int i = 0; i < icount; ++i) idx.push_back(read_index(ct, bin + ibase + std::size_t(i) * cs));
+            } else {
+                for (int i = 0; i < pcount; ++i) idx.push_back(i);
+            }
+            json mat;  // pull this primitive's material (if any)
+            if (prim.contains("material")) {
+                const json& pbr = g["materials"][prim["material"].get<int>()].value("pbrMetallicRoughness", json::object());
+                auto col = pbr.value("baseColorFactor", std::vector<double>{0.8, 0.8, 0.8, 1.0});
+                mat = json{{"color", {col[0], col[1], col[2]}}, {"metallic", pbr.value("metallicFactor", 1.0)},
+                           {"roughness", pbr.value("roughnessFactor", 1.0)}};
+                any_mat = true;
+            }
+            for (std::size_t t = 0; t + 2 < idx.size(); t += 3) {
+                int a = weld_vertex(pos[idx[t]][0], pos[idx[t]][1], pos[idx[t]][2]);
+                int b = weld_vertex(pos[idx[t + 1]][0], pos[idx[t + 1]][1], pos[idx[t + 1]][2]);
+                int c = weld_vertex(pos[idx[t + 2]][0], pos[idx[t + 2]][1], pos[idx[t + 2]][2]);
+                if (a == b || b == c || a == c) continue;  // degenerate after welding
+                faces.push_back({a, b, c}); fmats.push_back(mat);
+            }
+        }
+    }
+    if (faces.empty()) throw std::runtime_error("glTF had no triangle geometry");
+    json vj = json::array();
+    for (const auto& v : verts) vj.push_back({v[0], v[1], v[2]});
+    json op{{"op", "mesh"}, {"verts", vj}, {"faces", faces}};
+    if (any_mat) op["face_materials"] = fmats;
+    return Program::from_json(json::array({op}).dump());
+}
+
 // camera / interaction state
 static bool g_imgui = false;
 static float g_yaw = 2.3f, g_pitch = 0.35f, g_dist = 3.0f;
@@ -297,6 +388,7 @@ static std::array<double, 3> g_sel{0, 0, 0};  // the picked point (PICK mode)
 // live sync on, the viewer watches the file's mtime and auto-reloads the AI's
 // edits, and auto-saves the human's — real-time co-editing of one op-log.
 static char g_oplog_path[256] = "mirage_oplog.json";
+static char g_glb_path[256] = "mirage_export.glb";
 static char g_io_status[256] = "";
 static bool g_live_sync = false;
 static double g_last_poll = 0.0;
@@ -386,18 +478,23 @@ static void write_ppm(const std::string& path, int W, int H) {
 }
 
 int main(int argc, char** argv) {
-    std::string shot, load_path;
+    std::string shot, load_path, glb_path;
     double watch_secs = 0.0;  // --watch N: headless live-sync proof (poll the file for N s)
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--screenshot" && i + 1 < argc) shot = argv[++i];
         else if (a == "--oplog" && i + 1 < argc) { load_path = argv[++i]; std::snprintf(g_oplog_path, sizeof(g_oplog_path), "%s", load_path.c_str()); }
+        else if (a == "--import-glb" && i + 1 < argc) { glb_path = argv[++i]; std::snprintf(g_glb_path, sizeof(g_glb_path), "%s", glb_path.c_str()); }
         else if (a == "--watch" && i + 1 < argc) watch_secs = std::atof(argv[++i]);
     }
 
     Program prog;
     bool loaded_ok = false;
-    if (!load_path.empty()) {  // open straight onto a shared op-log (e.g. one an AI just saved)
+    if (!glb_path.empty()) {  // import a .glb straight into a `mesh` op
+        try { prog = program_from_glb(glb_path); prog.build(); loaded_ok = true;
+              std::snprintf(g_io_status, sizeof(g_io_status), "imported %s -> 1 mesh op", glb_path.c_str()); }
+        catch (const std::exception& e) { std::fprintf(stderr, "could not import %s: %s\n", glb_path.c_str(), e.what()); }
+    } else if (!load_path.empty()) {  // open straight onto a shared op-log (e.g. one an AI just saved)
         std::ifstream f(load_path);
         if (f) {
             std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -733,6 +830,8 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Mirror X")) { prog.mirror("x"); g_sel_mode = SEL_NONE; dirty = true; }       // reflect + weld seam
         ImGui::SameLine();
         if (ImGui::Button("Array x3")) { prog.array(3, {1.2, 0.0, 0.0}); g_sel_mode = SEL_NONE; dirty = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Bisect Z")) { prog.bisect({0, 0, 0}, {0, 0, 1}, true); g_sel_mode = SEL_NONE; dirty = true; }
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();
@@ -758,6 +857,20 @@ int main(int argc, char** argv) {
         if (ImGui::Checkbox("live sync", &g_live_sync)) {
             g_last_mtime = file_mtime(g_oplog_path);  // baseline: watch from now (don't clobber on enable)
             std::snprintf(g_io_status, sizeof(g_io_status), g_live_sync ? "live sync ON — co-editing %s" : "live sync OFF", g_oplog_path);
+        }
+        // glTF import: bring a baked .glb in as a replayable `mesh` op (human parity
+        // with the AI's import_gltf). Replaces the current op-log with the import.
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputText("##glb", g_glb_path, sizeof(g_glb_path));
+        ImGui::SameLine();
+        if (ImGui::Button("Import .glb")) {
+            try {
+                prog = program_from_glb(g_glb_path);
+                g_sel_mode = SEL_NONE; dirty = true;
+                std::snprintf(g_io_status, sizeof(g_io_status), "imported %s -> 1 mesh op", g_glb_path);
+            } catch (const std::exception& e) {
+                std::snprintf(g_io_status, sizeof(g_io_status), "import failed: %.180s", e.what());
+            }
         }
         if (g_io_status[0]) ImGui::TextDisabled("%s", g_io_status);
         ImGui::Spacing();
