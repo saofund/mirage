@@ -209,6 +209,19 @@ OPLOGS = {
         {"op": "grid", "size_x": 2.0, "size_y": 2.0, "x_div": 4, "y_div": 4},
         {"op": "extrude", "on": {"by": "all"}, "distance": 0.2},
     ],
+    # inline geometry (the glTF-import seam): both engines from_pydata it identically
+    "mesh_quad": [
+        {"op": "mesh", "verts": [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], "faces": [[0, 1, 2, 3]]},
+    ],
+    "mesh_tetra": [
+        {"op": "mesh",
+         "verts": [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]],
+         "faces": [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]},   # a closed tetrahedron
+    ],
+    "mesh_then_extrude": [
+        {"op": "mesh", "verts": [[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]], "faces": [[0, 1, 2, 3]]},
+        {"op": "extrude", "on": {"by": "all"}, "distance": 0.5},     # operators stack on imported geometry
+    ],
     "cube_open_top": [
         {"op": "cube", "size": 1.0},
         {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},   # an open box
@@ -324,6 +337,14 @@ MATERIAL_OPLOGS = {
         {"op": "extrude", "on": {"by": "last_created"}, "distance": 0.5},
         {"op": "material", "on": {"by": "last_created"}, "color": [0.85, 0.1, 0.1], "metallic": 0.0, "roughness": 0.4},
         {"op": "material", "on": {"by": "normal", "axis": "z", "sign": -1.0}, "color": [0.1, 0.2, 0.9]},
+    ],
+    # inline per-face materials on a mesh op (the glTF-import lowering) must match too
+    "mesh_inline_materials": [
+        {"op": "mesh",
+         "verts": [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
+         "faces": [[0, 1, 2, 3], [4, 5, 6, 7]],
+         "face_materials": [{"color": [1.0, 0.2, 0.1], "metallic": 0.0, "roughness": 0.6},
+                            {"color": [0.2, 0.9, 0.3], "metallic": 1.0, "roughness": 0.15}]},
     ],
 }
 

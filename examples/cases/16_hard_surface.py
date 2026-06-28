@@ -60,10 +60,18 @@ def main():
     print("  render it:  mirage_render --oplog mirage_oplog.json --out shot.ppm --spp 160")
 
     print("\nglTF export (the asset leaves the building — Blender/three.js/model-viewer):")
-    from mirage.gltf_export import export_glb
+    from mirage.gltf_export import export_glb, mesh_to_glb
     info = export_glb(mesh, "boss.glb")
     print(f"  wrote {info['path']}: {info['bytes']} bytes, {info['triangles']} tris, "
           f"{info['materials']} materials (per-face PBR carried through)")
+
+    print("\nglTF import (round-trip: it comes back as an editable op-log `mesh` op):")
+    from mirage.gltf_import import glb_to_mesh_op
+    back = MeshProgram([glb_to_mesh_op(mesh_to_glb(mesh))]).build()
+    nmat = sum(1 for f in back.faces if f.attrs.get("material"))
+    print(f"  re-imported: v={len(back.verts)} f={len(back.faces)} euler={back.euler()} "
+          f"{'closed' if back.is_closed_manifold() else 'OPEN'}, {nmat} materialed faces "
+          f"(welded back to real topology)")
 
     print("\none op-log, two engines, a human and an AI both editing it.")
 

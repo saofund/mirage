@@ -53,6 +53,8 @@ public:
                    double minor_radius = 0.2, const std::string& mark = "");
     Program& grid(double size_x = 1.0, double size_y = -1.0, int x_div = 10, int y_div = -1,
                   const std::string& mark = "");
+    Program& mesh(const std::vector<std::array<double, 3>>& verts,
+                  const std::vector<std::vector<int>>& faces, const std::string& mark = "");
     Program& del(const json& on);                  // delete the selected faces (open the mesh)
     Program& bridge(const json& on, const std::string& mark = "");  // tunnel between two openings
     Program& fill(const std::string& mark = "");   // cap every boundary loop

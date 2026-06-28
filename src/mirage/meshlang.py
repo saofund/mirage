@@ -315,6 +315,11 @@ class MeshProgram:
     def grid(self, size_x=1.0, size_y=None, x_div=10, y_div=None, mark=None):
         return self.add(**_cmd("grid", mark=mark, size_x=size_x, size_y=size_y if size_y is not None else size_x,
                                x_div=x_div, y_div=y_div if y_div is not None else x_div))
+    def mesh(self, verts, faces, face_materials=None, mark=None):
+        cmd = _cmd("mesh", mark=mark, verts=[list(v) for v in verts], faces=[list(f) for f in faces])
+        if face_materials is not None:
+            cmd["face_materials"] = face_materials
+        return self.add(**cmd)
     def delete(self, on): return self.add(**_cmd("delete", on=on))
     def bridge(self, on, mark=None): return self.add(**_cmd("bridge", on=on, mark=mark))
     def fill(self, mark=None): return self.add(**_cmd("fill", mark=mark))
@@ -360,6 +365,21 @@ class MeshProgram:
                 elif op == "grid":
                     mesh = make_grid(cmd.get("size_x", 1.0), cmd.get("size_y"),
                                      cmd.get("x_div", 10), cmd.get("y_div"))
+                    outs = list(mesh.faces)
+                elif op == "mesh":
+                    # inline geometry (the import seam): raw verts+faces, replayed by
+                    # both engines via from_pydata. face_materials[i] (or null) bakes
+                    # the per-face PBR. This is what glTF import lowers to.
+                    verts = [tuple(float(c) for c in v) for v in cmd.get("verts", [])]
+                    faces = [list(f) for f in cmd.get("faces", [])]
+                    mesh = Mesh.from_pydata(verts, faces)
+                    fmats = cmd.get("face_materials")
+                    if fmats:
+                        for f, fm in zip(mesh.faces, fmats):
+                            if fm:
+                                f.attrs["material"] = {"color": list(fm.get("color", [0.8, 0.8, 0.8])),
+                                                       "metallic": fm.get("metallic", 0.0),
+                                                       "roughness": fm.get("roughness", 0.5)}
                     outs = list(mesh.faces)
                 elif mesh is None:
                     raise MeshLangError(f"op '{op}' before any primitive")

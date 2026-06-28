@@ -404,6 +404,25 @@ def export_gltf(path: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
+def import_gltf(path: str) -> dict:
+    """Import a glTF 2.0 binary (.glb) as the current model. The geometry is welded
+    back into real topology and lowered to ONE op-log `mesh` op (raw verts + faces +
+    per-face materials) that both engines replay — so an imported asset becomes a
+    first-class, editable model you can keep stacking operators on. Replaces the
+    current op-log."""
+    global _model
+    from .gltf_import import import_glb
+    from .repair import lint_program
+    try:
+        prog = import_glb(path)
+        prog.build()                  # validate before adopting
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    _model = prog
+    return {"ok": True, "imported": path, "warnings": lint_program(_model), **_model.get_state()}
+
+
+@mcp.tool()
 def get_mesh_program() -> list:
     """The current op-log program (the canonical model)."""
     return _model.ops

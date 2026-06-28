@@ -142,6 +142,16 @@ Program& Program::grid(double size_x, double size_y, int x_div, int y_div, const
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::mesh(const std::vector<std::array<double, 3>>& verts,
+                       const std::vector<std::vector<int>>& faces, const std::string& mark) {
+    json vj = json::array();
+    for (const auto& v : verts) vj.push_back({v[0], v[1], v[2]});
+    json fj = json::array();
+    for (const auto& f : faces) fj.push_back(f);
+    json c{{"op", "mesh"}, {"verts", std::move(vj)}, {"faces", std::move(fj)}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::del(const json& on) { return add(json{{"op", "delete"}, {"on", on}}); }
 Program& Program::bridge(const json& on, const std::string& mark) {
     json c{{"op", "bridge"}, {"on", on}};
@@ -244,6 +254,38 @@ Mesh Program::build(std::string* last_tag_out) const {
                 mesh = make_grid(cmd.value("size_x", 1.0), cmd.value("size_y", -1.0),
                                  cmd.value("x_div", 10), cmd.value("y_div", -1));
                 has = true;
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (op == "mesh") {
+                // inline geometry (the import seam): raw verts+faces via from_pydata,
+                // with optional per-face materials. Byte-identical to the Python kernel.
+                std::vector<std::array<double, 3>> verts;
+                for (const auto& v : cmd.value("verts", json::array()))
+                    verts.push_back({v.at(0).get<double>(), v.at(1).get<double>(), v.at(2).get<double>()});
+                std::vector<std::vector<int>> faces;
+                for (const auto& f : cmd.value("faces", json::array())) {
+                    std::vector<int> fi;
+                    for (const auto& idx : f) fi.push_back(idx.get<int>());
+                    faces.push_back(std::move(fi));
+                }
+                mesh = Mesh::from_pydata(verts, faces);
+                has = true;
+                if (cmd.contains("face_materials") && cmd.at("face_materials").is_array()) {
+                    const json& fms = cmd.at("face_materials");
+                    std::size_t fi = 0;
+                    for (const auto& f : mesh.faces()) {
+                        if (fi >= fms.size()) break;
+                        const json& fm = fms[fi++];
+                        if (fm.is_object()) {
+                            Material mtl;
+                            auto col = fm.value("color", std::vector<double>{0.8, 0.8, 0.8});
+                            mtl.color = {col[0], col[1], col[2]};
+                            mtl.metallic = fm.value("metallic", 0.0);
+                            mtl.roughness = fm.value("roughness", 0.5);
+                            mtl.set = true;
+                            const_cast<Face*>(f.get())->material = mtl;
+                        }
+                    }
+                }
                 for (const auto& f : mesh.faces()) outs.push_back(f.get());
             } else if (!has) {
                 throw MeshLangError("op '" + op + "' before any primitive");
@@ -373,6 +415,11 @@ std::string Program::label(const json& op) {
                " R=" + num(op.value("major_radius", 0.5)) + " r=" + num(op.value("minor_radius", 0.2));
     if (k == "grid")
         return "grid  " + std::to_string(op.value("x_div", 10)) + "x" + std::to_string(op.value("y_div", 10));
+    if (k == "mesh") {
+        const std::size_t nv = op.contains("verts") ? op.at("verts").size() : 0;
+        const std::size_t nf = op.contains("faces") ? op.at("faces").size() : 0;
+        return "mesh  " + std::to_string(nv) + "v " + std::to_string(nf) + "f (imported)";
+    }
     if (k == "delete") return "delete" + on_suffix(op);
     if (k == "bridge") return "bridge" + on_suffix(op);
     if (k == "fill") return "fill  (cap holes)";
