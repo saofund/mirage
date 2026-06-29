@@ -147,7 +147,37 @@ def _resolve(mesh, sel, last_tag):
             return [f for comp in comps if any(id(g) in seed for g in comp) for f in comp]
         which = sel.get("which", "largest")
         return list(max(comps, key=len) if which == "largest" else min(comps, key=len))
+    if by == "box":
+        lo = sel.get("min", [-1e30, -1e30, -1e30])
+        hi = sel.get("max", [1e30, 1e30, 1e30])
+        out = []
+        for f in mesh.faces:
+            c = _centroid(mesh, f)
+            if all(lo[k] <= c[k] <= hi[k] for k in range(3)):
+                out.append(f)
+        return out
+    if by == "area":
+        from .kernel import face_area
+        if "which" in sel:
+            best, bv = None, None       # single extreme face; first-wins on ties (mesh order)
+            for f in mesh.faces:
+                a = face_area(mesh, f)
+                if best is None or (a > bv if sel["which"] == "largest" else a < bv):
+                    best, bv = f, a
+            return [] if best is None else [best]
+        amin, amax = sel.get("min", 0.0), sel.get("max", 1e30)
+        return [f for f in mesh.faces if amin <= face_area(mesh, f) <= amax]
+    if by == "curvature":
+        cmin, cmax = sel.get("min", 0.0), sel.get("max", 180.0)
+        return [f for f in mesh.faces if cmin <= _face_curvature(mesh, f) <= cmax]
     raise MeshLangError(f"unknown selector {sel!r}")
+
+
+def _face_curvature(mesh, f):
+    """Local curvature proxy: the mean dihedral angle over the face's boundary edges
+    (0 = flat neighbourhood, large = a bent/creased region)."""
+    angs = [_dihedral_deg(mesh, lp.edge) for lp in mesh.face_loops(f)]
+    return sum(angs) / len(angs) if angs else 0.0
 
 
 def _connected_components(mesh):
@@ -255,6 +285,10 @@ class Sel:
                             else {"by": "material", "color": list(color), "tol": tol}))
     connected = staticmethod(lambda which="largest": {"by": "connected", "which": which})
     component_of = staticmethod(lambda seed: {"by": "connected", "seed": seed})
+    box = staticmethod(lambda lo, hi: {"by": "box", "min": list(lo), "max": list(hi)})
+    area = staticmethod(lambda which="largest": {"by": "area", "which": which})
+    area_range = staticmethod(lambda min=0.0, max=1e30: {"by": "area", "min": min, "max": max})
+    curvature = staticmethod(lambda min=0.0, max=180.0: {"by": "curvature", "min": min, "max": max})
     all = staticmethod(lambda: {"by": "all"})
     last = staticmethod(lambda: {"by": "last_created"})
     AND = staticmethod(lambda *s: {"and": list(s)})

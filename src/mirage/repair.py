@@ -41,7 +41,8 @@ KNOWN_OPS = ["cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid", 
              "extrude", "inset", "bevel", "loop_cut", "edge_bevel",
              "solidify", "mirror", "array", "bisect", "spin", "screw",
              "delete", "bridge", "fill", "subdivide", "tag", "material", "translate", "scale", "assert"]
-KNOWN_BY = ["all", "normal", "tag", "extreme", "side", "last_created", "near", "material", "connected"]
+KNOWN_BY = ["all", "normal", "tag", "extreme", "side", "last_created", "near", "material",
+            "connected", "box", "area", "curvature"]
 _PARAM_SIG = {  # a param key -> the op it most likely belongs to (for op-name inference)
     "distance": "extrude", "thickness": "inset", "width": "bevel", "depth": "bevel",
     "levels": "subdivide", "size": "cube",

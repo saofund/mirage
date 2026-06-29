@@ -327,6 +327,9 @@ def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
     {"by":"material","color":[r,g,b]} (faces carrying a material; omit color for any) |
     {"by":"connected","which":"largest"|"smallest"} | {"by":"connected","seed":<selector>}
       (a whole edge-connected component — e.g. pick one part out of an array) |
+    {"by":"box","min":[x,y,z],"max":[x,y,z]} (faces whose centroid is inside the AABB) |
+    {"by":"area","which":"largest"|"smallest"} | {"by":"area","min":a,"max":b} (by face area) |
+    {"by":"curvature","min":deg,"max":deg} (by mean dihedral of a face's edges — flat vs creased) |
     {"and":[..]} / {"or":[..]} / {"not":..}.
 
     On success returns the new state (with `warnings` from the lint pass). On failure,

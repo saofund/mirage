@@ -322,6 +322,19 @@ def face_normal(mesh: Mesh, f: Face):
     return (nx / m, ny / m, nz / m)
 
 
+def face_area(mesh: Mesh, f: Face) -> float:
+    """Polygon area via the magnitude of the Newell normal (half its length). Same
+    summation as ``face_normal`` so the C++ twin is byte-identical."""
+    vs = mesh.face_verts(f)
+    nx = ny = nz = 0.0
+    for i in range(len(vs)):
+        a, b = vs[i].co, vs[(i + 1) % len(vs)].co
+        nx += (a[1] - b[1]) * (a[2] + b[2])
+        ny += (a[2] - b[2]) * (a[0] + b[0])
+        nz += (a[0] - b[0]) * (a[1] + b[1])
+    return 0.5 * (nx * nx + ny * ny + nz * nz) ** 0.5
+
+
 def faces_by_normal(mesh: Mesh, axis: str = "z", sign: float = 1.0, tol: float = 0.5) -> list:
     """Select faces whose normal points mostly along +/- an axis (e.g. the top)."""
     k = "xyz".index(axis)

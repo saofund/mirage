@@ -125,6 +125,9 @@ private:
 // Unit face normal via Newell's method (robust for non-planar polygons).
 std::array<double, 3> face_normal(const Mesh& m, const Face* f);
 
+// Polygon area (half the Newell-normal magnitude) — same summation as face_normal.
+double face_area(const Mesh& m, const Face* f);
+
 // The face with the greatest centroid z — a convenient default selector until the
 // full selection-as-query engine lands.
 const Face* top_face(const Mesh& m);

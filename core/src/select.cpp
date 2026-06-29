@@ -54,6 +54,23 @@ std::vector<const Face*> in_mesh_order(const Mesh& mesh, const std::unordered_se
     return out;
 }
 
+// Local curvature proxy: mean dihedral over a face's boundary edges (boundary = 180,
+// flat = 0). Mirrors the Python _face_curvature exactly.
+double face_curvature(const Mesh& mesh, const Face* f) {
+    constexpr double PI = 3.14159265358979323846;
+    auto loops = mesh.face_loops(f);
+    if (loops.empty()) return 0.0;
+    double sum = 0.0;
+    for (Loop* lp : loops) {
+        auto fs = mesh.edge_faces(lp->edge);
+        if (fs.size() != 2) { sum += 180.0; continue; }
+        auto n1 = face_normal(mesh, fs[0]), n2 = face_normal(mesh, fs[1]);
+        double d = std::clamp(n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2], -1.0, 1.0);
+        sum += std::acos(d) * 180.0 / PI;
+    }
+    return sum / static_cast<double>(loops.size());
+}
+
 std::vector<const Face*> resolve_inner(const Mesh& mesh, const json& sel, const std::string& last_tag) {
     if (!sel.is_object()) throw MeshLangError("selector must be a dict, got " + sel.dump());
 
@@ -223,6 +240,48 @@ std::vector<const Face*> resolve_inner(const Mesh& mesh, const json& sel, const 
             if (largest ? groups[r].size() > groups[best].size() : groups[r].size() < groups[best].size())
                 best = r;
         return groups[best];
+    }
+    if (by == "box") {
+        std::array<double, 3> lo{-1e30, -1e30, -1e30}, hi{1e30, 1e30, 1e30};
+        if (sel.contains("min")) lo = json_point(sel.at("min"), "box 'min'");
+        if (sel.contains("max")) hi = json_point(sel.at("max"), "box 'max'");
+        std::vector<const Face*> out;
+        for (const auto& f : mesh.faces()) {
+            const auto c = face_centroid(mesh, f.get());
+            if (c[0] >= lo[0] && c[0] <= hi[0] && c[1] >= lo[1] && c[1] <= hi[1] &&
+                c[2] >= lo[2] && c[2] <= hi[2])
+                out.push_back(f.get());
+        }
+        return out;
+    }
+    if (by == "area") {
+        if (sel.contains("which")) {
+            const bool largest = sel.at("which").get<std::string>() == "largest";
+            const Face* best = nullptr;
+            double bv = 0;
+            for (const auto& f : mesh.faces()) {   // first-wins on ties (strict compare)
+                const double a = face_area(mesh, f.get());
+                if (best == nullptr || (largest ? a > bv : a < bv)) { best = f.get(); bv = a; }
+            }
+            if (best == nullptr) return {};
+            return {best};
+        }
+        const double amin = sel.value("min", 0.0), amax = sel.value("max", 1e30);
+        std::vector<const Face*> out;
+        for (const auto& f : mesh.faces()) {
+            const double a = face_area(mesh, f.get());
+            if (a >= amin && a <= amax) out.push_back(f.get());
+        }
+        return out;
+    }
+    if (by == "curvature") {
+        const double cmin = sel.value("min", 0.0), cmax = sel.value("max", 180.0);
+        std::vector<const Face*> out;
+        for (const auto& f : mesh.faces()) {
+            const double c = face_curvature(mesh, f.get());
+            if (c >= cmin && c <= cmax) out.push_back(f.get());
+        }
+        return out;
     }
     throw MeshLangError("unknown selector " + sel.dump());
 }

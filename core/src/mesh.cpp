@@ -214,6 +214,20 @@ std::array<double, 3> face_normal(const Mesh& m, const Face* f) {
     return {nx / mag, ny / mag, nz / mag};
 }
 
+double face_area(const Mesh& m, const Face* f) {
+    std::vector<Vert*> vs = m.face_verts(f);
+    double nx = 0, ny = 0, nz = 0;
+    const std::size_t n = vs.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto& a = vs[i]->co;
+        const auto& b = vs[(i + 1) % n]->co;
+        nx += (a[1] - b[1]) * (a[2] + b[2]);
+        ny += (a[2] - b[2]) * (a[0] + b[0]);
+        nz += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    return 0.5 * std::sqrt(nx * nx + ny * ny + nz * nz);
+}
+
 const Face* top_face(const Mesh& m) {
     const Face* best = nullptr;
     double bz = -1e30;

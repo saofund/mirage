@@ -381,6 +381,12 @@ SELECTORS = [
     {"by": "side", "axis": "y", "sign": -1.0},
     {"or": [{"by": "normal", "axis": "z", "sign": 1.0}, {"by": "normal", "axis": "z", "sign": -1.0}]},
     {"and": [{"by": "all"}, {"not": {"by": "normal", "axis": "z", "sign": 1.0}}]},
+    {"by": "box", "min": [0.0, -1.0, -1.0], "max": [1.0, 1.0, 1.0]},   # half-space x>=0
+    {"by": "box", "min": [-2.0, -2.0, 0.0], "max": [2.0, 2.0, 2.0]},   # upper slab
+    {"by": "area", "which": "largest"},
+    {"by": "area", "which": "smallest"},
+    {"by": "area", "min": 0.5, "max": 2.0},
+    {"by": "curvature", "min": 45.0},                                  # every cube face (dihedral 90)
 ]
 
 
@@ -407,6 +413,10 @@ RICH_SELECTORS = [
     {"by": "connected", "which": "smallest"},
     {"by": "connected", "seed": {"by": "extreme", "axis": "x", "which": "max"}},
     {"and": [{"by": "connected", "seed": {"by": "extreme", "axis": "x", "which": "max"}}, {"by": "material"}]},
+    {"by": "box", "min": [-1.0, -2.0, -2.0], "max": [0.6, 2.0, 2.0]},   # spatial: the first cube
+    {"by": "area", "which": "largest"},                                  # one face out of 18
+    {"by": "area", "min": 0.5, "max": 2.0},                              # all 18 (unit cubes)
+    {"and": [{"by": "box", "min": [-1.0, -2.0, -2.0], "max": [0.6, 2.0, 2.0]}, {"by": "material"}]},
 ]
 
 

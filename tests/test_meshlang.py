@@ -162,6 +162,34 @@ def test_spin_partial_angle_is_open():
     assert not m.is_closed_manifold()      # a partial sweep leaves an open sheet
 
 
+def test_box_selector_picks_one_cube_of_an_array():
+    m = MeshProgram().cube(1.0).array(3, (1.5, 0.0, 0.0)).build()
+    # the array climbs +x from -0.5; an AABB clipping x<=0.6 catches only the first cube
+    sel = resolve(m, Sel.box([-1.0, -2.0, -2.0], [0.6, 2.0, 2.0]))
+    assert len(sel) == 6
+
+
+def test_area_selector_finds_the_biggest_face():
+    # a cube with one face inset leaves a smaller inner quad + a big untouched bottom
+    m = (MeshProgram().cube(1.0)
+         .inset(on=Sel.normal("z", 1), thickness=0.3)).build()
+    biggest = resolve(m, Sel.area("largest"))
+    smallest = resolve(m, Sel.area("smallest"))
+    from mirage.kernel import face_area
+    assert len(biggest) == 1 and len(smallest) == 1
+    assert face_area(m, biggest[0]) >= face_area(m, smallest[0])
+    assert face_area(m, smallest[0]) < 1.0          # the inset inner face is the small one
+
+
+def test_curvature_selector_separates_flat_from_creased():
+    # a smooth-ish UV sphere: no face's neighbourhood is a hard 90 crease ...
+    sphere = MeshProgram().uv_sphere(16, 12, 0.6).build()
+    assert len(resolve(sphere, Sel.curvature(0.0, 40.0))) == sphere.stats()["faces"]
+    # ... whereas every face of a cube sits on 90-degree creases
+    cube = make_cube(1.0)
+    assert len(resolve(cube, Sel.curvature(80.0, 100.0))) == 6
+
+
 def test_screw_climbs_into_a_helix():
     # a small square cross-section swept 2 turns -> an open helical band (a spring)
     profile = [[0.4, 0, -0.05], [0.5, 0, -0.05], [0.5, 0, 0.05], [0.4, 0, 0.05]]
