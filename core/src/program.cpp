@@ -215,6 +215,13 @@ Program& Program::spin(const std::string& axis, int steps, double angle, const s
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::screw(const std::string& axis, int steps, int turns, double height,
+                        double angle, const std::string& mark) {
+    json c{{"op", "screw"}, {"axis", axis}, {"steps", steps}, {"turns", turns},
+           {"height", height}, {"angle", angle}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::subdivide(int levels) { return add(json{{"op", "subdivide"}, {"levels", levels}}); }
 Program& Program::tag(const json& on, const std::string& name) {
     return add(json{{"op", "tag"}, {"on", on}, {"name", name}});
@@ -371,6 +378,11 @@ Mesh Program::build(std::string* last_tag_out) const {
                 mesh = mirage::spin(mesh, cmd.value("axis", std::string("z")), cmd.value("steps", 24),
                                     cmd.value("angle", 360.0), out_tag);
                 outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "screw") {
+                mesh = mirage::screw(mesh, cmd.value("axis", std::string("z")), cmd.value("steps", 24),
+                                     cmd.value("turns", 1), cmd.value("height", 1.0),
+                                     cmd.value("angle", 360.0), out_tag);
+                outs = faces_with_tag(mesh, out_tag);
             } else if (op == "subdivide") {
                 const int levels = cmd.value("levels", 1);
                 for (int k = 0; k < levels; ++k) mesh = catmull_clark(mesh);
@@ -482,6 +494,9 @@ std::string Program::label(const json& op) {
     if (k == "spin")
         return "spin  " + op.value("axis", std::string("z")) + " " + num(op.value("angle", 360.0)) +
                "deg x" + std::to_string(op.value("steps", 24));
+    if (k == "screw")
+        return "screw  " + op.value("axis", std::string("z")) + " x" +
+               std::to_string(op.value("turns", 1)) + "turn h=" + num(op.value("height", 1.0));
     if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
     if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
     if (k == "material") return "material  m=" + num(op.value("metallic", 0.0)) + " r=" + num(op.value("roughness", 0.5)) + on_suffix(op);

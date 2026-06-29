@@ -222,5 +222,10 @@ Mesh bisect(const Mesh& mesh, const std::array<double, 3>& point = {0, 0, 0},
 // angle leaves an open swept sheet.
 Mesh spin(const Mesh& mesh, const std::string& axis = "z", int steps = 24,
           double angle = 360.0, const std::string& mark = "");
+// screw (helical sweep — thread/spring/auger): like spin, but each angular step also
+// advances along the axis, so the profile climbs into a helix. `turns` full revolutions,
+// `height` is the axial rise per turn. Always open (the helix never wraps closed).
+Mesh screw(const Mesh& mesh, const std::string& axis = "z", int steps = 24, int turns = 1,
+           double height = 1.0, double angle = 360.0, const std::string& mark = "");
 
 }  // namespace mirage

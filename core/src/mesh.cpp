@@ -1185,6 +1185,56 @@ Mesh spin(const Mesh& mesh, const std::string& axis, int steps, double angle, co
     return build_compact(np, faces, tags);
 }
 
+Mesh screw(const Mesh& mesh, const std::string& axis, int steps, int turns, double height,
+           double angle, const std::string& mark) {
+    constexpr double PI = 3.14159265358979323846;
+    const int k = axis == "x" ? 0 : axis == "y" ? 1 : 2;
+    const int i = (k + 1) % 3, j = (k + 2) % 3;   // axes perpendicular to `axis`
+    steps = std::max(steps, 3);
+    turns = std::max(turns, 1);
+    const int total = steps * turns;
+    const int rings = total + 1;                  // always open: the helix never closes
+    const double eps = 1e-12;
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    const int nv = static_cast<int>(pos.size());
+    std::vector<char> on_axis(nv);
+    for (int v = 0; v < nv; ++v) on_axis[v] = (pos[v][i] * pos[v][i] + pos[v][j] * pos[v][j]) < eps;
+
+    std::vector<A3> np;
+    std::vector<int> base(nv);
+    for (int v = 0; v < nv; ++v) {
+        base[v] = static_cast<int>(np.size());
+        const double ci = pos[v][i], cj = pos[v][j], axial0 = pos[v][k];
+        for (int r = 0; r < rings; ++r) {
+            const double theta = angle * PI / 180.0 * r / steps;
+            const double c = std::cos(theta), s = std::sin(theta);
+            A3 p{0, 0, 0};
+            p[i] = ci * c - cj * s;
+            p[j] = ci * s + cj * c;
+            p[k] = axial0 + height * r / steps;   // the climb: rise of `height` per turn
+            np.push_back(p);
+        }
+    }
+
+    std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
+    for (const auto& e : mesh.edges()) {
+        auto fs = mesh.edge_faces(e.get());
+        if (fs.size() != 1) continue;             // boundary edges only (the silhouette)
+        int a = e->v1->id, b = e->v2->id;
+        if (on_axis[a] && on_axis[b]) continue;   // an edge on the axis sweeps a zero-area strip
+        for (int r = 0; r < total; ++r) {
+            int quad[4] = {base[a] + r, base[b] + r, base[b] + r + 1, base[a] + r + 1};
+            std::vector<int> poly;
+            for (int x : quad) if (poly.empty() || poly.back() != x) poly.push_back(x);
+            if (poly.size() >= 2 && poly.front() == poly.back()) poly.pop_back();
+            if (poly.size() >= 3) { faces.push_back(poly); tags.push_back(copy_tags(fs[0], mark)); }
+        }
+    }
+    return build_compact(np, faces, tags);
+}
+
 Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region_v, double width, double depth,
            const std::string& mark) {
     std::set<const Face*> region(region_v.begin(), region_v.end());

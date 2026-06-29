@@ -162,6 +162,17 @@ def test_spin_partial_angle_is_open():
     assert not m.is_closed_manifold()      # a partial sweep leaves an open sheet
 
 
+def test_screw_climbs_into_a_helix():
+    # a small square cross-section swept 2 turns -> an open helical band (a spring)
+    profile = [[0.4, 0, -0.05], [0.5, 0, -0.05], [0.5, 0, 0.05], [0.4, 0, 0.05]]
+    m = MeshProgram().mesh(profile, [[0, 1, 2, 3]]).screw("z", 12, turns=2, height=0.3).build()
+    m.validate()
+    assert not m.is_closed_manifold()      # a screw always climbs -> never closes
+    # the top of the band sits `height*turns` above the bottom along the axis
+    zs = [v.co[2] for v in m.verts]
+    assert max(zs) - min(zs) == pytest.approx(0.3 * 2 + 0.1)   # climb + profile thickness
+
+
 def test_describe_reports_materials_and_components():
     from mirage.meshlang import describe
     m = (MeshProgram().cube(1.0).array(3, (1.5, 0.0, 0.0))

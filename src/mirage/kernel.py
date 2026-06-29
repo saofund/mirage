@@ -986,6 +986,63 @@ def spin(mesh: Mesh, axis: str = "z", steps: int = 24, angle: float = 360.0,
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
+def screw(mesh: Mesh, axis: str = "z", steps: int = 24, turns: int = 1,
+          height: float = 1.0, angle: float = 360.0, mark: str | None = None) -> Mesh:
+    """Helical sweep — spin's climbing sibling (thread / spring / screw / auger). The
+    profile is the BOUNDARY edges of an open mesh; it revolves around the axis like
+    ``spin`` but each angular step also advances along the axis, so the profile climbs
+    into a helix instead of closing into a ring. ``turns`` full revolutions are swept
+    (total angle = ``angle`` * ``turns``) and ``height`` is the axial rise per turn.
+    A screw never wraps watertight (it is always climbing), so the result is an open
+    helical surface. Output verts: per input vertex, its ``steps*turns+1`` swept copies
+    in climb order."""
+    import math
+    k = "xyz".index(axis)
+    i, j = (k + 1) % 3, (k + 2) % 3              # the two axes perpendicular to `axis`
+    steps = max(int(steps), 3)
+    turns = max(int(turns), 1)
+    total = steps * turns
+    rings = total + 1                            # always open: the helix never closes
+    eps = 1e-12
+    pos = [list(v.co) for v in mesh.verts]
+    on_axis = [(pos[v][i] ** 2 + pos[v][j] ** 2) < eps for v in range(len(pos))]
+
+    new_pos, base = [], {}
+    for v in range(len(pos)):
+        base[v] = len(new_pos)
+        ci, cj, axial0 = pos[v][i], pos[v][j], pos[v][k]
+        for r in range(rings):
+            theta = math.radians(angle) * r / steps
+            c, s = math.cos(theta), math.sin(theta)
+            p = [0.0, 0.0, 0.0]
+            p[i] = ci * c - cj * s
+            p[j] = ci * s + cj * c
+            p[k] = axial0 + height * r / steps   # the climb: rise of `height` per turn
+            new_pos.append(p)
+
+    new_faces, new_attrs = [], []
+    for e in mesh.edges:
+        fs = mesh.edge_faces(e)
+        if len(fs) != 1:                          # boundary edges only (the silhouette)
+            continue
+        a, b = e.v1.id, e.v2.id
+        if on_axis[a] and on_axis[b]:
+            continue                              # an edge on the axis sweeps a zero-area strip
+        for r in range(total):
+            quad = [base[a] + r, base[b] + r, base[b] + r + 1, base[a] + r + 1]
+            poly = []
+            for x in quad:                        # collapse a coincident corner (axis-touching)
+                if not poly or poly[-1] != x:
+                    poly.append(x)
+            if len(poly) >= 2 and poly[0] == poly[-1]:
+                poly.pop()
+            if len(poly) >= 3:
+                new_faces.append(poly); new_attrs.append(_copy_attrs(fs[0].attrs, add_tag=mark))
+
+    new_pos, new_faces = _compact(new_pos, new_faces)
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
 def make_cube(size: float = 1.0) -> Mesh:
     s = size / 2.0
     p = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),

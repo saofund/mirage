@@ -39,7 +39,7 @@ from .meshlang import MeshProgram, SelectorEmpty, describe, resolve, _tags
 
 KNOWN_OPS = ["cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid", "mesh",
              "extrude", "inset", "bevel", "loop_cut", "edge_bevel",
-             "solidify", "mirror", "array", "bisect", "spin",
+             "solidify", "mirror", "array", "bisect", "spin", "screw",
              "delete", "bridge", "fill", "subdivide", "tag", "material", "translate", "scale", "assert"]
 KNOWN_BY = ["all", "normal", "tag", "extreme", "side", "last_created", "near", "material", "connected"]
 _PARAM_SIG = {  # a param key -> the op it most likely belongs to (for op-name inference)
@@ -50,6 +50,7 @@ _PARAM_SIG = {  # a param key -> the op it most likely belongs to (for op-name i
     "major_segments": "torus", "minor_segments": "torus", "major_radius": "torus", "minor_radius": "torus",
     "x_div": "grid", "y_div": "grid",
     "count": "array", "offset": "array",
+    "angle": "spin", "turns": "screw",
 }
 PRIMITIVE_OPS = ("cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid", "mesh")
 MAX_SUBDIVIDE = 6

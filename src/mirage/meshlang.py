@@ -25,7 +25,7 @@ from .kernel import (
     make_torus, make_grid, face_normal, faces_by_normal,
     extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel,
     delete_faces, bridge_faces, fill_holes, catmull_clark,
-    solidify, mirror, array, bisect, spin,
+    solidify, mirror, array, bisect, spin, screw,
 )
 
 
@@ -395,6 +395,9 @@ class MeshProgram:
         return self.add(**_cmd("bisect", mark=mark, point=list(point), normal=list(normal), fill=fill))
     def spin(self, axis="z", steps=24, angle=360.0, mark=None):
         return self.add(**_cmd("spin", mark=mark, axis=axis, steps=steps, angle=angle))
+    def screw(self, axis="z", steps=24, turns=1, height=1.0, angle=360.0, mark=None):
+        return self.add(**_cmd("screw", mark=mark, axis=axis, steps=steps, turns=turns,
+                               height=height, angle=angle))
     def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
     def material(self, on, color=(0.8, 0.8, 0.8), metallic=0.0, roughness=0.5):
@@ -497,6 +500,10 @@ class MeshProgram:
                 elif op == "spin":
                     mesh = spin(mesh, cmd.get("axis", "z"), cmd.get("steps", 24), cmd.get("angle", 360.0),
                                 mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "screw":
+                    mesh = screw(mesh, cmd.get("axis", "z"), cmd.get("steps", 24), cmd.get("turns", 1),
+                                 cmd.get("height", 1.0), cmd.get("angle", 360.0), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "subdivide":
                     for _ in range(cmd.get("levels", 1)):

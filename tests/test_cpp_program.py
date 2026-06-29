@@ -305,6 +305,29 @@ OPLOGS = {
         {"op": "translate", "on": {"by": "all"}, "by": [0.6, 0.0, 0.0]},
         {"op": "spin", "axis": "y", "steps": 16, "angle": 360},
     ],
+    # screw (helical sweep): like spin but the profile climbs along the axis
+    "screw_single_turn": [   # a square cross-section -> one helical coil
+        {"op": "mesh", "verts": [[0.4, 0, -0.05], [0.5, 0, -0.05], [0.5, 0, 0.05], [0.4, 0, 0.05]], "faces": [[0, 1, 2, 3]]},
+        {"op": "screw", "axis": "z", "steps": 16, "turns": 1, "height": 0.4, "angle": 360},
+    ],
+    "screw_spring_3turns": [   # 3 coils -> a spring / auger
+        {"op": "mesh", "verts": [[0.4, 0, -0.05], [0.5, 0, -0.05], [0.5, 0, 0.05], [0.4, 0, 0.05]], "faces": [[0, 1, 2, 3]]},
+        {"op": "screw", "axis": "z", "steps": 12, "turns": 3, "height": 0.3, "angle": 360},
+    ],
+    "screw_axis_touching": [   # profile edge meeting the axis -> a climbing fan, no poles
+        {"op": "mesh", "verts": [[0.0, 0, 0.0], [0.5, 0, -0.1], [0.5, 0, 0.1]], "faces": [[0, 1, 2]]},
+        {"op": "screw", "axis": "z", "steps": 16, "turns": 1, "height": 0.5, "angle": 360},
+    ],
+    "screw_then_solidify": [   # give the helical sheet thickness -> a solid thread
+        {"op": "mesh", "verts": [[0.4, 0, -0.05], [0.6, 0, -0.05], [0.6, 0, 0.05], [0.4, 0, 0.05]], "faces": [[0, 1, 2, 3]]},
+        {"op": "screw", "axis": "z", "steps": 12, "turns": 2, "height": 0.25, "angle": 360},
+        {"op": "solidify", "thickness": 0.03},
+    ],
+    "screw_y_axis": [   # climb along y instead of z
+        {"op": "plane", "size_x": 0.2},
+        {"op": "translate", "on": {"by": "all"}, "by": [0.5, 0.0, 0.0]},
+        {"op": "screw", "axis": "y", "steps": 16, "turns": 2, "height": 0.4, "angle": 360},
+    ],
     "cube_open_top": [
         {"op": "cube", "size": 1.0},
         {"op": "delete", "on": {"by": "normal", "axis": "z", "sign": 1.0}},   # an open box
