@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from .kernel import Mesh, face_normal, _compact, _copy_attrs
 from .meshlang import MeshProgram, SelectorEmpty, describe, resolve, _tags
 
-KNOWN_OPS = ["cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid", "mesh",
+KNOWN_OPS = ["cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid", "mesh", "profile",
              "extrude", "inset", "bevel", "loop_cut", "edge_bevel",
              "solidify", "mirror", "array", "bisect", "spin", "screw",
              "delete", "bridge", "fill", "subdivide", "tag", "material", "translate", "scale", "assert"]
@@ -52,8 +52,9 @@ _PARAM_SIG = {  # a param key -> the op it most likely belongs to (for op-name i
     "x_div": "grid", "y_div": "grid",
     "count": "array", "offset": "array",
     "angle": "spin", "turns": "screw",
+    "points": "profile", "plane": "profile", "closed": "profile",
 }
-PRIMITIVE_OPS = ("cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid", "mesh")
+PRIMITIVE_OPS = ("cube", "cylinder", "plane", "uv_sphere", "cone", "torus", "grid", "mesh", "profile")
 MAX_SUBDIVIDE = 6
 _DEGENERATE = 1e-9
 

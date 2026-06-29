@@ -190,6 +190,36 @@ def test_curvature_selector_separates_flat_from_creased():
     assert len(resolve(cube, Sel.curvature(80.0, 100.0))) == 6
 
 
+def test_profile_lathe_makes_a_single_wall():
+    # an OPEN profile curve (a wire) revolved 360 -> a single-walled open vase.
+    # A filled cross-section would instead give a double-walled (closed) tube; the
+    # profile is the difference between the two — a real generatrix.
+    pts = [[0.3, -0.5], [0.5, 0.0], [0.3, 0.5]]
+    vase = MeshProgram().profile(pts, plane="xz").spin("z", 16, 360).build()
+    vase.validate()
+    assert not vase.is_closed_manifold()          # single wall: open top + open bottom rim
+    # the same outline as a FILLED quad strip revolves into a closed double wall
+    strip = [[0.3, -0.5], [0.5, 0.0], [0.3, 0.5], [0.28, 0.0]]
+    tube = MeshProgram().mesh([[p[0], 0, p[1]] for p in strip], [[0, 1, 2, 3]]).spin("z", 16, 360).build()
+    tube.validate()
+    assert tube.is_closed_manifold()              # double wall: watertight
+
+
+def test_profile_closed_loop_revolves_to_a_torus():
+    # a CLOSED profile (a small rectangle loop offset from the axis) -> a torus surface
+    pts = [[0.4, -0.1], [0.6, -0.1], [0.6, 0.1], [0.4, 0.1]]
+    m = MeshProgram().profile(pts, plane="xz", closed=True).spin("z", 16, 360).build()
+    m.validate()
+    assert m.is_closed_manifold() and m.euler() == 0     # genus-1, like the torus primitive
+
+
+def test_profile_is_a_wire_with_no_faces():
+    from mirage.kernel import make_profile
+    w = make_profile([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], plane="xz")
+    assert w.stats()["faces"] == 0 and w.stats()["edges"] == 2 and w.stats()["verts"] == 3
+    w.validate()                                          # a wire is valid (edge-referenced verts)
+
+
 def test_screw_climbs_into_a_helix():
     # a small square cross-section swept 2 turns -> an open helical band (a spring)
     profile = [[0.4, 0, -0.05], [0.5, 0, -0.05], [0.5, 0, 0.05], [0.4, 0, 0.05]]

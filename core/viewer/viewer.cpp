@@ -836,6 +836,12 @@ int main(int argc, char** argv) {
         if (ImGui::Button("Spin Z")) { prog.spin("z", 32, 360.0); g_sel_mode = SEL_NONE; dirty = true; }  // lathe an open profile
         ImGui::SameLine();
         if (ImGui::Button("Screw Z")) { prog.screw("z", 24, 3, 0.4, 360.0); g_sel_mode = SEL_NONE; dirty = true; }  // helical sweep (thread/spring)
+        ImGui::SameLine();
+        if (ImGui::Button("Vase")) {   // a first-class profile (open curve) spun into a single-walled vase
+            prog.profile({{0.05, -0.5}, {0.42, -0.42}, {0.30, -0.05}, {0.46, 0.30}, {0.34, 0.5}}, "xz", false);
+            prog.spin("z", 48, 360.0);
+            g_sel_mode = SEL_NONE; dirty = true;
+        }
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();

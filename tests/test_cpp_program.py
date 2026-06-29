@@ -305,6 +305,30 @@ OPLOGS = {
         {"op": "translate", "on": {"by": "all"}, "by": [0.6, 0.0, 0.0]},
         {"op": "spin", "axis": "y", "steps": 16, "angle": 360},
     ],
+    # profile (a first-class 2D generatrix / wire) -> the real lathe input
+    "profile_vase_single_wall": [   # an OPEN curve revolved 360 -> a single-walled open vase
+        {"op": "profile", "points": [[0.0, -0.5], [0.4, -0.45], [0.25, 0.0], [0.45, 0.45], [0.3, 0.5]],
+         "plane": "xz"},
+        {"op": "spin", "axis": "z", "steps": 24, "angle": 360},
+    ],
+    "profile_open_partial": [       # the open curve swept a partial angle -> an open sheet
+        {"op": "profile", "points": [[0.3, -0.4], [0.5, 0.0], [0.3, 0.4]], "plane": "xz"},
+        {"op": "spin", "axis": "z", "steps": 12, "angle": 140},
+    ],
+    "profile_closed_ring_torus": [  # a CLOSED profile (a small loop) revolved -> a torus surface
+        {"op": "profile", "points": [[0.4, -0.1], [0.6, -0.1], [0.6, 0.1], [0.4, 0.1]],
+         "plane": "xz", "closed": True},
+        {"op": "spin", "axis": "z", "steps": 16, "angle": 360},
+    ],
+    "profile_screw_thread": [       # an open profile climbed into a single-walled helix
+        {"op": "profile", "points": [[0.4, -0.05], [0.55, 0.0], [0.4, 0.05]], "plane": "xz"},
+        {"op": "screw", "axis": "z", "steps": 16, "turns": 2, "height": 0.3, "angle": 360},
+    ],
+    "profile_vase_then_solidify": [ # give the single wall thickness -> a watertight vase
+        {"op": "profile", "points": [[0.05, -0.5], [0.4, -0.4], [0.3, 0.3], [0.45, 0.5]], "plane": "xz"},
+        {"op": "spin", "axis": "z", "steps": 20, "angle": 360},
+        {"op": "solidify", "thickness": 0.03},
+    ],
     # screw (helical sweep): like spin but the profile climbs along the axis
     "screw_single_turn": [   # a square cross-section -> one helical coil
         {"op": "mesh", "verts": [[0.4, 0, -0.05], [0.5, 0, -0.05], [0.5, 0, 0.05], [0.4, 0, 0.05]], "faces": [[0, 1, 2, 3]]},

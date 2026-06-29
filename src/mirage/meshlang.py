@@ -22,7 +22,7 @@ import json
 
 from .kernel import (
     Mesh, make_cube, make_cylinder_ngon, make_plane, make_uv_sphere, make_cone,
-    make_torus, make_grid, face_normal, faces_by_normal,
+    make_torus, make_grid, make_profile, face_normal, faces_by_normal,
     extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel,
     delete_faces, bridge_faces, fill_holes, catmull_clark,
     solidify, mirror, array, bisect, spin, screw,
@@ -413,6 +413,9 @@ class MeshProgram:
         if face_materials is not None:
             cmd["face_materials"] = face_materials
         return self.add(**cmd)
+    def profile(self, points, plane="xz", closed=False, mark=None):
+        return self.add(**_cmd("profile", mark=mark, points=[list(p) for p in points],
+                               plane=plane, closed=closed))
     def delete(self, on): return self.add(**_cmd("delete", on=on))
     def bridge(self, on, mark=None): return self.add(**_cmd("bridge", on=on, mark=mark))
     def fill(self, mark=None): return self.add(**_cmd("fill", mark=mark))
@@ -485,6 +488,12 @@ class MeshProgram:
                                                        "metallic": fm.get("metallic", 0.0),
                                                        "roughness": fm.get("roughness", 0.5)}
                     outs = list(mesh.faces)
+                elif op == "profile":
+                    # a first-class 2D generatrix (a wire polyline) — the real input to
+                    # the lathe. spin/screw revolve it into a single-walled surface.
+                    mesh = make_profile(cmd.get("points", []), cmd.get("plane", "xz"),
+                                        cmd.get("closed", False))
+                    outs = list(mesh.faces)   # a wire has no faces; last_created is undefined
                 elif mesh is None:
                     raise MeshLangError(f"op '{op}' before any primitive")
                 elif op == "extrude":

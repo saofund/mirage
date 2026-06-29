@@ -152,6 +152,17 @@ class Mesh:
             m.add_face([vs[j] for j in f], attrs=face_attrs[i] if face_attrs else None)
         return m
 
+    @classmethod
+    def from_wire(cls, positions, edges) -> "Mesh":
+        """A wire mesh: verts joined by edges that carry NO face (loop stays None) — a
+        1-D profile / generatrix. It is an INPUT to sweep operators (spin / screw /
+        extrude-along), not a standalone surface, so it does not pass validate()."""
+        m = cls()
+        vs = [m.add_vert(p) for p in positions]
+        for a, b in edges:
+            m._edge(vs[a], vs[b])
+        return m
+
     def copy(self) -> "Mesh":
         faces = [[lp.vert.id for lp in self.face_loops(f)] for f in self.faces]
         attrs = [_copy_attrs(f.attrs) for f in self.faces]
@@ -207,8 +218,9 @@ class Mesh:
                 assert lp.edge is e, "radial/edge mismatch"
                 assert lp.radial_next.radial_prev is lp, "radial cycle broken"
         referenced = {lp.vert.id for f in self.faces for lp in self.face_loops(f)}
+        referenced |= {e.v1.id for e in self.edges} | {e.v2.id for e in self.edges}  # wire edges count
         for v in self.verts:
-            assert v.id in referenced, f"orphan vertex {v.id} (no incident face)"
+            assert v.id in referenced, f"orphan vertex {v.id} (no incident face or edge)"
         for f in self.faces:  # no degenerate (zero-area) faces
             vs = self.face_verts(f)
             nx = ny = nz = 0.0
@@ -979,8 +991,9 @@ def spin(mesh: Mesh, axis: str = "z", steps: int = 24, angle: float = 360.0,
     new_faces, new_attrs = [], []
     for e in mesh.edges:
         fs = mesh.edge_faces(e)
-        if len(fs) != 1:                          # boundary edges only (the silhouette)
+        if len(fs) > 1:                           # sweep wire edges (0 faces) + boundary edges (1)
             continue
+        src = fs[0].attrs if fs else {}           # a wire edge has no source face
         a, b = e.v1.id, e.v2.id
         if on_axis[a] and on_axis[b]:
             continue                              # an edge lying on the axis sweeps nothing
@@ -993,10 +1006,31 @@ def spin(mesh: Mesh, axis: str = "z", steps: int = 24, angle: float = 360.0,
             if len(poly) >= 2 and poly[0] == poly[-1]:
                 poly.pop()
             if len(poly) >= 3:
-                new_faces.append(poly); new_attrs.append(_copy_attrs(fs[0].attrs, add_tag=mark))
+                new_faces.append(poly); new_attrs.append(_copy_attrs(src, add_tag=mark))
 
     new_pos, new_faces = _compact(new_pos, new_faces)
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
+def make_profile(points, plane: str = "xz", closed: bool = False) -> Mesh:
+    """A first-class 2D profile / generatrix, built as a wire (a polyline). ``points``
+    are [u, v] pairs laid into ``plane`` (the third axis = 0); consecutive points are
+    joined by wire edges, plus a closing edge when ``closed``. This is the REAL input
+    to the lathe: ``spin`` / ``screw`` revolve an OPEN curve into a single-walled
+    surface (a vase), where a filled cross-section would give a double wall."""
+    axmap = {"xy": (0, 1), "xz": (0, 2), "yz": (1, 2)}
+    if plane not in axmap:
+        raise ValueError(f"unknown plane '{plane}' (expected xy/xz/yz)")
+    iu, iv = axmap[plane]
+    pos = []
+    for p in points:
+        c = [0.0, 0.0, 0.0]
+        c[iu], c[iv] = p[0], p[1]
+        pos.append(c)
+    edges = [(i, i + 1) for i in range(len(points) - 1)]
+    if closed and len(points) > 2:
+        edges.append((len(points) - 1, 0))
+    return Mesh.from_wire(pos, edges)
 
 
 def screw(mesh: Mesh, axis: str = "z", steps: int = 24, turns: int = 1,
@@ -1036,8 +1070,9 @@ def screw(mesh: Mesh, axis: str = "z", steps: int = 24, turns: int = 1,
     new_faces, new_attrs = [], []
     for e in mesh.edges:
         fs = mesh.edge_faces(e)
-        if len(fs) != 1:                          # boundary edges only (the silhouette)
+        if len(fs) > 1:                           # sweep wire edges (0 faces) + boundary edges (1)
             continue
+        src = fs[0].attrs if fs else {}           # a wire edge has no source face
         a, b = e.v1.id, e.v2.id
         if on_axis[a] and on_axis[b]:
             continue                              # an edge on the axis sweeps a zero-area strip
@@ -1050,7 +1085,7 @@ def screw(mesh: Mesh, axis: str = "z", steps: int = 24, turns: int = 1,
             if len(poly) >= 2 and poly[0] == poly[-1]:
                 poly.pop()
             if len(poly) >= 3:
-                new_faces.append(poly); new_attrs.append(_copy_attrs(fs[0].attrs, add_tag=mark))
+                new_faces.append(poly); new_attrs.append(_copy_attrs(src, add_tag=mark))
 
     new_pos, new_faces = _compact(new_pos, new_faces)
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)

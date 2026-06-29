@@ -92,6 +92,10 @@ public:
     static Mesh from_pydata(const std::vector<std::array<double, 3>>& positions,
                             const std::vector<std::vector<int>>& faces,
                             const std::vector<std::vector<std::string>>& face_tags = {});
+    // A wire mesh: verts joined by edges with NO face (a 1-D profile / generatrix).
+    // An input to sweep operators (spin/screw), not a standalone valid surface.
+    static Mesh from_wire(const std::vector<std::array<double, 3>>& positions,
+                          const std::vector<std::array<int, 2>>& edges);
     // A fresh, equivalent mesh (this type is move-only, so this is the deep copy).
     Mesh copy() const;
 
@@ -220,6 +224,11 @@ Mesh array(const Mesh& mesh, int count = 3, const std::array<double, 3>& offset 
 Mesh bisect(const Mesh& mesh, const std::array<double, 3>& point = {0, 0, 0},
             const std::array<double, 3>& normal = {0, 0, 1}, bool fill = false,
             const std::string& mark = "");
+// make_profile: a first-class 2D generatrix as a wire polyline. `points` are [u,v]
+// laid into `plane` (third axis = 0); the real input to spin/screw (an open curve
+// revolves into a single-walled surface, where a filled cross-section gives a double wall).
+Mesh make_profile(const std::vector<std::array<double, 2>>& points, const std::string& plane = "xz",
+                  bool closed = false);
 // spin (lathe): revolve a profile's boundary edges around an axis. Axis verts weld
 // to a pole; angle>=360 wraps into a watertight surface of revolution, a partial
 // angle leaves an open swept sheet.

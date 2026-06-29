@@ -151,9 +151,10 @@ void Mesh::validate() const {
     std::set<int> referenced;
     for (const auto& f : faces_)
         for (Loop* lp : face_loops(f.get())) referenced.insert(lp->vert->id);
+    for (const auto& e : edges_) { referenced.insert(e->v1->id); referenced.insert(e->v2->id); }  // wire edges count
     for (const auto& v : verts_)
         if (referenced.find(v->id) == referenced.end())
-            fail("orphan vertex " + std::to_string(v->id) + " (no incident face)");
+            fail("orphan vertex " + std::to_string(v->id) + " (no incident face or edge)");
     for (const auto& f : faces_)
         if (newell_sq(face_verts(f.get())) <= 1e-16)
             fail("degenerate face " + std::to_string(f->id));
@@ -195,6 +196,16 @@ Mesh Mesh::from_pydata(const std::vector<std::array<double, 3>>& positions,
         for (int idx : faces[i]) fv.push_back(vs[idx]);
         m.add_face(fv, i < face_tags.size() ? face_tags[i] : std::vector<std::string>{});
     }
+    return m;
+}
+
+Mesh Mesh::from_wire(const std::vector<std::array<double, 3>>& positions,
+                     const std::vector<std::array<int, 2>>& edges) {
+    Mesh m;
+    std::vector<Vert*> vs;
+    vs.reserve(positions.size());
+    for (const auto& p : positions) vs.push_back(m.add_vert(p[0], p[1], p[2]));
+    for (const auto& e : edges) m.get_edge(vs[e[0]], vs[e[1]]);  // wire edge: no loop/face
     return m;
 }
 
@@ -399,7 +410,7 @@ A3 a3scale(const A3& a, double s) { return {a[0] * s, a[1] * s, a[2] * s}; }
 // A face's tags, optionally extended by `mark` — the per-descendant copy that
 // carries durable handles across an operator's rebuild (Python _copy_attrs).
 Tags copy_tags(const Face* f, const std::string& mark = "") {
-    Tags out = f->tags;
+    Tags out = f ? f->tags : Tags{};   // f may be null for a wire edge (no source face)
     if (!mark.empty()) out.push_back(mark);
     return out;
 }
@@ -1185,7 +1196,8 @@ Mesh spin(const Mesh& mesh, const std::string& axis, int steps, double angle, co
     std::vector<Tags> tags;
     for (const auto& e : mesh.edges()) {
         auto fs = mesh.edge_faces(e.get());
-        if (fs.size() != 1) continue;             // boundary edges only (the silhouette)
+        if (fs.size() > 1) continue;              // sweep wire edges (0 faces) + boundary edges (1)
+        const Face* src = fs.empty() ? nullptr : fs[0];   // a wire edge has no source face
         int a = e->v1->id, b = e->v2->id;
         if (on_axis[a] && on_axis[b]) continue;   // an edge on the axis sweeps nothing
         for (int r = 0; r < steps; ++r) {
@@ -1193,10 +1205,32 @@ Mesh spin(const Mesh& mesh, const std::string& axis, int steps, double angle, co
             std::vector<int> poly;
             for (int x : quad) if (poly.empty() || poly.back() != x) poly.push_back(x);
             if (poly.size() >= 2 && poly.front() == poly.back()) poly.pop_back();
-            if (poly.size() >= 3) { faces.push_back(poly); tags.push_back(copy_tags(fs[0], mark)); }
+            if (poly.size() >= 3) { faces.push_back(poly); tags.push_back(copy_tags(src, mark)); }
         }
     }
     return build_compact(np, faces, tags);
+}
+
+Mesh make_profile(const std::vector<std::array<double, 2>>& points, const std::string& plane,
+                  bool closed) {
+    int iu, iv;
+    if (plane == "xy") { iu = 0; iv = 1; }
+    else if (plane == "xz") { iu = 0; iv = 2; }
+    else if (plane == "yz") { iu = 1; iv = 2; }
+    else throw std::invalid_argument("unknown plane '" + plane + "' (expected xy/xz/yz)");
+    std::vector<std::array<double, 3>> pos;
+    pos.reserve(points.size());
+    for (const auto& p : points) {
+        std::array<double, 3> c{0, 0, 0};
+        c[iu] = p[0];
+        c[iv] = p[1];
+        pos.push_back(c);
+    }
+    std::vector<std::array<int, 2>> edges;
+    for (int i = 0; i + 1 < static_cast<int>(points.size()); ++i) edges.push_back({i, i + 1});
+    if (closed && points.size() > 2)
+        edges.push_back({static_cast<int>(points.size()) - 1, 0});
+    return Mesh::from_wire(pos, edges);
 }
 
 Mesh screw(const Mesh& mesh, const std::string& axis, int steps, int turns, double height,
@@ -1235,7 +1269,8 @@ Mesh screw(const Mesh& mesh, const std::string& axis, int steps, int turns, doub
     std::vector<Tags> tags;
     for (const auto& e : mesh.edges()) {
         auto fs = mesh.edge_faces(e.get());
-        if (fs.size() != 1) continue;             // boundary edges only (the silhouette)
+        if (fs.size() > 1) continue;              // sweep wire edges (0 faces) + boundary edges (1)
+        const Face* src = fs.empty() ? nullptr : fs[0];   // a wire edge has no source face
         int a = e->v1->id, b = e->v2->id;
         if (on_axis[a] && on_axis[b]) continue;   // an edge on the axis sweeps a zero-area strip
         for (int r = 0; r < total; ++r) {
@@ -1243,7 +1278,7 @@ Mesh screw(const Mesh& mesh, const std::string& axis, int steps, int turns, doub
             std::vector<int> poly;
             for (int x : quad) if (poly.empty() || poly.back() != x) poly.push_back(x);
             if (poly.size() >= 2 && poly.front() == poly.back()) poly.pop_back();
-            if (poly.size() >= 3) { faces.push_back(poly); tags.push_back(copy_tags(fs[0], mark)); }
+            if (poly.size() >= 3) { faces.push_back(poly); tags.push_back(copy_tags(src, mark)); }
         }
     }
     return build_compact(np, faces, tags);

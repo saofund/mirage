@@ -152,6 +152,14 @@ Program& Program::mesh(const std::vector<std::array<double, 3>>& verts,
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::profile(const std::vector<std::array<double, 2>>& points, const std::string& plane,
+                          bool closed, const std::string& mark) {
+    json pj = json::array();
+    for (const auto& p : points) pj.push_back({p[0], p[1]});
+    json c{{"op", "profile"}, {"points", std::move(pj)}, {"plane", plane}, {"closed", closed}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::del(const json& on) { return add(json{{"op", "delete"}, {"on", on}}); }
 Program& Program::bridge(const json& on, const std::string& mark) {
     json c{{"op", "bridge"}, {"on", on}};
@@ -321,6 +329,14 @@ Mesh Program::build(std::string* last_tag_out) const {
                     }
                 }
                 for (const auto& f : mesh.faces()) outs.push_back(f.get());
+            } else if (op == "profile") {
+                // a first-class 2D generatrix (a wire polyline) — the real lathe input.
+                std::vector<std::array<double, 2>> pts;
+                for (const auto& p : cmd.value("points", json::array()))
+                    pts.push_back({p.at(0).get<double>(), p.at(1).get<double>()});
+                mesh = make_profile(pts, cmd.value("plane", std::string("xz")), cmd.value("closed", false));
+                has = true;
+                for (const auto& f : mesh.faces()) outs.push_back(f.get());   // wire: no faces
             } else if (!has) {
                 throw MeshLangError("op '" + op + "' before any primitive");
             } else if (op == "extrude") {
@@ -483,6 +499,11 @@ std::string Program::label(const json& op) {
         const std::size_t nv = op.contains("verts") ? op.at("verts").size() : 0;
         const std::size_t nf = op.contains("faces") ? op.at("faces").size() : 0;
         return "mesh  " + std::to_string(nv) + "v " + std::to_string(nf) + "f (imported)";
+    }
+    if (k == "profile") {
+        const std::size_t np = op.contains("points") ? op.at("points").size() : 0;
+        return "profile  " + std::to_string(np) + "pt " + op.value("plane", std::string("xz")) +
+               (op.value("closed", false) ? " closed" : "");
     }
     if (k == "delete") return "delete" + on_suffix(op);
     if (k == "bridge") return "bridge" + on_suffix(op);
