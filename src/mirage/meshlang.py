@@ -25,7 +25,7 @@ from .kernel import (
     make_torus, make_grid, make_profile, face_normal, faces_by_normal,
     extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel,
     delete_faces, bridge_faces, fill_holes, catmull_clark,
-    solidify, mirror, array, bisect, spin, screw,
+    solidify, mirror, array, bisect, spin, screw, boolean,
 )
 
 
@@ -435,6 +435,17 @@ class MeshProgram:
     def screw(self, axis="z", steps=24, turns=1, height=1.0, angle=360.0, mark=None):
         return self.add(**_cmd("screw", mark=mark, axis=axis, steps=steps, turns=turns,
                                height=height, angle=angle))
+    def boolean(self, mode, cutter, mark=None):
+        """Real mesh-mesh boolean. `cutter` (operand B) is a built Mesh or a
+        (verts, faces) pair; the current mesh is operand A. mode: union/difference/
+        intersection. The cutter geometry is baked into the op (world space)."""
+        if isinstance(cutter, Mesh):
+            verts = [list(v.co) for v in cutter.verts]
+            faces = [[lp.vert.id for lp in cutter.face_loops(f)] for f in cutter.faces]
+        else:
+            verts, faces = cutter
+            verts = [list(v) for v in verts]; faces = [list(f) for f in faces]
+        return self.add(**_cmd("boolean", mark=mark, mode=mode, verts=verts, faces=faces))
     def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
     def material(self, on, color=(0.8, 0.8, 0.8), metallic=0.0, roughness=0.5):
@@ -548,6 +559,12 @@ class MeshProgram:
                     mesh = screw(mesh, cmd.get("axis", "z"), cmd.get("steps", 24), cmd.get("turns", 1),
                                  cmd.get("height", 1.0), cmd.get("angle", 360.0), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "boolean":
+                    # current mesh = operand A; inline verts+faces = operand B (the tool/cutter)
+                    bverts = [tuple(float(c) for c in v) for v in cmd.get("verts", [])]
+                    bfaces = [list(f) for f in cmd.get("faces", [])]
+                    mesh = boolean(mesh, Mesh.from_pydata(bverts, bfaces), cmd.get("mode", "difference"))
+                    outs = []   # a fresh welded mesh — last_created is undefined
                 elif op == "subdivide":
                     for _ in range(cmd.get("levels", 1)):
                         mesh = catmull_clark(mesh)

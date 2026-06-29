@@ -25,11 +25,24 @@ if os.path.isdir(_PYD):
 cpp = pytest.importorskip("_mirage_core")
 
 from mirage.meshlang import MeshProgram, resolve, Sel  # noqa: E402
-from mirage.kernel import make_cube  # noqa: E402
+from mirage.kernel import make_cube, make_cylinder_ngon, make_uv_sphere  # noqa: E402
 
 
 def _s(stats):
     return (stats["verts"], stats["edges"], stats["faces"], stats["euler"], stats["closed_manifold"])
+
+
+def _cutter(mesh, dx=0.0, dy=0.0, dz=0.0):
+    """Bake a built mesh into (verts, faces) for a boolean op's operand B, optionally
+    translated — so the differential cutters are defined once and stay in sync."""
+    verts = [[v.co[0] + dx, v.co[1] + dy, v.co[2] + dz] for v in mesh.verts]
+    faces = [[lp.vert.id for lp in mesh.face_loops(f)] for f in mesh.faces]
+    return verts, faces
+
+
+_CUBE_CUT = _cutter(make_cube(1.0), 0.5, 0.5, 0.5)           # a corner-overlapping cube
+_DRILL = _cutter(make_cylinder_ngon(16, 0.3, 2.0))          # a thin tall cylinder (a drill bit)
+_BALL = _cutter(make_uv_sphere(16, 12, 0.62))               # a sphere to round a cube
 
 
 # Op-logs expressed in the shared dialect (no "near" — that selector is the
@@ -328,6 +341,32 @@ OPLOGS = {
         {"op": "profile", "points": [[0.05, -0.5], [0.4, -0.4], [0.3, 0.3], [0.45, 0.5]], "plane": "xz"},
         {"op": "spin", "axis": "z", "steps": 20, "angle": 360},
         {"op": "solidify", "thickness": 0.03},
+    ],
+    # boolean (real BSP mesh-mesh CSG): A = current mesh, B = inline cutter geometry
+    "bool_union_cubes": [
+        {"op": "cube", "size": 1.0},
+        {"op": "boolean", "mode": "union", "verts": _CUBE_CUT[0], "faces": _CUBE_CUT[1]},
+    ],
+    "bool_difference_cubes": [
+        {"op": "cube", "size": 1.0},
+        {"op": "boolean", "mode": "difference", "verts": _CUBE_CUT[0], "faces": _CUBE_CUT[1]},
+    ],
+    "bool_intersection_cubes": [   # the overlap region -> a clean little box (closed, euler 2)
+        {"op": "cube", "size": 1.0},
+        {"op": "boolean", "mode": "intersection", "verts": _CUBE_CUT[0], "faces": _CUBE_CUT[1]},
+    ],
+    "bool_drill_through_cube": [   # subtract a cylinder -> a cube with a bore
+        {"op": "cube", "size": 1.0},
+        {"op": "boolean", "mode": "difference", "verts": _DRILL[0], "faces": _DRILL[1]},
+    ],
+    "bool_sphere_intersect_cube": [  # a cube rounded by a sphere intersection
+        {"op": "cube", "size": 1.0},
+        {"op": "boolean", "mode": "intersection", "verts": _BALL[0], "faces": _BALL[1]},
+    ],
+    "bool_then_bisect": [          # compose: drill, then plane-cut the result
+        {"op": "cube", "size": 1.0},
+        {"op": "boolean", "mode": "difference", "verts": _DRILL[0], "faces": _DRILL[1]},
+        {"op": "bisect", "point": [0, 0, 0.2], "normal": [0, 0, 1]},
     ],
     # screw (helical sweep): like spin but the profile climbs along the axis
     "screw_single_turn": [   # a square cross-section -> one helical coil

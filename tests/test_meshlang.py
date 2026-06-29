@@ -190,6 +190,43 @@ def test_curvature_selector_separates_flat_from_creased():
     assert len(resolve(cube, Sel.curvature(80.0, 100.0))) == 6
 
 
+def test_boolean_intersection_is_the_overlap_solid():
+    # two unit cubes overlapping at a corner: their intersection is the small box
+    # they share -> a clean closed manifold (the BSP boolean is exact here)
+    cutter = make_cube(1.0)
+    for v in cutter.verts:
+        v.co = (v.co[0] + 0.5, v.co[1] + 0.5, v.co[2] + 0.5)
+    m = MeshProgram().cube(1.0).boolean("intersection", cutter).build()
+    m.validate()
+    assert m.is_closed_manifold() and m.euler() == 2 and m.stats()["faces"] == 6
+    # the overlap box spans [0, 0.5] on each axis
+    lo = [min(v.co[k] for v in m.verts) for k in range(3)]
+    hi = [max(v.co[k] for v in m.verts) for k in range(3)]
+    assert lo == pytest.approx([0, 0, 0]) and hi == pytest.approx([0.5, 0.5, 0.5])
+
+
+def test_boolean_difference_removes_material():
+    # cube minus an overlapping cube -> fewer than the 8 corners of a full cube remain
+    # solid; the carved notch makes it non-convex (validate still passes)
+    cutter = make_cube(1.0)
+    for v in cutter.verts:
+        v.co = (v.co[0] + 0.5, v.co[1] + 0.5, v.co[2] + 0.5)
+    full = MeshProgram().cube(1.0).build()
+    carved = MeshProgram().cube(1.0).boolean("difference", cutter).build()
+    carved.validate()
+    assert carved.stats()["faces"] > full.stats()["faces"]   # the notch adds faces
+
+
+def test_boolean_drill_makes_a_bore():
+    # subtract a tall thin cylinder from a cube -> a cube with a hole punched through
+    from mirage.kernel import make_cylinder_ngon
+    drill = make_cylinder_ngon(16, 0.25, 2.0)
+    m = MeshProgram().cube(1.0).boolean("difference", drill).build()
+    m.validate()
+    # the bore opens the top and bottom faces, so the result is no longer convex
+    assert m.stats()["faces"] > 6
+
+
 def test_profile_lathe_makes_a_single_wall():
     # an OPEN profile curve (a wire) revolved 360 -> a single-walled open vase.
     # A filled cross-section would instead give a double-walled (closed) tube; the

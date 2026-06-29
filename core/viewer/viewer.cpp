@@ -842,6 +842,20 @@ int main(int argc, char** argv) {
             prog.spin("z", 48, 360.0);
             g_sel_mode = SEL_NONE; dirty = true;
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Drill Z")) {   // real boolean: subtract a cylinder bore from the current mesh
+            mirage::Mesh bit = mirage::make_cylinder(24, 0.25, 3.0);
+            std::vector<std::array<double, 3>> bv;
+            for (const auto& v : bit.verts()) bv.push_back(v->co);
+            std::vector<std::vector<int>> bf;
+            for (const auto& f : bit.faces()) {
+                std::vector<int> fi;
+                for (Vert* vv : bit.face_verts(f.get())) fi.push_back(vv->id);
+                bf.push_back(std::move(fi));
+            }
+            prog.boolean_op("difference", bv, bf);
+            g_sel_mode = SEL_NONE; dirty = true;
+        }
         ImGui::Spacing();
         if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
         ImGui::SameLine();

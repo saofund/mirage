@@ -1091,6 +1091,217 @@ def screw(mesh: Mesh, axis: str = "z", steps: int = 24, turns: int = 1,
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
+# --------------------------------------------------------------------------- #
+# BSP CSG — the real mesh-mesh boolean (union / difference / intersection).
+#
+# This is the classic Naylor/Thurston BSP-tree solid-modeling algorithm (the same
+# one the well-known csg.js implements): partition each solid's polygons by the
+# other's BSP tree, clip away the interior/exterior pieces per the boolean rule,
+# and recombine. It is a TRUE boolean on closed inputs — NOT a plane cut (that is
+# `bisect`) and not faked. Known property of the BSP approach (shared by csg.js):
+# the output can carry T-junctions where a split vertex meets an unsplit edge, so
+# the result is geometrically correct and watertight-in-coverage but not always a
+# clean 2-manifold; removing T-junctions / remeshing is a later stage.
+#
+# Both engines port this byte-identically: same epsilon, same vertex
+# classification, same split interpolation, same recursion + list order, so the
+# emitted polygon stream (and the welded mesh) matches the C++ twin exactly.
+# --------------------------------------------------------------------------- #
+_CSG_EPS = 1e-5
+
+
+def _csg_plane(verts):
+    """The plane of a polygon (Newell normal through its first vertex)."""
+    nx = ny = nz = 0.0
+    n = len(verts)
+    for i in range(n):
+        a, b = verts[i], verts[(i + 1) % n]
+        nx += (a[1] - b[1]) * (a[2] + b[2])
+        ny += (a[2] - b[2]) * (a[0] + b[0])
+        nz += (a[0] - b[0]) * (a[1] + b[1])
+    m = (nx * nx + ny * ny + nz * nz) ** 0.5 or 1.0
+    nrm = (nx / m, ny / m, nz / m)
+    w = nrm[0] * verts[0][0] + nrm[1] * verts[0][1] + nrm[2] * verts[0][2]
+    return [nrm, w]
+
+
+class _Poly:
+    """A planar polygon: ordered vertex positions + its supporting plane."""
+    __slots__ = ("verts", "plane")
+    def __init__(self, verts, plane=None):
+        self.verts = verts
+        self.plane = plane if plane is not None else _csg_plane(verts)
+    def flip(self):
+        self.verts = self.verts[::-1]
+        n, w = self.plane
+        self.plane = [(-n[0], -n[1], -n[2]), -w]
+
+
+def _split_poly(plane, poly, cf, cb, front, back):
+    """Split `poly` by `plane` into the coplanar-front/back and front/back buckets
+    (Sutherland-Hodgman with a signed-distance classifier) — verbatim csg.js."""
+    COPLANAR, FRONT, BACK, SPANNING = 0, 1, 2, 3
+    n, w = plane
+    ptype = 0
+    types = []
+    for v in poly.verts:
+        t = n[0] * v[0] + n[1] * v[1] + n[2] * v[2] - w
+        typ = BACK if t < -_CSG_EPS else FRONT if t > _CSG_EPS else COPLANAR
+        ptype |= typ
+        types.append(typ)
+    if ptype == COPLANAR:
+        (cf if (n[0] * poly.plane[0][0] + n[1] * poly.plane[0][1] + n[2] * poly.plane[0][2]) > 0
+         else cb).append(poly)
+    elif ptype == FRONT:
+        front.append(poly)
+    elif ptype == BACK:
+        back.append(poly)
+    else:
+        f, b = [], []
+        m = len(poly.verts)
+        for i in range(m):
+            j = (i + 1) % m
+            ti, tj = types[i], types[j]
+            vi, vj = poly.verts[i], poly.verts[j]
+            if ti != BACK:
+                f.append(vi)
+            if ti != FRONT:
+                b.append(vi)
+            if (ti | tj) == SPANNING:
+                d = (vj[0] - vi[0], vj[1] - vi[1], vj[2] - vi[2])
+                t = (w - (n[0] * vi[0] + n[1] * vi[1] + n[2] * vi[2])) / \
+                    (n[0] * d[0] + n[1] * d[1] + n[2] * d[2])
+                mid = (vi[0] + d[0] * t, vi[1] + d[1] * t, vi[2] + d[2] * t)
+                f.append(mid)
+                b.append(mid)
+        if len(f) >= 3:
+            front.append(_Poly(f, list(poly.plane)))
+        if len(b) >= 3:
+            back.append(_Poly(b, list(poly.plane)))
+
+
+class _BSPNode:
+    __slots__ = ("plane", "front", "back", "polys")
+    def __init__(self):
+        self.plane = None
+        self.front = None
+        self.back = None
+        self.polys = []
+    def build(self, polys):
+        if not polys:
+            return
+        if self.plane is None:
+            self.plane = list(polys[0].plane)
+        front, back = [], []
+        for p in polys:
+            _split_poly(self.plane, p, self.polys, self.polys, front, back)
+        if front:
+            if self.front is None:
+                self.front = _BSPNode()
+            self.front.build(front)
+        if back:
+            if self.back is None:
+                self.back = _BSPNode()
+            self.back.build(back)
+    def invert(self):
+        for p in self.polys:
+            p.flip()
+        n, w = self.plane
+        self.plane = [(-n[0], -n[1], -n[2]), -w]
+        if self.front:
+            self.front.invert()
+        if self.back:
+            self.back.invert()
+        self.front, self.back = self.back, self.front
+    def clip_polys(self, polys):
+        if self.plane is None:
+            return list(polys)
+        front, back = [], []
+        for p in polys:
+            _split_poly(self.plane, p, front, back, front, back)
+        front = self.front.clip_polys(front) if self.front else front
+        back = self.back.clip_polys(back) if self.back else []
+        return front + back
+    def clip_to(self, other):
+        self.polys = other.clip_polys(self.polys)
+        if self.front:
+            self.front.clip_to(other)
+        if self.back:
+            self.back.clip_to(other)
+    def all_polys(self):
+        out = list(self.polys)
+        if self.front:
+            out += self.front.all_polys()
+        if self.back:
+            out += self.back.all_polys()
+        return out
+
+
+def _mesh_to_polys(mesh):
+    return [_Poly([tuple(v.co) for v in mesh.face_verts(f)]) for f in mesh.faces]
+
+
+def _polys_to_mesh(polys):
+    """Weld the BSP polygon soup back into a mesh: coincident verts (rounded to a
+    shared grid so both engines key identically) merge, restoring shared edges.
+    Degenerate corners/faces are dropped so the result passes validate()."""
+    QUANT = 1e6
+    def q(x):                                       # round-half-away (matches C++ llround)
+        return int(x + 0.5) if x >= 0 else -int(-x + 0.5)
+    index = {}
+    pos = []
+    faces = []
+    for p in polys:
+        ids = []
+        for v in p.verts:
+            key = (q(v[0] * QUANT), q(v[1] * QUANT), q(v[2] * QUANT))
+            idx = index.get(key)
+            if idx is None:
+                idx = len(pos)
+                index[key] = idx
+                pos.append([v[0], v[1], v[2]])
+            if not ids or ids[-1] != idx:           # drop a coincident consecutive corner
+                ids.append(idx)
+        if len(ids) >= 2 and ids[0] == ids[-1]:
+            ids.pop()
+        if len(ids) < 3:
+            continue
+        # cull a zero-area (sliver) face so validate() stays happy
+        a, b, c = pos[ids[0]], pos[ids[1]], pos[ids[2]]
+        ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+        wx, wy, wz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
+        cx, cy, cz = uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx
+        if cx * cx + cy * cy + cz * cz < 1e-20:
+            continue
+        faces.append(ids)
+    pos, faces = _compact(pos, faces)
+    return Mesh.from_pydata(pos, faces)
+
+
+def boolean(mesh_a: Mesh, mesh_b: Mesh, mode: str = "difference") -> Mesh:
+    """Real mesh-mesh boolean via BSP CSG. ``mode`` is union / difference (A minus B)
+    / intersection. Inputs should be closed solids. See the module note on the
+    T-junction property of the BSP approach."""
+    a = _BSPNode(); a.build(_mesh_to_polys(mesh_a))
+    b = _BSPNode(); b.build(_mesh_to_polys(mesh_b))
+    if mode == "union":
+        a.clip_to(b); b.clip_to(a)
+        b.invert(); b.clip_to(a); b.invert()
+        a.build(b.all_polys())
+        return _polys_to_mesh(a.all_polys())
+    if mode == "intersection":
+        a.invert(); b.clip_to(a)
+        b.invert(); a.clip_to(b); b.clip_to(a)
+        a.build(b.all_polys()); a.invert()
+        return _polys_to_mesh(a.all_polys())
+    if mode == "difference":
+        a.invert(); a.clip_to(b); b.clip_to(a)
+        b.invert(); b.clip_to(a); b.invert()
+        a.build(b.all_polys()); a.invert()
+        return _polys_to_mesh(a.all_polys())
+    raise ValueError(f"unknown boolean mode '{mode}' (union/difference/intersection)")
+
+
 def make_cube(size: float = 1.0) -> Mesh:
     s = size / 2.0
     p = [(-s, -s, -s), (s, -s, -s), (s, s, -s), (-s, s, -s),

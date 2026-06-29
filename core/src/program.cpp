@@ -160,6 +160,16 @@ Program& Program::profile(const std::vector<std::array<double, 2>>& points, cons
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
+Program& Program::boolean_op(const std::string& mode, const std::vector<std::array<double, 3>>& verts,
+                             const std::vector<std::vector<int>>& faces, const std::string& mark) {
+    json vj = json::array();
+    for (const auto& v : verts) vj.push_back({v[0], v[1], v[2]});
+    json fj = json::array();
+    for (const auto& f : faces) fj.push_back(f);
+    json c{{"op", "boolean"}, {"mode", mode}, {"verts", std::move(vj)}, {"faces", std::move(fj)}};
+    if (!mark.empty()) c["mark"] = mark;
+    return add(std::move(c));
+}
 Program& Program::del(const json& on) { return add(json{{"op", "delete"}, {"on", on}}); }
 Program& Program::bridge(const json& on, const std::string& mark) {
     json c{{"op", "bridge"}, {"on", on}};
@@ -337,6 +347,20 @@ Mesh Program::build(std::string* last_tag_out) const {
                 mesh = make_profile(pts, cmd.value("plane", std::string("xz")), cmd.value("closed", false));
                 has = true;
                 for (const auto& f : mesh.faces()) outs.push_back(f.get());   // wire: no faces
+            } else if (op == "boolean") {
+                // current mesh = operand A; inline verts+faces = operand B (the tool/cutter)
+                std::vector<std::array<double, 3>> bverts;
+                for (const auto& v : cmd.value("verts", json::array()))
+                    bverts.push_back({v.at(0).get<double>(), v.at(1).get<double>(), v.at(2).get<double>()});
+                std::vector<std::vector<int>> bfaces;
+                for (const auto& f : cmd.value("faces", json::array())) {
+                    std::vector<int> fi;
+                    for (const auto& idx : f) fi.push_back(idx.get<int>());
+                    bfaces.push_back(std::move(fi));
+                }
+                mesh = mirage::boolean(mesh, Mesh::from_pydata(bverts, bfaces),
+                                       cmd.value("mode", std::string("difference")));
+                // a fresh welded mesh; last_created undefined (outs stays empty)
             } else if (!has) {
                 throw MeshLangError("op '" + op + "' before any primitive");
             } else if (op == "extrude") {
@@ -504,6 +528,11 @@ std::string Program::label(const json& op) {
         const std::size_t np = op.contains("points") ? op.at("points").size() : 0;
         return "profile  " + std::to_string(np) + "pt " + op.value("plane", std::string("xz")) +
                (op.value("closed", false) ? " closed" : "");
+    }
+    if (k == "boolean") {
+        const std::size_t nf = op.contains("faces") ? op.at("faces").size() : 0;
+        return "boolean  " + op.value("mode", std::string("difference")) + " (cutter " +
+               std::to_string(nf) + "f)";
     }
     if (k == "delete") return "delete" + on_suffix(op);
     if (k == "bridge") return "bridge" + on_suffix(op);

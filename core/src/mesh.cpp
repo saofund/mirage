@@ -1284,6 +1284,205 @@ Mesh screw(const Mesh& mesh, const std::string& axis, int steps, int turns, doub
     return build_compact(np, faces, tags);
 }
 
+// --- BSP CSG: the real mesh-mesh boolean (twin of the Python kernel's boolean) ----
+// The classic Naylor/Thurston BSP solid-modeling algorithm (csg.js lineage). Ported
+// byte-identically to the Python kernel: same epsilon, vertex classification, split
+// interpolation, recursion + list order, and round-half-away weld key.
+namespace {
+constexpr double CSG_EPS = 1e-5;
+
+struct CsgPlane { A3 n; double w; };
+
+CsgPlane csg_plane(const std::vector<A3>& verts) {
+    double nx = 0, ny = 0, nz = 0;
+    const int n = static_cast<int>(verts.size());
+    for (int i = 0; i < n; ++i) {
+        const A3& a = verts[i];
+        const A3& b = verts[(i + 1) % n];
+        nx += (a[1] - b[1]) * (a[2] + b[2]);
+        ny += (a[2] - b[2]) * (a[0] + b[0]);
+        nz += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    double m = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (m == 0.0) m = 1.0;
+    A3 nrm{nx / m, ny / m, nz / m};
+    double w = nrm[0] * verts[0][0] + nrm[1] * verts[0][1] + nrm[2] * verts[0][2];
+    return {nrm, w};
+}
+
+struct CsgPoly {
+    std::vector<A3> verts;
+    CsgPlane plane;
+    explicit CsgPoly(std::vector<A3> v) : verts(std::move(v)) { plane = csg_plane(verts); }
+    CsgPoly(std::vector<A3> v, CsgPlane p) : verts(std::move(v)), plane(p) {}
+    void flip() {
+        std::reverse(verts.begin(), verts.end());
+        plane.n = {-plane.n[0], -plane.n[1], -plane.n[2]};
+        plane.w = -plane.w;
+    }
+};
+
+void split_poly(const CsgPlane& plane, const CsgPoly& poly, std::vector<CsgPoly>& cf,
+                std::vector<CsgPoly>& cb, std::vector<CsgPoly>& front, std::vector<CsgPoly>& back) {
+    enum { COPLANAR = 0, FRONT = 1, BACK = 2, SPANNING = 3 };
+    const A3& n = plane.n;
+    const double w = plane.w;
+    int ptype = 0;
+    std::vector<int> types(poly.verts.size());
+    for (std::size_t i = 0; i < poly.verts.size(); ++i) {
+        const A3& v = poly.verts[i];
+        const double t = n[0] * v[0] + n[1] * v[1] + n[2] * v[2] - w;
+        const int typ = t < -CSG_EPS ? BACK : t > CSG_EPS ? FRONT : COPLANAR;
+        ptype |= typ;
+        types[i] = typ;
+    }
+    if (ptype == COPLANAR) {
+        const double d = n[0] * poly.plane.n[0] + n[1] * poly.plane.n[1] + n[2] * poly.plane.n[2];
+        (d > 0 ? cf : cb).push_back(poly);
+    } else if (ptype == FRONT) {
+        front.push_back(poly);
+    } else if (ptype == BACK) {
+        back.push_back(poly);
+    } else {
+        std::vector<A3> f, b;
+        const int m = static_cast<int>(poly.verts.size());
+        for (int i = 0; i < m; ++i) {
+            const int j = (i + 1) % m;
+            const int ti = types[i], tj = types[j];
+            const A3& vi = poly.verts[i];
+            const A3& vj = poly.verts[j];
+            if (ti != BACK) f.push_back(vi);
+            if (ti != FRONT) b.push_back(vi);
+            if ((ti | tj) == SPANNING) {
+                A3 d{vj[0] - vi[0], vj[1] - vi[1], vj[2] - vi[2]};
+                const double t = (w - (n[0] * vi[0] + n[1] * vi[1] + n[2] * vi[2])) /
+                                 (n[0] * d[0] + n[1] * d[1] + n[2] * d[2]);
+                A3 mid{vi[0] + d[0] * t, vi[1] + d[1] * t, vi[2] + d[2] * t};
+                f.push_back(mid);
+                b.push_back(mid);
+            }
+        }
+        if (f.size() >= 3) front.push_back(CsgPoly(std::move(f), poly.plane));
+        if (b.size() >= 3) back.push_back(CsgPoly(std::move(b), poly.plane));
+    }
+}
+
+struct CsgNode {
+    bool has_plane = false;
+    CsgPlane plane{};
+    std::unique_ptr<CsgNode> front, back;
+    std::vector<CsgPoly> polys;
+
+    void build(const std::vector<CsgPoly>& polygons) {
+        if (polygons.empty()) return;
+        if (!has_plane) { plane = polygons[0].plane; has_plane = true; }
+        std::vector<CsgPoly> f, b;
+        for (const auto& p : polygons) split_poly(plane, p, polys, polys, f, b);
+        if (!f.empty()) { if (!front) front = std::make_unique<CsgNode>(); front->build(f); }
+        if (!b.empty()) { if (!back) back = std::make_unique<CsgNode>(); back->build(b); }
+    }
+    void invert() {
+        for (auto& p : polys) p.flip();
+        plane.n = {-plane.n[0], -plane.n[1], -plane.n[2]};
+        plane.w = -plane.w;
+        if (front) front->invert();
+        if (back) back->invert();
+        std::swap(front, back);
+    }
+    std::vector<CsgPoly> clip_polys(const std::vector<CsgPoly>& polygons) {
+        if (!has_plane) return polygons;
+        std::vector<CsgPoly> f, b;
+        for (const auto& p : polygons) split_poly(plane, p, f, b, f, b);
+        std::vector<CsgPoly> ff = front ? front->clip_polys(f) : std::move(f);
+        std::vector<CsgPoly> bb = back ? back->clip_polys(b) : std::vector<CsgPoly>{};
+        ff.insert(ff.end(), bb.begin(), bb.end());
+        return ff;
+    }
+    void clip_to(CsgNode& other) {
+        polys = other.clip_polys(polys);
+        if (front) front->clip_to(other);
+        if (back) back->clip_to(other);
+    }
+    void all_polys(std::vector<CsgPoly>& out) const {
+        out.insert(out.end(), polys.begin(), polys.end());
+        if (front) front->all_polys(out);
+        if (back) back->all_polys(out);
+    }
+};
+
+std::vector<CsgPoly> mesh_to_polys(const Mesh& mesh) {
+    std::vector<CsgPoly> out;
+    for (const auto& f : mesh.faces()) {
+        std::vector<A3> vs;
+        for (Vert* v : mesh.face_verts(f.get())) vs.push_back(v->co);
+        out.push_back(CsgPoly(std::move(vs)));
+    }
+    return out;
+}
+
+long long csg_q(double x) {  // round-half-away (matches the Python weld key)
+    return x >= 0 ? static_cast<long long>(x + 0.5) : -static_cast<long long>(-x + 0.5);
+}
+
+Mesh polys_to_mesh(const std::vector<CsgPoly>& polys) {
+    const double QUANT = 1e6;
+    std::map<std::array<long long, 3>, int> index;
+    std::vector<A3> pos;
+    std::vector<std::vector<int>> faces;
+    for (const auto& p : polys) {
+        std::vector<int> ids;
+        for (const A3& v : p.verts) {
+            std::array<long long, 3> key{csg_q(v[0] * QUANT), csg_q(v[1] * QUANT), csg_q(v[2] * QUANT)};
+            auto it = index.find(key);
+            int idx;
+            if (it == index.end()) { idx = static_cast<int>(pos.size()); index[key] = idx; pos.push_back(v); }
+            else idx = it->second;
+            if (ids.empty() || ids.back() != idx) ids.push_back(idx);
+        }
+        if (ids.size() >= 2 && ids.front() == ids.back()) ids.pop_back();
+        if (ids.size() < 3) continue;
+        const A3& a = pos[ids[0]];
+        const A3& b = pos[ids[1]];
+        const A3& c = pos[ids[2]];
+        const double ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+        const double wx = c[0] - a[0], wy = c[1] - a[1], wz = c[2] - a[2];
+        const double cx = uy * wz - uz * wy, cy = uz * wx - ux * wz, cz = ux * wy - uy * wx;
+        if (cx * cx + cy * cy + cz * cz < 1e-20) continue;
+        faces.push_back(std::move(ids));
+    }
+    return build_compact(pos, faces, std::vector<Tags>{});
+}
+}  // namespace
+
+Mesh boolean(const Mesh& mesh_a, const Mesh& mesh_b, const std::string& mode) {
+    CsgNode a; a.build(mesh_to_polys(mesh_a));
+    CsgNode b; b.build(mesh_to_polys(mesh_b));
+    std::vector<CsgPoly> result;
+    if (mode == "union") {
+        a.clip_to(b); b.clip_to(a);
+        b.invert(); b.clip_to(a); b.invert();
+        std::vector<CsgPoly> bp; b.all_polys(bp);
+        a.build(bp);
+        a.all_polys(result);
+    } else if (mode == "intersection") {
+        a.invert(); b.clip_to(a);
+        b.invert(); a.clip_to(b); b.clip_to(a);
+        std::vector<CsgPoly> bp; b.all_polys(bp);
+        a.build(bp); a.invert();
+        a.all_polys(result);
+    } else if (mode == "difference") {
+        a.invert(); a.clip_to(b); b.clip_to(a);
+        b.invert(); b.clip_to(a); b.invert();
+        std::vector<CsgPoly> bp; b.all_polys(bp);
+        a.build(bp); a.invert();
+        a.all_polys(result);
+    } else {
+        throw std::invalid_argument("unknown boolean mode '" + mode +
+                                    "' (union/difference/intersection)");
+    }
+    return polys_to_mesh(result);
+}
+
 Mesh bevel(const Mesh& mesh, const std::vector<const Face*>& region_v, double width, double depth,
            const std::string& mark) {
     std::set<const Face*> region(region_v.begin(), region_v.end());

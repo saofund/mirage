@@ -239,5 +239,10 @@ Mesh spin(const Mesh& mesh, const std::string& axis = "z", int steps = 24,
 // `height` is the axial rise per turn. Always open (the helix never wraps closed).
 Mesh screw(const Mesh& mesh, const std::string& axis = "z", int steps = 24, int turns = 1,
            double height = 1.0, double angle = 360.0, const std::string& mark = "");
+// boolean: the real mesh-mesh CSG (BSP / Naylor-Thurston, csg.js lineage). mode is
+// union / difference (A minus B) / intersection. Inputs should be closed solids.
+// Twin of the Python kernel's boolean (byte-identical). Note: the BSP approach can
+// leave T-junctions, so the result is correct-in-coverage but not always 2-manifold.
+Mesh boolean(const Mesh& mesh_a, const Mesh& mesh_b, const std::string& mode = "difference");
 
 }  // namespace mirage

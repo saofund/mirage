@@ -57,6 +57,9 @@ public:
                   const std::vector<std::vector<int>>& faces, const std::string& mark = "");
     Program& profile(const std::vector<std::array<double, 2>>& points, const std::string& plane = "xz",
                      bool closed = false, const std::string& mark = "");
+    // mesh-mesh boolean: current mesh = A, inline verts+faces = B (the cutter)
+    Program& boolean_op(const std::string& mode, const std::vector<std::array<double, 3>>& verts,
+                        const std::vector<std::vector<int>>& faces, const std::string& mark = "");
     Program& del(const json& on);                  // delete the selected faces (open the mesh)
     Program& bridge(const json& on, const std::string& mark = "");  // tunnel between two openings
     Program& fill(const std::string& mark = "");   // cap every boundary loop
