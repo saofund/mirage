@@ -4,6 +4,25 @@
 
 > **Status:** 🌱 early scaffold (`v0.0.1`), now pivoting. The data model and AI-native control surface are in place on dependency-free *null* backends; the v0.1 direction — **OpenUSD as the scene source of truth, with real engines (MuJoCo/Newton physics, Hydra/Cycles rendering) behind small interfaces** — is specced in [docs/design.md](docs/design.md).
 
+## Gallery
+
+Every panel below is one op-log replayed through the native mesh kernel and shot
+with the in-repo path tracer — no external DCC, no fakes. Regenerate them all
+with `uv run python docs/gallery/render_gallery.py`.
+
+![Mirage modeling gallery](docs/gallery/showcase.png)
+
+| | operator | what it is |
+|---|---|---|
+| **1** | `screw` | the helical sweep — a section revolved *while climbing the axis* → springs, threads, augers |
+| **2** | `curvature` selector | selection-as-query by mean dihedral: the flat-ish cap resolves apart from the round body |
+| **3** | `profile` | a first-class 2D generatrix — an **open** wire revolved makes a single-walled, hollow vase |
+| **4** | `boolean` | real BSP mesh-mesh CSG (union / difference / intersection) — here a cube minus a cylinder bore |
+
+Each modeling operator is implemented **byte-identically in the C++ core and the
+Python kernel** and pinned by differential tests, so one op-log builds the same
+mesh in either engine.
+
 ## Why
 
 Powerful DCC tools (Blender, …) have large, stateful automation surfaces that are awkward for programmatic/agent control. Full robotics simulators are excellent but heavy. Mirage takes the opposite bet:

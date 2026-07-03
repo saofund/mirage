@@ -1,0 +1,42 @@
+[
+  {
+    "op": "profile",
+    "points": [
+      [
+        0.5,
+        0.0
+      ],
+      [
+        0.62,
+        0.0
+      ]
+    ],
+    "plane": "xz",
+    "closed": false
+  },
+  {
+    "op": "screw",
+    "axis": "z",
+    "steps": 64,
+    "turns": 4,
+    "height": 1.6,
+    "angle": 360.0
+  },
+  {
+    "op": "solidify",
+    "thickness": 0.06
+  },
+  {
+    "op": "material",
+    "on": {
+      "by": "all"
+    },
+    "color": [
+      0.95,
+      0.78,
+      0.22
+    ],
+    "metallic": 1.0,
+    "roughness": 0.25
+  }
+]
