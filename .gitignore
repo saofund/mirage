@@ -46,3 +46,6 @@ mirage_oplog.json
 
 # ImGui runtime layout (generated)
 imgui.ini
+
+# local agent config / instructions — never publish
+.claude/
