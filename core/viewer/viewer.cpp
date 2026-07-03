@@ -450,7 +450,9 @@ static void on_cursor(GLFWwindow*, double x, double y) {
     } else if (g_drag && !ui_wants_mouse()) {
         if (std::fabs(x - g_press_x) + std::fabs(y - g_press_y) > 4.0) g_moved = true;
         if (g_moved) {  // drag past a small threshold -> orbit
-            g_yaw += float(x - g_lx) * 0.01f; g_pitch += float(y - g_ly) * 0.01f;
+            // Drag right -> the model turns to follow the cursor (yaw decreases as
+            // x grows). Sign pinned by the headless --drag regression (test_viewer_orbit).
+            g_yaw -= float(x - g_lx) * 0.01f; g_pitch += float(y - g_ly) * 0.01f;
             if (g_pitch > 1.5f) g_pitch = 1.5f; if (g_pitch < -1.5f) g_pitch = -1.5f;
         }
     }
@@ -480,12 +482,23 @@ static void write_ppm(const std::string& path, int W, int H) {
 int main(int argc, char** argv) {
     std::string shot, load_path, glb_path;
     double watch_secs = 0.0;  // --watch N: headless live-sync proof (poll the file for N s)
+    // Headless UI-regression hooks. `--cam` pins a known viewpoint; `--drag`
+    // synthesises a mouse drag through the REAL on_mouse/on_cursor handlers, so a
+    // scripted run exercises the exact input->camera mapping a human triggers and
+    // dumps the resulting frame — the GUI's camera controls become testable and
+    // observable without a visible window or a human at the mouse.
+    bool cam_set = false, drag_set = false;
+    double cam_yaw = 0, cam_pitch = 0, cam_dist = 0;
+    char drag_btn = 'L';
+    double drag_dx = 0, drag_dy = 0;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--screenshot" && i + 1 < argc) shot = argv[++i];
         else if (a == "--oplog" && i + 1 < argc) { load_path = argv[++i]; std::snprintf(g_oplog_path, sizeof(g_oplog_path), "%s", load_path.c_str()); }
         else if (a == "--import-glb" && i + 1 < argc) { glb_path = argv[++i]; std::snprintf(g_glb_path, sizeof(g_glb_path), "%s", glb_path.c_str()); }
         else if (a == "--watch" && i + 1 < argc) watch_secs = std::atof(argv[++i]);
+        else if (a == "--cam" && i + 3 < argc) { cam_set = true; cam_yaw = std::atof(argv[++i]); cam_pitch = std::atof(argv[++i]); cam_dist = std::atof(argv[++i]); }
+        else if (a == "--drag" && i + 3 < argc) { drag_set = true; drag_btn = argv[++i][0]; drag_dx = std::atof(argv[++i]); drag_dy = std::atof(argv[++i]); }
     }
 
     Program prog;
@@ -973,10 +986,32 @@ int main(int argc, char** argv) {
     };
 
     if (!shot.empty()) {  // headless verification: render a couple frames (mesh + GUI) -> PPM
+        if (cam_set) { g_yaw = float(cam_yaw); g_pitch = float(cam_pitch); g_dist = float(cam_dist); }
         const Face* sf = nearest_face(model, {0.5, 0.0, 0.2});  // pre-pick a side face to show the highlight
         if (sf) { g_sel_mode = SEL_PICK; g_sel = face_centroid(model, sf); rebuild_highlight(); }
         frame();  // warm-up (ImGui font atlas + first-frame auto-sizing)
         frame();
+        if (drag_set) {
+            // Drive the REAL input handlers with a synthetic drag from the viewport
+            // centre, then re-render. This is the exact path a human's mouse takes
+            // (on_mouse press -> on_cursor moves -> release), so the resulting camera
+            // is a true readout of the input->camera mapping under test.
+            const double x0 = W * 0.5, y0 = H * 0.5;
+            const float yaw0 = g_yaw, pitch0 = g_pitch;
+            if (drag_btn == 'R' || drag_btn == 'r') {
+                g_panning = true; g_lx = x0; g_ly = y0;
+                on_cursor(win, x0 + drag_dx, y0 + drag_dy);
+                g_panning = false;
+            } else {
+                g_drag = true; g_moved = false; g_press_x = x0; g_press_y = y0; g_lx = x0; g_ly = y0;
+                on_cursor(win, x0 + drag_dx * 0.5, y0 + drag_dy * 0.5);  // trip the move threshold
+                on_cursor(win, x0 + drag_dx, y0 + drag_dy);              // apply the full delta
+                g_drag = false;
+            }
+            std::printf("drag %c dx=%.0f dy=%.0f : yaw %.4f -> %.4f (d=%+.4f)  pitch %.4f -> %.4f (d=%+.4f)\n",
+                        drag_btn, drag_dx, drag_dy, yaw0, g_yaw, g_yaw - yaw0, pitch0, g_pitch, g_pitch - pitch0);
+            frame();  // render the post-drag view
+        }
         if (watch_secs > 0.0) {  // headless live-sync: poll the shared op-log and reload external edits
             g_live_sync = true;
             g_last_mtime = file_mtime(g_oplog_path);
