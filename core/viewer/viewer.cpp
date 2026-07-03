@@ -578,6 +578,14 @@ int main(int argc, char** argv) {
     double cam_yaw = 0, cam_pitch = 0, cam_dist = 0;
     char drag_btn = 'L';
     double drag_dx = 0, drag_dy = 0;
+    // Headless-animation hooks: a scripted assembly clip feeds a DIFFERENT (growing)
+    // op-log per frame, so the model's bbox centre and base move between frames.
+    // `--target` pins the orbit centre and `--floorz` pins the studio floor to fixed
+    // world points, so neither the framing nor the ground drifts across the clip;
+    // `--nohighlight` drops the selection overlay for clean beauty frames.
+    bool tgt_set = false, floorz_set = false, nohl = false;
+    double tgt_x = 0, tgt_y = 0, tgt_z = 0;
+    float floorz_val = 0.0f;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--screenshot" && i + 1 < argc) shot = argv[++i];
@@ -588,6 +596,9 @@ int main(int argc, char** argv) {
         else if (a == "--drag" && i + 3 < argc) { drag_set = true; drag_btn = argv[++i][0]; drag_dx = std::atof(argv[++i]); drag_dy = std::atof(argv[++i]); }
         else if (a == "--winsize" && i + 2 < argc) { win_w = std::atoi(argv[++i]); win_h = std::atoi(argv[++i]); }
         else if (a == "--panscroll" && i + 1 < argc) { panscroll = float(std::atof(argv[++i])); }
+        else if (a == "--target" && i + 3 < argc) { tgt_set = true; tgt_x = std::atof(argv[++i]); tgt_y = std::atof(argv[++i]); tgt_z = std::atof(argv[++i]); }
+        else if (a == "--floorz" && i + 1 < argc) { floorz_set = true; floorz_val = float(std::atof(argv[++i])); }
+        else if (a == "--nohighlight") nohl = true;
     }
 
     Program prog;
@@ -723,7 +734,8 @@ int main(int argc, char** argv) {
     auto build_ground = [&]() {
         float minz = 1e9f;
         for (const auto& v : model.verts()) minz = std::min(minz, (float)v->co[2]);
-        ground_z = (model.num_verts() ? minz : 0.0f) - 0.002f * g.radius;
+        ground_z = floorz_set ? floorz_val
+                              : (model.num_verts() ? minz : 0.0f) - 0.002f * g.radius;
         ground_S = std::max(g.radius * 9.0f, 5.0f);
         const float cx = g.center[0], cy = g.center[1], z = ground_z, S = ground_S;
         const float q[18] = {cx-S, cy-S, z,  cx+S, cy-S, z,  cx+S, cy+S, z,
@@ -1190,7 +1202,11 @@ int main(int argc, char** argv) {
 
     if (!shot.empty()) {  // headless verification: render a couple frames (mesh + GUI) -> PPM
         if (cam_set) { g_yaw = float(cam_yaw); g_pitch = float(cam_pitch); g_dist = float(cam_dist); }
-        const Face* sf = nearest_face(model, {0.5, 0.0, 0.2});  // pre-pick a side face to show the highlight
+        // pin the orbit centre to a fixed world point (see --target above): each
+        // partial op-log has its own bbox centre, so compensate via the pan offset
+        // that the camera already honours, keeping the view rock-steady frame to frame.
+        if (tgt_set) g_pan = {float(tgt_x) - g.center[0], float(tgt_y) - g.center[1], float(tgt_z) - g.center[2]};
+        const Face* sf = nohl ? nullptr : nearest_face(model, {0.5, 0.0, 0.2});  // pre-pick a side face to show the highlight
         if (sf) { g_sel_mode = SEL_PICK; g_sel = face_centroid(model, sf); rebuild_highlight(); }
         frame();  // warm-up (ImGui font atlas + first-frame auto-sizing)
         frame();
