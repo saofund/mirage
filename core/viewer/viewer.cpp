@@ -274,6 +274,27 @@ void main(){
 }
 )";
 
+// Studio backdrop: a soft radial gradient (a lit cyclorama) filling the viewport
+// behind everything, so the frame reads as a studio rather than a flat grey fill.
+// Drawn as a fullscreen triangle (gl_VertexID, no vertex buffer), depth write off.
+static const char* GRAD_VERT = R"(#version 330 core
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }
+)";
+static const char* GRAD_FRAG = R"(#version 330 core
+out vec4 frag;
+uniform vec2 uRes;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 d = uv - vec2(0.5, 0.62);          // light pool sits a little above centre
+  d.x *= uRes.x / uRes.y;                  // aspect-correct so it stays circular
+  float r = length(d);
+  float t = smoothstep(0.05, 0.98, r);
+  vec3 core = vec3(0.170, 0.188, 0.223);   // lit centre
+  vec3 edge = vec3(0.064, 0.072, 0.088);   // shaded rim
+  frag = vec4(mix(core, edge, t), 1.0);
+}
+)";
+
 // --- glTF (.glb) import: parse baked geometry into one replayable `mesh` op ----
 // The native parity for the AI's import_gltf MCP tool: a human at the GUI can load
 // a .glb directly. We weld the triangle soup back into shared-vertex topology and
@@ -479,6 +500,70 @@ static void write_ppm(const std::string& path, int W, int H) {
     for (int y = H - 1; y >= 0; --y) f.write(reinterpret_cast<char*>(&px[size_t(y) * W * 3]), W * 3);
 }
 
+// ---- Mirage UI theme -------------------------------------------------------
+// A deliberate dark palette (graphite + one teal accent, coral for destructive)
+// so the panel reads as a product, not a debug overlay. One accent, used for
+// active state / selection / the primary action; everything else stays neutral.
+namespace ui {
+static const ImVec4 bg        = ImVec4(0.086f, 0.094f, 0.110f, 1.00f);  // window
+static const ImVec4 console   = ImVec4(0.063f, 0.071f, 0.086f, 1.00f);  // op-log child
+static const ImVec4 frame     = ImVec4(0.149f, 0.169f, 0.200f, 1.00f);  // button / input
+static const ImVec4 frame_h   = ImVec4(0.192f, 0.216f, 0.259f, 1.00f);
+static const ImVec4 frame_a   = ImVec4(0.231f, 0.267f, 0.325f, 1.00f);
+static const ImVec4 accent    = ImVec4(0.243f, 0.604f, 0.651f, 1.00f);  // teal
+static const ImVec4 accent_br = ImVec4(0.322f, 0.745f, 0.800f, 1.00f);
+static const ImVec4 header    = ImVec4(0.498f, 0.769f, 0.808f, 1.00f);  // section titles
+static const ImVec4 danger    = ImVec4(0.694f, 0.290f, 0.251f, 1.00f);  // coral
+static const ImVec4 danger_h  = ImVec4(0.784f, 0.353f, 0.310f, 1.00f);
+static const ImVec4 text      = ImVec4(0.863f, 0.871f, 0.886f, 1.00f);
+static const ImVec4 text_dim  = ImVec4(0.459f, 0.490f, 0.533f, 1.00f);
+static const ImVec4 border    = ImVec4(0.020f, 0.030f, 0.040f, 0.85f);
+static const ImVec4 ok        = ImVec4(0.400f, 0.749f, 0.447f, 1.00f);
+static const ImVec4 warn      = ImVec4(0.918f, 0.678f, 0.278f, 1.00f);
+}  // namespace ui
+
+static void apply_mirage_style() {
+    ImGuiStyle& s = ImGui::GetStyle();
+    s.WindowRounding = 8.0f;  s.ChildRounding = 6.0f;  s.FrameRounding = 5.0f;
+    s.PopupRounding = 6.0f;   s.GrabRounding = 4.0f;   s.ScrollbarRounding = 6.0f;
+    s.WindowBorderSize = 1.0f;  s.FrameBorderSize = 0.0f;  s.ChildBorderSize = 1.0f;
+    s.WindowPadding = ImVec2(16, 14);  s.FramePadding = ImVec2(10, 7);
+    s.ItemSpacing = ImVec2(8, 8);      s.ItemInnerSpacing = ImVec2(8, 6);
+    s.IndentSpacing = 18;  s.ScrollbarSize = 12;  s.GrabMinSize = 10;
+    s.WindowMenuButtonPosition = ImGuiDir_None;
+
+    ImVec4* c = s.Colors;
+    c[ImGuiCol_Text]                 = ui::text;
+    c[ImGuiCol_TextDisabled]         = ui::text_dim;
+    c[ImGuiCol_WindowBg]             = ui::bg;
+    c[ImGuiCol_ChildBg]              = ui::console;
+    c[ImGuiCol_PopupBg]              = ui::bg;
+    c[ImGuiCol_Border]               = ui::border;
+    c[ImGuiCol_FrameBg]              = ui::frame;
+    c[ImGuiCol_FrameBgHovered]       = ui::frame_h;
+    c[ImGuiCol_FrameBgActive]        = ui::frame_a;
+    c[ImGuiCol_TitleBg]              = ui::bg;
+    c[ImGuiCol_TitleBgActive]        = ui::bg;
+    c[ImGuiCol_Button]               = ui::frame;
+    c[ImGuiCol_ButtonHovered]        = ui::frame_h;
+    c[ImGuiCol_ButtonActive]         = ui::frame_a;
+    c[ImGuiCol_Header]               = ui::frame_h;
+    c[ImGuiCol_HeaderHovered]        = ui::frame_a;
+    c[ImGuiCol_HeaderActive]         = ui::accent;
+    c[ImGuiCol_CheckMark]            = ui::accent_br;
+    c[ImGuiCol_SliderGrab]           = ui::accent;
+    c[ImGuiCol_SliderGrabActive]     = ui::accent_br;
+    c[ImGuiCol_Separator]            = ui::border;
+    c[ImGuiCol_SeparatorHovered]     = ui::accent;
+    c[ImGuiCol_ScrollbarBg]          = ImVec4(0, 0, 0, 0.16f);
+    c[ImGuiCol_ScrollbarGrab]        = ui::frame_h;
+    c[ImGuiCol_ScrollbarGrabHovered] = ui::accent;
+    c[ImGuiCol_ScrollbarGrabActive]  = ui::accent_br;
+    c[ImGuiCol_ResizeGrip]           = ui::frame_h;
+    c[ImGuiCol_ResizeGripHovered]    = ui::accent;
+    c[ImGuiCol_TextSelectedBg]       = ImVec4(ui::accent.x, ui::accent.y, ui::accent.z, 0.35f);
+}
+
 int main(int argc, char** argv) {
     std::string shot, load_path, glb_path;
     double watch_secs = 0.0;  // --watch N: headless live-sync proof (poll the file for N s)
@@ -488,6 +573,8 @@ int main(int argc, char** argv) {
     // dumps the resulting frame — the GUI's camera controls become testable and
     // observable without a visible window or a human at the mouse.
     bool cam_set = false, drag_set = false;
+    int win_w = 0, win_h = 0;  // --winsize override (0 = default), for responsive UI checks
+    float panscroll = 0.0f;    // --panscroll N: scroll the tool panel (screenshot lower sections)
     double cam_yaw = 0, cam_pitch = 0, cam_dist = 0;
     char drag_btn = 'L';
     double drag_dx = 0, drag_dy = 0;
@@ -499,6 +586,8 @@ int main(int argc, char** argv) {
         else if (a == "--watch" && i + 1 < argc) watch_secs = std::atof(argv[++i]);
         else if (a == "--cam" && i + 3 < argc) { cam_set = true; cam_yaw = std::atof(argv[++i]); cam_pitch = std::atof(argv[++i]); cam_dist = std::atof(argv[++i]); }
         else if (a == "--drag" && i + 3 < argc) { drag_set = true; drag_btn = argv[++i][0]; drag_dx = std::atof(argv[++i]); drag_dy = std::atof(argv[++i]); }
+        else if (a == "--winsize" && i + 2 < argc) { win_w = std::atoi(argv[++i]); win_h = std::atoi(argv[++i]); }
+        else if (a == "--panscroll" && i + 1 < argc) { panscroll = float(std::atof(argv[++i])); }
     }
 
     Program prog;
@@ -529,6 +618,7 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     if (!shot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     int W = 1100, H = 760;
+    if (win_w > 0 && win_h > 0) { W = win_w; H = win_h; }
     GLFWwindow* win = glfwCreateWindow(W, H, "Mirage — native modeling viewport", nullptr, nullptr);
     if (!win) { std::fprintf(stderr, "window/context creation failed\n"); glfwTerminate(); return 1; }
     glfwMakeContextCurrent(win);
@@ -563,6 +653,10 @@ int main(int argc, char** argv) {
     const GLint locGShadow = glGetUniformLocation(grid_gl, "uShadow");
     const GLint locGCenter = glGetUniformLocation(grid_gl, "uCenter");
     const GLint locGFade = glGetUniformLocation(grid_gl, "uFade");
+
+    GLuint grad_gl = make_program(GRAD_VERT, GRAD_FRAG);     // studio backdrop gradient
+    const GLint locGradRes = glGetUniformLocation(grad_gl, "uRes");
+    GLuint bgvao; glGenVertexArrays(1, &bgvao);              // attribute-less (fullscreen triangle)
 
     GLuint vao, vbo;
     glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo);
@@ -748,8 +842,16 @@ int main(int argc, char** argv) {
         // --- main pass ---
         int fw, fh; glfwGetFramebufferSize(win, &fw, &fh);
         glViewport(0, 0, fw, fh);
-        glClearColor(0.13f, 0.14f, 0.16f, 1.0f);  // neutral studio grey
+        glClearColor(0.13f, 0.14f, 0.16f, 1.0f);  // fallback fill (overdrawn by the backdrop)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // studio backdrop: fill the frame with the radial gradient before anything
+        // else (depth write off so it never occludes the scene).
+        glDepthMask(GL_FALSE); glDisable(GL_DEPTH_TEST);
+        glUseProgram(grad_gl);
+        glUniform2f(locGradRes, float(fw), float(fh));
+        glBindVertexArray(bgvao);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glEnable(GL_DEPTH_TEST); glDepthMask(GL_TRUE);
         V3 c = {g.center[0] + g_pan[0], g.center[1] + g_pan[1], g.center[2] + g_pan[2]};
         V3 eye = orbit_eye(c);
         Mat4 mvp = mul(perspective(0.9f, float(fw) / float(fh ? fh : 1), 0.05f, 100.0f),
@@ -797,66 +899,126 @@ int main(int argc, char** argv) {
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(win, shot.empty());  // install input callbacks only when interactive
     ImGui_ImplOpenGL3_Init("#version 330");
     g_imgui = shot.empty();
 
+    // Typography: a real native font (Segoe UI) with a Semibold face for titles
+    // and a monospace face (Consolas) for the op-log. The default ImGui bitmap
+    // font reads as a debug overlay; a proper font is the single biggest step
+    // toward product feel. Falls back to the built-in font if the files are absent.
+    ImGuiIO& io = ImGui::GetIO();
+    if (!shot.empty()) io.IniFilename = nullptr;  // headless: no persisted layout -> deterministic frames
+    ImFont* font_body = nullptr, *font_h = nullptr, *font_mono = nullptr, *font_title = nullptr;
+    {
+        ImFontConfig cfg; cfg.OversampleH = 3; cfg.OversampleV = 2;
+        // Glyph atlas = Latin-1 default plus the few punctuation/shape glyphs the UI
+        // uses beyond it (em-dash, filled/empty circles) — else they render as tofu.
+        static ImVector<ImWchar> ranges;
+        ImFontGlyphRangesBuilder gb;
+        gb.AddRanges(io.Fonts->GetGlyphRangesDefault());
+        gb.AddText("\xe2\x80\x94\xe2\x97\x8f\xe2\x97\x8b");  // U+2014 —, U+25CF ●, U+25CB ○
+        gb.BuildRanges(&ranges);
+        const ImWchar* gr = ranges.Data;
+        const char* body_ttf = "C:\\Windows\\Fonts\\segoeui.ttf";
+        const char* semi_ttf = "C:\\Windows\\Fonts\\seguisb.ttf";
+        const char* mono_ttf = "C:\\Windows\\Fonts\\consola.ttf";
+        if (std::filesystem::exists(body_ttf)) font_body  = io.Fonts->AddFontFromFileTTF(body_ttf, 17.5f, &cfg, gr);
+        if (std::filesystem::exists(semi_ttf)) font_title = io.Fonts->AddFontFromFileTTF(semi_ttf, 22.0f, &cfg, gr);
+        if (std::filesystem::exists(semi_ttf)) font_h     = io.Fonts->AddFontFromFileTTF(semi_ttf, 15.5f, &cfg, gr);
+        if (std::filesystem::exists(mono_ttf)) font_mono  = io.Fonts->AddFontFromFileTTF(mono_ttf, 15.0f, &cfg, gr);
+        if (!font_body)  font_body  = io.Fonts->AddFontDefault();
+        if (!font_title) font_title = font_body;
+        if (!font_h)     font_h     = font_body;
+        if (!font_mono)  font_mono  = font_body;
+        io.FontDefault = font_body;
+    }
+    apply_mirage_style();
+
     auto panel = [&]() -> bool {  // the tool panel; returns true if the op-log changed
         bool dirty = false;
-        ImGui::SetNextWindowPos(ImVec2(14, 14), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Mirage  -  modeling", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-        ImGui::TextDisabled("primitives (start fresh)");
-        if (ImGui::Button("New Cube"))     { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("New Cylinder")) { prog.clear(); prog.cylinder(24, 0.5, 1.0); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("New Plane"))    { prog.clear(); prog.plane(1.0); g_sel_mode = SEL_NONE; dirty = true; }
-        if (ImGui::Button("New Sphere"))   { prog.clear(); prog.uv_sphere(24, 16, 0.6); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("New Cone"))     { prog.clear(); prog.cone(24, 0.5, 1.0); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("New Torus"))    { prog.clear(); prog.torus(24, 12, 0.6, 0.22); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("New Grid"))     { prog.clear(); prog.grid(1.0, 1.0, 10, 10); g_sel_mode = SEL_NONE; dirty = true; }
+        // -- layout helpers: an equal-width button grid + styled section headers --
+        const ImGuiStyle& st = ImGui::GetStyle();
+        int col = 0, percol = 1; float bwidth = 0.0f;
+        auto newrow = [&](int n) {  // begin a row of n equal columns (flush to width)
+            col = 0; percol = n;
+            bwidth = (ImGui::GetContentRegionAvail().x - st.ItemSpacing.x * (n - 1)) / n;
+        };
+        auto cell = [&]() { if (col % percol) ImGui::SameLine(); ++col; };
+        auto B = [&](const char* label) { cell(); return ImGui::Button(label, ImVec2(bwidth, 0)); };
+        auto DANGER = [&](const char* label, float w) {  // coral destructive button
+            ImGui::PushStyleColor(ImGuiCol_Button, ui::danger);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ui::danger_h);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ui::danger_h);
+            bool c = ImGui::Button(label, ImVec2(w, 0));
+            ImGui::PopStyleColor(3);
+            return c;
+        };
+        auto section = [&](const char* label) {  // teal uppercase section title
+            ImGui::Dummy(ImVec2(0, 3));
+            ImGui::PushFont(font_h);
+            ImGui::PushStyleColor(ImGuiCol_Text, ui::header);
+            ImGui::TextUnformatted(label);
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
+            ImGui::Spacing();
+        };
+
+        ImGui::SetNextWindowPos(ImVec2(16, 16), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(376, float(H) - 32), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Mirage", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
+        if (panscroll > 0.0f) ImGui::SetScrollY(panscroll);  // headless: reveal lower sections for a shot
+
+        // -- title ---------------------------------------------------------------
+        ImGui::PushFont(font_title);
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::accent_br);
+        ImGui::TextUnformatted("MIRAGE");
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
+        ImGui::TextUnformatted("native modeling  \xc2\xb7  the op-log is the model");
+        ImGui::PopStyleColor();
         ImGui::Spacing();
-        ImGui::TextDisabled("operators (on the highlighted target)");
-        // act on the current selector; a pick then stacks on what the op produced
-        if (ImGui::Button("Inset"))   { prog.inset(current_on(), 0.3);   if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("Extrude")) { prog.extrude(current_on(), 0.5); if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("Bevel"))   { prog.bevel(current_on(), 0.2, 0.15); if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("Loop Cut")) { prog.loop_cut(current_on(), "z"); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("Subdivide")) { prog.subdivide(1); dirty = true; }
-        // edge_bevel rounds every sharp edge (an edge selector, not a face one)
-        if (ImGui::Button("Edge Bevel (sharp)")) { prog.edge_bevel(json{{"by", "sharp"}, {"angle", 30}}, 0.12); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("Delete")) { prog.del(current_on()); g_sel_mode = SEL_NONE; dirty = true; }  // open the mesh
-        ImGui::SameLine();
-        if (ImGui::Button("Fill")) { prog.fill(); g_sel_mode = SEL_NONE; dirty = true; }                // cap holes
-        // whole-mesh operators (no selection needed)
-        if (ImGui::Button("Solidify")) { prog.solidify(0.1); g_sel_mode = SEL_NONE; dirty = true; }     // shell open surfaces
-        ImGui::SameLine();
-        if (ImGui::Button("Mirror X")) { prog.mirror("x"); g_sel_mode = SEL_NONE; dirty = true; }       // reflect + weld seam
-        ImGui::SameLine();
-        if (ImGui::Button("Array x3")) { prog.array(3, {1.2, 0.0, 0.0}); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("Bisect Z")) { prog.bisect({0, 0, 0}, {0, 0, 1}, true); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("Spin Z")) { prog.spin("z", 32, 360.0); g_sel_mode = SEL_NONE; dirty = true; }  // lathe an open profile
-        ImGui::SameLine();
-        if (ImGui::Button("Screw Z")) { prog.screw("z", 24, 3, 0.4, 360.0); g_sel_mode = SEL_NONE; dirty = true; }  // helical sweep (thread/spring)
-        ImGui::SameLine();
-        if (ImGui::Button("Vase")) {   // a first-class profile (open curve) spun into a single-walled vase
+        ImGui::Separator();
+
+        // -- primitives ----------------------------------------------------------
+        section("PRIMITIVES");
+        newrow(3);
+        if (B("Cube"))     { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Cylinder")) { prog.clear(); prog.cylinder(24, 0.5, 1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Sphere"))   { prog.clear(); prog.uv_sphere(24, 16, 0.6); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Cone"))     { prog.clear(); prog.cone(24, 0.5, 1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Torus"))    { prog.clear(); prog.torus(24, 12, 0.6, 0.22); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Plane"))    { prog.clear(); prog.plane(1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Grid"))     { prog.clear(); prog.grid(1.0, 1.0, 10, 10); g_sel_mode = SEL_NONE; dirty = true; }
+
+        // -- face tools (act on the highlighted target) --------------------------
+        section("FACE TOOLS");
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
+        ImGui::TextUnformatted("act on the orange selection; a pick then stacks");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        newrow(3);
+        if (B("Inset"))     { prog.inset(current_on(), 0.3);   if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
+        if (B("Extrude"))   { prog.extrude(current_on(), 0.5); if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
+        if (B("Bevel"))     { prog.bevel(current_on(), 0.2, 0.15); if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK; dirty = true; }
+        if (B("Loop Cut"))  { prog.loop_cut(current_on(), "z"); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Subdivide")) { prog.subdivide(1); dirty = true; }
+        if (B("Fill"))      { prog.fill(); g_sel_mode = SEL_NONE; dirty = true; }  // cap holes
+        ImGui::Spacing();
+        if (DANGER("Delete selected faces", -1)) { prog.del(current_on()); g_sel_mode = SEL_NONE; dirty = true; }
+
+        // -- form: revolve / sweep / boolean -------------------------------------
+        section("FORM");
+        newrow(2);
+        if (B("Spin \xc2\xb7 lathe"))   { prog.spin("z", 32, 360.0); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Screw \xc2\xb7 helix"))  { prog.screw("z", 24, 3, 0.4, 360.0); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Vase \xc2\xb7 profile")) {  // an open profile curve spun into a single-walled vase
             prog.profile({{0.05, -0.5}, {0.42, -0.42}, {0.30, -0.05}, {0.46, 0.30}, {0.34, 0.5}}, "xz", false);
             prog.spin("z", 48, 360.0);
             g_sel_mode = SEL_NONE; dirty = true;
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Drill Z")) {   // real boolean: subtract a cylinder bore from the current mesh
+        if (B("Drill \xc2\xb7 boolean")) {  // real BSP boolean: subtract a cylinder bore
             mirage::Mesh bit = mirage::make_cylinder(24, 0.25, 3.0);
             std::vector<std::array<double, 3>> bv;
             for (const auto& v : bit.verts()) bv.push_back(v->co);
@@ -869,38 +1031,51 @@ int main(int argc, char** argv) {
             prog.boolean_op("difference", bv, bf);
             g_sel_mode = SEL_NONE; dirty = true;
         }
-        ImGui::Spacing();
-        if (ImGui::Button("Undo"))  { prog.undo(); dirty = true; }
-        ImGui::SameLine();
+
+        // -- whole-mesh operators ------------------------------------------------
+        section("MESH");
+        newrow(3);
+        if (B("Solidify"))   { prog.solidify(0.1); g_sel_mode = SEL_NONE; dirty = true; }      // shell open surfaces
+        if (B("Mirror X"))   { prog.mirror("x"); g_sel_mode = SEL_NONE; dirty = true; }        // reflect + weld seam
+        if (B("Array x3"))   { prog.array(3, {1.2, 0.0, 0.0}); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Bisect Z"))   { prog.bisect({0, 0, 0}, {0, 0, 1}, true); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Edge Bevel")) { prog.edge_bevel(json{{"by", "sharp"}, {"angle", 30}}, 0.12); g_sel_mode = SEL_NONE; dirty = true; }
+
+        // -- history -------------------------------------------------------------
+        section("HISTORY");
+        newrow(4);
+        if (B("Undo")) { prog.undo(); dirty = true; }
         const bool redoable = prog.can_redo();
         if (!redoable) ImGui::BeginDisabled();
-        if (ImGui::Button("Redo")) { prog.redo(); dirty = true; }
+        if (B("Redo")) { prog.redo(); dirty = true; }
         if (!redoable) ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("Reset")) { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
-        ImGui::SameLine();
-        if (ImGui::Button("Frame")) { g_yaw = 2.3f; g_pitch = 0.35f; g_dist = g.radius * 3.0f; g_pan = {0, 0, 0}; }  // reset the view
+        cell();
+        if (DANGER("Reset", bwidth)) { prog.clear(); prog.cube(1.0); g_sel_mode = SEL_NONE; dirty = true; }
+        if (B("Frame")) { g_yaw = 2.3f; g_pitch = 0.35f; g_dist = g.radius * 3.0f; g_pan = {0, 0, 0}; }  // reset the view
         ImGui::Spacing();
-        // The op-log is the shared SoT: Save writes the JSON an AI (MCP) can Load,
-        // and vice-versa — one model, a human and an AI both editing it. Live sync
-        // makes that continuous: the AI's writes auto-reload, the human's auto-save.
-        ImGui::TextDisabled("shared op-log (same JSON the AI reads/writes)");
-        ImGui::SetNextItemWidth(220);
+        // -- shared op-log file (the human/AI bridge) ----------------------------
+        // Save writes the JSON an AI (MCP) can Load, and vice-versa — one model, a
+        // human and an AI both editing it. Live sync makes it continuous.
+        section("OP-LOG FILE");
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
+        ImGui::TextUnformatted("the same JSON an AI reads and writes");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::SetNextItemWidth(-1);
         ImGui::InputText("##path", g_oplog_path, sizeof(g_oplog_path));
-        if (ImGui::Button("Save")) save_oplog();
-        ImGui::SameLine();
-        if (ImGui::Button("Load")) reload_oplog();  // rebuilds itself; no dirty needed
-        ImGui::SameLine();
-        if (ImGui::Checkbox("live sync", &g_live_sync)) {
+        newrow(2);
+        if (B("Save")) save_oplog();
+        if (B("Load")) reload_oplog();  // rebuilds itself; no dirty needed
+        if (ImGui::Checkbox("live sync (co-edit with the AI)", &g_live_sync)) {
             g_last_mtime = file_mtime(g_oplog_path);  // baseline: watch from now (don't clobber on enable)
             std::snprintf(g_io_status, sizeof(g_io_status), g_live_sync ? "live sync ON — co-editing %s" : "live sync OFF", g_oplog_path);
         }
+        ImGui::Spacing();
         // glTF import: bring a baked .glb in as a replayable `mesh` op (human parity
         // with the AI's import_gltf). Replaces the current op-log with the import.
-        ImGui::SetNextItemWidth(220);
+        ImGui::SetNextItemWidth(-1);
         ImGui::InputText("##glb", g_glb_path, sizeof(g_glb_path));
-        ImGui::SameLine();
-        if (ImGui::Button("Import .glb")) {
+        if (ImGui::Button("Import .glb", ImVec2(-1, 0))) {
             try {
                 prog = program_from_glb(g_glb_path);
                 g_sel_mode = SEL_NONE; dirty = true;
@@ -909,37 +1084,51 @@ int main(int argc, char** argv) {
                 std::snprintf(g_io_status, sizeof(g_io_status), "import failed: %.180s", e.what());
             }
         }
-        if (g_io_status[0]) ImGui::TextDisabled("%s", g_io_status);
-        ImGui::Spacing();
-        ImGui::TextDisabled("selection (the next op's target, highlighted orange)");
+        if (g_io_status[0]) {
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ui::header);
+            ImGui::TextWrapped("%s", g_io_status);
+            ImGui::PopStyleColor();
+        }
+
+        // -- selection -----------------------------------------------------------
+        section("SELECTION");
         const char* mode_txt = g_sel_mode == SEL_PICK  ? "picked face"
                              : g_sel_mode == SEL_STACK ? "last result (stacking)"
-                                                       : "top face (default) — click any face to retarget";
-        ImGui::Text("target: %s", mode_txt);
+                                                       : "top face (default) \xe2\x80\x94 click any face to retarget";
+        ImGui::TextWrapped("target: %s", mode_txt);
         if (g_sel_mode != SEL_NONE) {
-            ImGui::SameLine();
-            if (ImGui::SmallButton("reset to top")) { g_sel_mode = SEL_NONE; rebuild_highlight(); }
+            if (ImGui::SmallButton("reset to top face")) { g_sel_mode = SEL_NONE; rebuild_highlight(); }
         }
-        ImGui::Spacing();
-        ImGui::TextDisabled("material — color / metallic / roughness");
-        ImGui::SetNextItemWidth(220); ImGui::ColorEdit3("albedo", g_albedo);
-        ImGui::SetNextItemWidth(220); ImGui::SliderFloat("metallic", &g_metallic, 0.0f, 1.0f);
-        ImGui::SetNextItemWidth(220); ImGui::SliderFloat("roughness", &g_rough, 0.04f, 1.0f);
+
+        // -- material ------------------------------------------------------------
+        section("MATERIAL");
+        ImGui::SetNextItemWidth(-74); ImGui::ColorEdit3("albedo", g_albedo);
+        ImGui::SetNextItemWidth(-74); ImGui::SliderFloat("metallic", &g_metallic, 0.0f, 1.0f, "%.2f");
+        ImGui::SetNextItemWidth(-74); ImGui::SliderFloat("roughness", &g_rough, 0.04f, 1.0f, "%.2f");
         ImGui::Checkbox("flat shading (faceted)", &g_flat);
-        // Bake these as a PER-FACE `material` op on the current selection. It writes
-        // to the op-log SoT, so the same assignment shows in the viewport (build_gpu
-        // bakes it), the path tracer, and the glTF export. Unassigned faces keep the
-        // sliders above as their live fallback. Assign materials AFTER the geometry.
-        if (ImGui::Button("Assign material to selection")) {
+        ImGui::Spacing();
+        // Bake these as a PER-FACE `material` op on the current selection — it writes
+        // to the op-log SoT, so the same assignment shows in the viewport, the path
+        // tracer, and the glTF export. Unassigned faces keep the sliders as fallback.
+        if (ImGui::Button("Assign to selection", ImVec2(-1, 0))) {
             prog.material(current_on(), {g_albedo[0], g_albedo[1], g_albedo[2]}, g_metallic, g_rough);
             if (g_sel_mode == SEL_PICK) g_sel_mode = SEL_STACK;  // keep the highlight on the just-painted face
             dirty = true;
         }
-        ImGui::SameLine();
-        ImGui::TextDisabled("(targets the orange selection)");
-        // Ground-truth render: path-trace the current model from this camera. The
-        // realtime view above is the preview; this is the Cycles-class render.
-        if (ImGui::Button("Render (path-traced -> mirage_render.ppm)")) {
+
+        // -- render (the primary action) -----------------------------------------
+        section("RENDER");
+        ImGui::PushStyleColor(ImGuiCol_Button, ui::accent);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ui::accent_br);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ui::accent_br);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+        const bool do_render = ImGui::Button("Path-trace this view", ImVec2(-1, 34));
+        ImGui::PopStyleColor(4);
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
+        ImGui::TextUnformatted("ground truth \xe2\x80\x94 the Cycles-class render");
+        ImGui::PopStyleColor();
+        if (do_render) {  // path-trace the current model from this camera
             V3 c = g.center, e = orbit_eye(c);
             Camera cam;
             cam.eye = {e[0], e[1], e[2]};
@@ -953,21 +1142,35 @@ int main(int argc, char** argv) {
             write_ppm(img, "mirage_render.ppm");
             std::snprintf(g_io_status, sizeof(g_io_status), "rendered %dx%d @ %dspp -> mirage_render.ppm", rs.width, rs.height, rs.spp);
         }
-        ImGui::Separator();
-        ImGui::Text("verts %zu   edges %zu   faces %zu", model.num_verts(), model.num_edges(), model.num_faces());
-        ImGui::Text("euler %d   manifold %s", model.euler(), model.is_closed_manifold() ? "yes" : "no");
-        ImGui::Separator();
-        ImGui::TextDisabled("op-log (the model)");
+
+        // -- model stats + op-log console ----------------------------------------
+        section("MODEL");
+        ImGui::Text("verts %zu     edges %zu     faces %zu", model.num_verts(), model.num_edges(), model.num_faces());
+        ImGui::Text("euler %d", model.euler());
+        ImGui::SameLine();
+        const bool mani = model.is_closed_manifold();
+        ImGui::TextColored(mani ? ui::ok : ui::warn, mani ? "\xe2\x97\x8f closed manifold" : "\xe2\x97\x8b open surface");
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
+        ImGui::TextUnformatted("op-log (the model itself)");
+        ImGui::PopStyleColor();
+        ImGui::BeginChild("oplog", ImVec2(0, 172), true);
+        ImGui::PushFont(font_mono);
         int i = 0;
-        for (const auto& op : prog.ops()) ImGui::Text("%2d  %s", i++, Program::label(op).c_str());
+        for (const auto& op : prog.ops()) {
+            ImGui::TextColored(ui::accent_br, "%2d", i++);
+            ImGui::SameLine();
+            ImGui::TextUnformatted(Program::label(op).c_str());
+        }
         // Lint: silent traps that build but lose intent (same checks the AI gets).
         auto warns = prog.lint();
         if (!warns.empty()) {
-            ImGui::Separator();
-            ImGui::TextDisabled("lint (silent traps)");
+            ImGui::Spacing();
             for (const auto& w : warns)
-                ImGui::TextColored(ImVec4(1.0f, 0.78f, 0.25f, 1.0f), "! op %d  %s", w.op_index, w.code.c_str());
+                ImGui::TextColored(ui::warn, "! op %d  %s", w.op_index, w.code.c_str());
         }
+        ImGui::PopFont();
+        ImGui::EndChild();
         ImGui::End();
         return dirty;
     };
