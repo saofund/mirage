@@ -118,8 +118,13 @@ def cz_of(face_verts):
     return sum(v[2] for v in face_verts) / len(face_verts)
 
 
-def build():
-    m = Mesh()
+def part_steps():
+    """The airplane as an ORDERED list of build steps -- the sequence a modeller
+    (or the op-log) lays down: fuselage first, then the flying surfaces, then hang
+    the engines. Each step is (label, [(verts, faces, mat, mirror), ...]); a
+    two-entry step is a mirrored port/starboard pair added together. `build()`
+    merges every step; the animation reveals them one at a time."""
+    steps = []
 
     # -- fuselage: a lathe/surface-of-revolution, nose at +X, tail raised --------
     stations = [
@@ -149,34 +154,31 @@ def build():
             fmats.append(STRIPE)
         else:
             fmats.append(FUS)
-    m.add(fv, ff, fmats)
+    steps.append(("fuselage", [(fv, ff, fmats, False)]))
 
     # -- main wings: low-mounted, swept, tapered; mirror for the port side -------
     wing_root = {"y": 0.22, "xle": 0.72, "xte": -1.05, "z": -0.11, "t": 0.14}
     wing_tip  = {"y": 2.15, "xle": -0.12, "xte": -0.92, "z": 0.05, "t": 0.05}
     wv, wf = loft(wing_root, wing_tip)
-    m.add(wv, wf, WING)
-    m.add(wv, wf, WING, mirror=True)
+    steps.append(("wings", [(wv, wf, WING, False), (wv, wf, WING, True)]))
 
     # -- winglets: a swept fin turned up at each wingtip (modern-airliner tell) --
     wl_base = {"z": 0.03, "xle": -0.10, "xte": -0.90, "y": 2.13, "t": 0.045}
     wl_tip  = {"z": 0.34, "xle": -0.40, "xte": -0.86, "y": 2.13, "t": 0.03}
     lv, lf = vfin(wl_base, wl_tip)
-    m.add(lv, lf, WING)
-    m.add(lv, lf, WING, mirror=True)
+    steps.append(("winglets", [(lv, lf, WING, False), (lv, lf, WING, True)]))
 
     # -- horizontal stabilisers (tailplane) -------------------------------------
     stab_root = {"y": 0.16, "xle": -2.25, "xte": -2.80, "z": 0.16, "t": 0.06}
     stab_tip  = {"y": 0.95, "xle": -2.55, "xte": -2.88, "z": 0.22, "t": 0.03}
     sv, sf = loft(stab_root, stab_tip)
-    m.add(sv, sf, WING)
-    m.add(sv, sf, WING, mirror=True)
+    steps.append(("stabilisers", [(sv, sf, WING, False), (sv, sf, WING, True)]))
 
     # -- vertical fin (the red tail) --------------------------------------------
     fin_base = {"z": 0.28, "xle": -2.15, "xte": -2.82, "y": 0.0, "t": 0.09}
     fin_top  = {"z": 1.05, "xle": -2.55, "xte": -2.86, "y": 0.0, "t": 0.04}
     vv, vf = vfin(fin_base, fin_top)
-    m.add(vv, vf, FIN)
+    steps.append(("fin", [(vv, vf, FIN, False)]))
 
     # -- podded engines under the wings: capped cylinders on pylons, mirrored ----
     ex, ey, ez = 0.30, 1.12, -0.30
@@ -187,17 +189,29 @@ def build():
     # dark intake ring on the front-most faces (max x), else nacelle grey
     emats = [INTAKE if (sum(ev[i][0] for i in face) / len(face)) > ex + 0.42 else ENGINE
              for face in ef]
-    m.add(ev, ef, emats)
-    m.add(ev, ef, emats, mirror=True)
+    steps.append(("engines", [(ev, ef, emats, False), (ev, ef, emats, True)]))
 
     # pylon: a short plate hanging the nacelle off the wing underside
     pylon_lo = {"z": ez + 0.15, "xle": ex + 0.10, "xte": ex - 0.30, "y": ey, "t": 0.05}
     pylon_hi = {"z": -0.11, "xle": ex + 0.05, "xte": ex - 0.28, "y": ey, "t": 0.05}
     pv, pf = vfin(pylon_lo, pylon_hi)
-    m.add(pv, pf, ENGINE)
-    m.add(pv, pf, ENGINE, mirror=True)
+    steps.append(("pylons", [(pv, pf, ENGINE, False), (pv, pf, ENGINE, True)]))
 
+    return steps
+
+
+def assemble(steps, upto=None):
+    """Merge build steps (optionally only the first `upto`) into one Mesh, in
+    order -- so `upto=3` is the model exactly as it stood after three operators."""
+    m = Mesh()
+    for _label, subs in steps[:upto]:
+        for (verts, faces, mat, mirror) in subs:
+            m.add(verts, faces, mat, mirror=mirror)
     return m
+
+
+def build():
+    return assemble(part_steps())
 
 
 def main():

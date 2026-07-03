@@ -16,6 +16,14 @@ a per-face livery, then path-traced. Reproduce with `uv run python examples/airp
 
 ![Airliner modeled in Mirage](docs/gallery/airplane.png)
 
+That op-log isn't a static export. It **assembles part by part — fuselage, wings,
+winglets, tail, engines — then turntables**, every frame path-traced by the in-repo
+renderer. The op-log thesis made visible: a model is a *sequence of operations* you
+can replay. Regenerate the clips (`.mp4` for video, `.gif` for inline) with
+`uv run python docs/gallery/render_airplane_anim.py`.
+
+![Airliner turntable, path-traced every frame](docs/gallery/airplane_turntable.gif)
+
 The core operators, one panel each (regenerate with `uv run python docs/gallery/render_gallery.py`):
 
 ![Mirage modeling gallery](docs/gallery/showcase.png)
