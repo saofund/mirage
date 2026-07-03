@@ -6,9 +6,17 @@
 
 ## Gallery
 
-Every panel below is one op-log replayed through the native mesh kernel and shot
-with the in-repo path tracer — no external DCC, no fakes. Regenerate them all
-with `uv run python docs/gallery/render_gallery.py`.
+Every image below is one op-log replayed through the native mesh kernel and shot
+with the in-repo path tracer — no external DCC, no fakes.
+
+**Beyond primitives** — a passenger jet modeled entirely from the engine's own
+operators: a surface-of-revolution fuselage (the lathe), lofted swept wings with
+winglets, capped-cylinder engines on pylons, all mirrored for symmetry and given
+a per-face livery, then path-traced. Reproduce with `uv run python examples/airplane.py`.
+
+![Airliner modeled in Mirage](docs/gallery/airplane.png)
+
+The core operators, one panel each (regenerate with `uv run python docs/gallery/render_gallery.py`):
 
 ![Mirage modeling gallery](docs/gallery/showcase.png)
 
