@@ -19,9 +19,11 @@ a per-face livery, then path-traced. Reproduce with `uv run python examples/airp
 That op-log isn't a static export — it's a *sequence of operations you can replay*.
 Here is that jet **being modelled in Mirage's own viewport**, assembling operator by
 operator — fuselage (a lathe), wings and tailplane (lofted, then mirrored), the fin,
-and the podded engines. **Every frame is a headless screenshot of the real native
-GUI** (`mirage_viewer`) fed a growing op-log, so this is the tool building the model,
-not a mock-up. Regenerate (`.mp4` for video, `.gif` for inline) with
+and the podded engines — then a gentle turn to show it off. **Every frame is a headless
+screenshot of the real native GUI** (`mirage_viewer`) fed a growing op-log, so this is
+the tool building the model, not a mock-up. The recorder is a reusable module —
+`mirage.capture.record_build(stages, …)` films any op-log the same way, so every polished
+case can be captured — regenerate this one (`.mp4` for video, `.gif` for inline) with
 `uv run python docs/gallery/render_viewer_build.py`.
 
 ![Modelling the airliner in Mirage's viewport, operator by operator](docs/gallery/airplane_assembly.gif)
