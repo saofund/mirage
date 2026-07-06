@@ -1,10 +1,18 @@
 // mirage_render — the offline path-traced renderer (CLI).
 //
-//   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N]
+//   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N] [--threads N]
+//                 [--cam-eye X Y Z] [--cam-target X Y Z] [--cam-up X Y Z] [--cam-fov RAD]
+//
+// --threads caps the worker count (default 0 = every logical core, which pins the
+// CPU for the duration of a high-spp render); set it below your core count to
+// leave the machine responsive.
 //
 // Builds an op-log (from FILE, or a default beveled boss) and path-traces it to a
 // PPM with global illumination, soft sky+sun lighting and a ground plane. This is
-// the ground-truth render of the same mirage::Program a human/AI authored.
+// the ground-truth render of the same mirage::Program a human/AI authored. The
+// camera defaults to a 3/4 exterior view; the --cam-* flags place it anywhere
+// (e.g. inside a room), which is what interior scenes need.
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -24,9 +32,14 @@ static std::string read_file(const std::string& path) {
 int main(int argc, char** argv) {
     std::string oplog, out = "render.ppm";
     RenderSettings s;
+    Camera cam;  // default 3/4 exterior view; any field overridable via --cam-* below
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&](double dflt) { return i + 1 < argc ? std::atof(argv[++i]) : dflt; };
+        auto next3 = [&](std::array<double, 3> dflt) {  // read up to 3 floats into a vector
+            for (int k = 0; k < 3 && i + 1 < argc; ++k) dflt[k] = std::atof(argv[++i]);
+            return dflt;
+        };
         if (a == "--oplog" && i + 1 < argc) oplog = argv[++i];
         else if (a == "--out" && i + 1 < argc) out = argv[++i];
         else if (a == "--spp") s.spp = int(next(s.spp));
@@ -39,6 +52,11 @@ int main(int argc, char** argv) {
         else if (a == "--sun") s.sun_intensity = next(s.sun_intensity);
         else if (a == "--exposure") s.exposure = next(s.exposure);
         else if (a == "--clamp") s.clamp_indirect = next(s.clamp_indirect);
+        else if (a == "--threads") s.threads = unsigned(next(double(s.threads)));
+        else if (a == "--cam-eye") cam.eye = next3(cam.eye);
+        else if (a == "--cam-target") cam.target = next3(cam.target);
+        else if (a == "--cam-up") cam.up = next3(cam.up);
+        else if (a == "--cam-fov") cam.fov_y = next(cam.fov_y);
     }
 
     Program prog;
@@ -55,7 +73,6 @@ int main(int argc, char** argv) {
     try { mesh = prog.build(); }
     catch (const std::exception& e) { std::fprintf(stderr, "build failed: %s\n", e.what()); return 1; }
 
-    Camera cam;  // a 3/4 view that frames the model on the floor
     std::printf("path-tracing %zu faces  %dx%d  spp=%d  bounce=%d ...\n",
                 mesh.num_faces(), s.width, s.height, s.spp, s.max_bounce);
     Image img = path_trace(mesh, cam, s);

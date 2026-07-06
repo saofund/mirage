@@ -28,13 +28,17 @@ Requires the `usd`, `mujoco`, and `demos` extras (`uv pip install -e ".[usd,mujo
 | 06 | `06_franka_panda` | **Real robot**: 7-DOF Franka Panda (Menagerie) with actuated joints | `panda.gif`, `frame_*.png` | the Panda arm drives along a reach trajectory (~3 rad joint travel) |
 | 07 | `07_web_viewport` | **Web viewport**: three.js scene + trajectory playback | `index.html`, `scene.json`, `frames.json` | open `index.html` in a browser; orbit the scene; objects play back the sim |
 
-Cases **08–17** go deeper on modeling and scale: `08` spatial relations · `09`
+Cases **08–18** go deeper on modeling and scale: `08` spatial relations · `09`
 parametric modeling · `10` studio render · `11` the modeling kernel · `12` the
 meshlang op-log · `13` a goblet from scratch · `14` mesh repair · `15` the shared
 op-log (GUI ↔ AI) · `16` hard-surface & open-mesh operators · **`17` a whole scene
 at scale, path-traced** (`uv run python examples/cases/17_city_scene.py`; also
-`--bench` for the scaling stress test and `--hero` for the gallery render).
+`--bench` for the scaling stress test and `--hero` for the gallery render) ·
+**`18` a whole interior composed by the native `place` op** (`uv run python
+examples/cases/18_interior_scene.py`; `--hero` for the gallery still, `--film` for the
+making-of, `--oplog` to dump the legible scene op-log).
 
 Cases 01–10 run physics/rendering through MuJoCo behind Mirage's `PhysicsBackend` /
-`RenderBackend` interfaces (scene model = OpenUSD, `mirage.scene.Scene`); 11–17 are
-the op-log modeling kernel, and 17 also drives the `mirage_render` path tracer.
+`RenderBackend` interfaces (scene model = OpenUSD, `mirage.scene.Scene`); 11–18 are
+the op-log modeling kernel; 17 and 18 also drive the `mirage_render` path tracer (18
+composes the whole scene from a legible op-log of `place` ops).

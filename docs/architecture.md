@@ -4,6 +4,13 @@ Mirage is a small, agent-drivable engine for building 3D worlds, stepping their
 physics, and rendering them. It is deliberately a *thin* core: the value is in
 the data model and the control surface, not in re-implementing a DCC app.
 
+> **Historical (v0.0.1 scaffold).** This file documents the original pure-Python,
+> null-backend scaffold. The engine has since grown a **first-party native C++20
+> core** — an op-log modeling kernel, the `mirage_render` path tracer, and the
+> `mirage_viewer` GL GUI — so "pure-Python, zero-dependency" and "no path tracer of
+> our own" below are **no longer current**. The authoritative design is
+> [design.md](design.md); this page is kept for history.
+
 ## Goals
 
 - **Agent-first.** Everything an agent needs is a small set of orthogonal
@@ -16,8 +23,10 @@ the data model and the control surface, not in re-implementing a DCC app.
 ## Non-goals (for now)
 
 - Being a full DCC / editor UI.
-- Shipping our own production path tracer or contact-dynamics solver — we
-  integrate best-in-class permissively-licensed engines behind small interfaces.
+- Shipping our own contact-dynamics solver — we integrate MuJoCo behind a small
+  interface. *(This once also disclaimed a path tracer of our own; that's no longer
+  true — Mirage ships a first-party path tracer, `mirage_render`. See
+  [design.md](design.md).)*
 
 ## Core concepts
 

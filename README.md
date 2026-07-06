@@ -2,7 +2,7 @@
 
 **An AI-native 3D renderer + lightweight physics simulator** — built to be driven by coding agents (e.g. Claude Code via [MCP](https://modelcontextprotocol.io)), aimed at robotics and synthetic-data use cases.
 
-> **Status:** 🌱 early scaffold (`v0.0.1`), now pivoting. The data model and AI-native control surface are in place on dependency-free *null* backends; the v0.1 direction — **OpenUSD as the scene source of truth, with real engines (MuJoCo/Newton physics, Hydra/Cycles rendering) behind small interfaces** — is specced in [docs/design.md](docs/design.md).
+> **Status:** 🌿 the native core has landed. One **legible op-log** is the source of truth; a **first-party C++20 core** builds it (byte-identical Python + C++ mesh kernels), a from-scratch **path tracer** (`mirage_render`) shoots the ground-truth stills, and a **native GL viewport** (`mirage_viewer`) is the realtime preview — no external DCC. Multi-object **scenes + physics** ride OpenUSD + MuJoCo behind small interfaces. Full design & roadmap: [docs/design.md](docs/design.md).
 
 ## Gallery
 
@@ -28,13 +28,28 @@ case can be captured — regenerate this one (`.mp4` for video, `.gif` for inlin
 
 ![Modelling the airliner in Mirage's viewport, operator by operator](docs/gallery/airplane_assembly.gif)
 
-**A whole scene, not just a model.** A downtown of 169 buildings composed into a
-single op-log mesh and path-traced by the same renderer — proof the engine reaches
-past one object. How large scenes build, and where they bottleneck, is measured in
-[docs/scene-scaling.md](docs/scene-scaling.md); reproduce with `uv run python
-examples/cases/17_city_scene.py --hero`.
+**A whole interior — every object native, and the *engine* composes it.** A furnished
+room where each thing is modelled from Mirage's own operators (the lathe turns the vase
+and lampshade, `bevel` rounds the sofa, `array` stacks the shelves, `boolean` cuts the
+window), assembled by the first-class **`place` operator**: the scene is a *legible
+op-log* of `place` ops, each carrying its object's operators and a transform, so the
+op-log stays multi-object and human/AI-editable — not baked geometry, not Python glue.
+That op-log builds byte-identically in the Python kernel and the C++ core, and the path
+tracer shoots it from a camera *inside* the room. Reproduce with `uv run python
+examples/cases/18_interior_scene.py --hero`.
 
-![A whole scene: 169 buildings as one merged op-log mesh, path-traced](docs/gallery/city.png)
+![A whole interior, every object native-modelled, engine-composed](docs/gallery/interior.png)
+
+Here is that room **being built in Mirage's own viewport** — the lathe sweeping the vase,
+`boolean` punching the window, `bevel` rounding the armchair, then each object *placed* —
+every frame a headless screenshot of the real native GUI. Regenerate with
+`uv run python examples/cases/18_interior_scene.py --film`.
+
+![Building the interior in Mirage's viewport, object by object](docs/gallery/interior_build.gif)
+
+(How large scenes scale, and where the layers used to bottleneck, is measured in
+[docs/scene-scaling.md](docs/scene-scaling.md) — the composition seam that once forced a
+manual merge is now closed by the `place` op.)
 
 The core operators, one panel each (regenerate with `uv run python docs/gallery/render_gallery.py`):
 
@@ -56,9 +71,9 @@ mesh in either engine.
 Powerful DCC tools (Blender, …) have large, stateful automation surfaces that are awkward for programmatic/agent control. Full robotics simulators are excellent but heavy. Mirage takes the opposite bet:
 
 - **Scene = plain data.** The whole world is one serializable object (JSON today, USD later). An agent can read it, diff it, edit it, and reproduce it deterministically.
-- **Tiny, swappable backends.** A backend just consumes a `Scene`: `render(scene, camera)` or `step(scene, dt)`. Start with zero-dependency null backends; plug in a real renderer (Cycles/Embree/OIDN — all permissively licensed) or physics (e.g. MuJoCo) behind the same interface.
+- **Tiny, swappable backends.** A backend just consumes a `Scene`: `render(scene, camera)` or `step(scene, dt)` — MuJoCo behind both, permissively licensed. (Photoreal stills of a *model* take a different path: the op-log goes straight to Mirage's own `mirage_render` path tracer.)
 - **AI-native control surface.** A first-class MCP server exposes the build/step/render loop as a handful of orthogonal tools, so Claude Code can drive Mirage out of the box.
-- **Light, fast, permissive.** A Python-orchestrated core does the conducting; heavy lifting goes to native engines (OpenUSD, MuJoCo, Hydra/Cycles) behind small interfaces. Apache-2.0, no GPL entanglement.
+- **Light, fast, permissive.** Python conducts; the heavy lifting is native — Mirage's own C++ mesh kernel and `mirage_render` path tracer, plus OpenUSD and MuJoCo behind small interfaces. Apache-2.0, no GPL entanglement.
 
 ## Quickstart
 
@@ -115,7 +130,7 @@ See [docs/design.md](docs/design.md) for the v0.1 design & roadmap (and [docs/ar
      step() │       │ render()
             ▼       ▼
      PhysicsBackend   RenderBackend
-     (null → MuJoCo)  (null → Cycles/Embree)
+       (MuJoCo)       (MuJoCo raster · mirage_render path tracer)
 ```
 
 ## License

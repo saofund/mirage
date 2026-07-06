@@ -1,42 +1,60 @@
 # Mirage — Design & Architecture
 
-> **Status:** v0.1 design, post-pivot (2026-05). This document is the authoritative
-> forward-looking design and **supersedes** the v0.0.1 scaffold's
-> "zero-dependency, pure-Python" framing. `docs/architecture.md` still describes
-> the *current* scaffold code until P0 lands.
+> **Status:** v0.1 design, post-pivot (2026-05), **updated 2026-07** as the native
+> core landed. This document is the authoritative forward-looking design and
+> **supersedes** the v0.0.1 scaffold's "zero-dependency, pure-Python" framing.
+> Since 2026-05 Mirage grew a **first-party native C++20 core** — its own op-log
+> modeling kernel, path tracer (`mirage_render`), and GL viewport (`mirage_viewer`) —
+> so the old "we never re-implement an engine" stance is now **split**: we still
+> integrate physics (MuJoCo), but the modeling kernel and the offline renderer are
+> ours. Passages touched by that shift are updated inline. `docs/architecture.md`
+> documents the original v0.0.1 scaffold, kept for history.
 
 ## 1. Vision
 
-Mirage is an **AI-native, USD-centric control layer for 3D + physics** — a thin,
-scriptable "cockpit" that lets an agent (Claude Code) *or* a human author scenes,
-drive best-in-class permissively-licensed engines (physics: MuJoCo / Newton;
-rendering: Hydra / Cycles / Embree), and emit renders and synthetic datasets —
-deterministically and reproducibly.
+Mirage is an **AI-native 3D modeling engine** — a native application an agent
+(Claude Code) *or* a human can drive to author models and scenes, simulate, and
+render, deterministically and reproducibly. Its spine is **one legible op-log as
+the single source of truth**, on which the GUI and the AI are co-equal operators.
 
-Think **"lightweight Blender + Isaac Sim"**, achieved *not* by re-implementing
-either, but by providing the agent-drivable layer that ties chosen engines
-together over one common, serializable data model.
+Where it pays off, Mirage **builds the real thing** rather than wrapping a DCC: a
+first-party native C++20 mesh kernel, an offline path tracer (`mirage_render`), and
+a native GL viewport (`mirage_viewer`) are all in-repo. Where an engine is already
+best-in-class and hard to beat, it **integrates** instead — MuJoCo for contact
+physics, OpenUSD for the multi-object scene / interchange layer. So "lightweight
+Blender + Isaac Sim" is now *literal* on the authoring & render side (our own kernel
+and renderer) and *integrative* on the physics & scene side.
 
 ### Mirage IS
-- A serializable, diffable **scene data model** — OpenUSD as the single source of truth (SoT).
+- A **legible op-log modeling kernel** — a model is an ordered program of mesh
+  operators (meshlang); that op-log is the single source of truth the GUI and the AI
+  both edit. Implemented **byte-identically** in the Python kernel and the C++ core.
+- A **first-party offline path tracer** (`mirage_render`) and a **native GL viewport**
+  (`mirage_viewer`) — the ground-truth render and the realtime preview of that same
+  op-log.
+- A serializable, diffable **scene layer** — OpenUSD for composing many objects and
+  interchange (USD ⇄ URDF / MJCF / glTF), with MuJoCo behind it for physics.
 - An **AI-native control surface** — MCP + a matching Python API exposing the full
   *author → simulate → render → inspect* loop, with structured I/O and image returns.
-- **Thin adapters** that make permissive engines swappable behind small interfaces.
 - A **synthetic-data pipeline** (domain randomization + auto-annotation) for robotics / embodied AI.
 
 ### Mirage is NOT (non-goals)
-- A new physics solver or path tracer — we integrate MuJoCo / Newton and Cycles / Embree.
+- **A new physics / contact solver** — we integrate MuJoCo (→ Newton / Warp later)
+  rather than write our own rigid-body dynamics. *(The renderer used to sit on this
+  line too — it no longer does: `mirage_render` is a first-party path tracer. Physics
+  stays integrated; rendering is ours.)*
 - A full DCC — no sculpting / retopo / NLA-editor ambitions.
-- Linked against Blender's GPL app layer (`bpy`). Standalone Cycles (Apache-2.0) is fine.
+- Linked against any GPL app layer (Blender's `bpy`, …). The core is Apache-2.0 and
+  self-contained; its only heavy third-party deps are permissive (MuJoCo, `usd-core`).
 
 ## 2. Locked decisions (2026-05)
 
 | Axis | Choice | Rationale |
 |---|---|---|
-| **Core stack** | Python orchestration over native engines | Heavy lifting in USD / MuJoCo / Hydra; Python conducts. Matches Isaac (C++ plugins + Python), Genesis (Python + Taichi), Newton (Python + Warp). Rust / Warp reserved for *measured* hotspots. |
+| **Core stack** | First-party native **C++20 core** + Python orchestration | The modeling kernel, path tracer, and viewport are native C++ (CMake); Python conducts and hosts the AI / scene / synthetic-data layers. Physics still goes to MuJoCo. Like Isaac (C++ + Python) — but with the *authoring & render* kernel **owned**, not wrapped. |
 | **Wedge** | Robotics + synthetic-data **and** general 3D authoring, in parallel | Shared USD + Hydra + control-surface foundation serves both; tracks branch after P1. |
 | **Scene SoT** | OpenUSD | Industrial format compat (USD ⇄ URDF / MJCF / glTF), composition / layers / variants, Hydra rendering pipeline for free. Cost: `usd-core` dependency — no longer zero-dep. |
-| **Viewport** | Both web **and** native, prototyped in parallel | One render/stream backend, two frontends: web (three.js / WebGPU, AI-screenshottable) + native (wgpu). |
+| **Viewport** | Both web **and** native | Native `mirage_viewer` is C++ **GLFW + OpenGL 3.3 + Dear ImGui**, driven by the op-log and headless-screenshottable; the web viewport (three.js) plays scenes back in a browser. |
 
 ## 3. Architecture
 
@@ -86,6 +104,15 @@ together over one common, serializable data model.
    (poses / materials / lighting / camera) → batch render → auto-annotations
    (RGB / depth / segmentation / normals / 2D-3D bbox) → dataset (COCO / KITTI / USD).
 
+> **The native authoring / render pillar (2026-07).** Alongside the USD/engine layers
+> above, Mirage now carries a self-contained native path from op-log to pixels that
+> does *not* route through USD or MuJoCo: the **meshlang op-log** → the **C++ / Python
+> mesh kernel** (one model, byte-identical twins) → **`mirage_render`** (path-traced
+> stills) and **`mirage_viewer`** (realtime GL preview). Single-object modeling and
+> ground-truth rendering live here; the USD/MuJoCo layers own multi-object scenes and
+> physics. How the two pillars connect — and where they don't yet — is measured in
+> [scene-scaling.md](scene-scaling.md).
+
 ## 4. Tech stack & dependencies
 
 Packaged as **extras** so the core stays light and importable with graceful guards:
@@ -94,12 +121,17 @@ Packaged as **extras** so the core stays light and importable with graceful guar
 - **Core:** Python ≥ 3.10; `usd-core` (BSD-style) as SoT.
 - **Physics:** `mujoco` (Apache-2.0) first; path to **Newton** (Warp + USD, GPU,
   differentiable) and **PhysX 5** (now fully BSD-3 incl. GPU kernels).
-- **Rendering:** USD **Hydra** delegates — HdStorm (realtime), HdEmbree / **Cycles**
-  (Apache-2.0 standalone) / Embree for offline; AOVs for sensor modalities.
-  *Windows caveat:* pip `usd-core` is core-only (no Hydra imaging); the **early** render
-  path uses **MuJoCo's built-in renderer** + the **web viewer**, with Hydra/Cycles as a
-  later/optional offline path.
-- **Viewport:** web (three.js / WebGPU) + native (wgpu); both consume the render/stream backend.
+- **Rendering (offline, ground truth):** a **first-party path tracer**, `mirage_render`
+  — a from-scratch physically-based Monte-Carlo tracer over the kernel mesh:
+  Cook-Torrance / GGX surfaces, next-event estimation for a sky + sun environment, a
+  median-split **BVH** (sub-linear in triangles), multi-threaded over scanlines,
+  Russian-roulette termination, ACES tonemap; deterministic per (mesh, camera,
+  settings). This **replaced** the earlier "Hydra / Cycles later" plan — the render
+  pillar is ours now, with no external DCC.
+- **Rendering (scene / physics preview):** **MuJoCo's built-in rasterizer** renders the
+  USD/MuJoCo scene layer and its AOVs (RGB / depth / segmentation); the web viewport
+  (three.js) plays scenes back in a browser.
+- **Viewport:** native `mirage_viewer` (C++ GLFW + OpenGL 3.3 + Dear ImGui), driven by the op-log; plus a web viewport (three.js) for scene playback.
 - **Agent surface:** `mcp` (FastMCP) + the Python API.
 - **Optional accel:** NVIDIA **Warp** / **Newton**; **Madrona** batch GPU renderer for vision-RL / synth-data.
 
@@ -126,8 +158,18 @@ Packaged as **extras** so the core stays light and importable with graceful guar
 > (structured I/O, command log/replay, render-as-PNG); MuJoCo physics (collision, hinge
 > joints, articulation, actuators); multimodal AOVs (RGB/depth/segmentation); URDF/MJCF +
 > real MuJoCo-Menagerie robots (Franka Panda); OBJ/STL mesh import; web + native viewports;
-> and a synthetic-data API — with 7 demo cases and 30 passing tests. Deferred (env-blocked):
-> a Hydra/Cycles path-traced backend and native glTF I/O (see §8 and the follow-up tasks).
+> and a synthetic-data API — with 7 demo cases and 30 passing tests.
+>
+> **Update (2026-07): the native core landed** — and it *replaced* the deferred
+> Hydra/Cycles plan rather than waiting on it. Delivered since: a first-party **op-log
+> modeling kernel** (meshlang) with ~30 operators and selection-as-query, mirrored
+> **byte-identically in a C++20 core**; the **`mirage_render` path tracer** (BVH,
+> GGX + NEE, multi-threaded); the native **`mirage_viewer`** GL GUI that Loads/Saves the
+> same op-log; glTF import/export; a native **`place`** op that composes multi-object
+> scenes in the op-log itself; and 18 demo cases with 312 passing tests. Op-log scenes
+> now path-trace **directly** (no manual merge — a scene is a legible list of `place`
+> ops); what remains is *connecting the USD layer* — lowering a whole USD/MuJoCo
+> `Session` into the op-log (see [scene-scaling.md](scene-scaling.md)).
 
 **Shared foundation**
 - **P0 — Foundation.** USD as SoT + thin facade; unified MCP/Python command vocabulary;
@@ -152,8 +194,9 @@ Packaged as **extras** so the core stays light and importable with graceful guar
 
 ## 8. Risks / open questions
 - **USD/Hydra/Cycles on Windows** — `usd-core` wheel is core-only; full Hydra/usdview or
-  Cycles may need a heavier build. *Mitigation:* MuJoCo renderer + web viewer as early
-  render paths; Hydra/Cycles treated as later/optional.
+  Cycles need a heavy build. *Resolved:* the offline render pillar is now the first-party
+  `mirage_render` (no Hydra/Cycles dependency at all); MuJoCo's rasterizer + the web
+  viewport cover scene/physics preview. Hydra/Cycles are no longer on the path.
 - **Dependency weight vs "lightweight" promise** — addressed via extras-based install;
   core importable with graceful guards.
 - **Newton maturity** — new (GTC 2025, Linux Foundation); keep MuJoCo as the stable default.

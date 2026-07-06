@@ -15,6 +15,18 @@ uv run python examples/cases/17_city_scene.py --bench   # the measurements here
 uv run python examples/cases/17_city_scene.py --hero    # the image above
 ```
 
+> **Update (2026-07): the composition seam is closed.** The op-log now has a first-class
+> **`place`** operator — it *adds* a sub-object (a nested op-log, or inline geometry) at a
+> transform, so the op-log is **natively multi-object**: a scene is a legible list of
+> `place` ops, each carrying its object's operators + a material, and it renders straight
+> through `mirage_render`. See [the interior](gallery/interior.png) and
+> `examples/cases/18_interior_scene.py` — its scene op-log is **0.09 MB and legible**
+> (140 `place` ops) versus the city's ~0.6 MB baked mesh, and both engines build it
+> byte-identically (differential-tested). That resolves fixes #1 and the *placement* half
+> of #2 below. Still open: **instancing** in the tracer (a TLAS/BLAS so identical objects
+> reference one mesh) and **incremental Scene compilation**. The city (one merged `mesh`
+> op) remains here as the pure **scale** stress test.
+
 ## The three layers
 
 | Layer | Builds | Renders through | Reaches the path tracer? |
@@ -41,9 +53,11 @@ In `MeshProgram.build()` every primitive **replaces** the running mesh:
 You cannot author a multi-object scene op-by-op the way an agent naturally would
 (`cube`, `cube`, `cube`). The only op-log-native ways to get many objects are
 `array` (**identical** instances only) or chained `boolean union` (the ~O(n²) BSP
-op). To place *distinct* objects you fall back to a single raw `mesh` op with all
-geometry inlined — the "import seam." That renders great, but it is a geometry
-dump, not a legible operator sequence, and it carries no per-object identity.
+op). To place *distinct* objects you *used to* fall back to a single raw `mesh` op with
+all geometry inlined — the "import seam": renders great, but a geometry dump, not a
+legible operator sequence, with no per-object identity. **The `place` op removes that
+fallback** — it composes distinct objects into a legible, per-object op-log (the
+single-model behavior of *primitives* still holds; composition is now first-class).
 
 ### EXP 1 — the Scene layer scales, but render-per-edit is O(N²)
 
@@ -90,9 +104,10 @@ It isn't any single hot loop — it's an **architectural seam**. Mirage's thesis
 "one legible op-log is the single source of truth," and that is true and powerful
 **for one model**. A *scene* of many models has no first-class home:
 
-1. **The op-log can't compose objects** (primitives replace). There is no
-   `instance`/`place`/`append` operator, so multi-object structure either lives in
-   the separate USD Scene layer or gets flattened into a raw `mesh` dump.
+1. ~~**The op-log can't compose objects**~~ — **resolved (2026-07): the `place` op.**
+   Primitives still replace, but `place` adds distinct sub-objects at transforms, so
+   multi-object structure now lives natively in the op-log (a legible list of `place`
+   ops) — no USD-layer detour, no raw `mesh` dump.
 2. **The renderer boundary is in the wrong place.** The ground-truth path tracer
    takes a single `mirage::Mesh` and is not exposed to Python at all; the Scene
    layer that actually holds many objects can only reach MuJoCo's rasterizer. The
@@ -104,15 +119,15 @@ It isn't any single hot loop — it's an **architectural seam**. Mirage's thesis
 
 ## Recommended fixes (real ones, in priority order)
 
-1. **A scene → merged-mesh bridge** (small, high leverage). Lower a `Session`
-   scene — or a list of op-logs with placements — into one `mesh` op and hand it to
-   `mirage_render`. This is the missing connective tissue: it makes "path-trace my
-   whole scene" a one-call reality instead of a manual merge, and it is what
-   `examples/cases/17_city_scene.py` does by hand today.
-2. **A first-class instancing / placement op** in the op-log and a TLAS/BLAS in the
-   tracer, so a scene references sub-meshes instead of duplicating them. This kills
-   both the JSON bloat and the memory blow-up, and it is the honest way to represent
-   "100 of the same building."
+1. **A scene → merged-mesh bridge.** The *op-log* half is **done** — the `place` op
+   composes a list of object op-logs (with transforms) into one renderable scene, so
+   "path-trace my whole scene" is a one-call reality for op-log scenes (case 18, no more
+   manual merge). Still open: lowering a USD **`Session`** scene into that op-log, so the
+   many-object *USD* layer can also reach the tracer.
+2. **Instancing** — the placement op is **done (`place`)**; what remains is a TLAS/BLAS
+   in the tracer (and a reference-not-copy `instance` op) so a scene *references*
+   sub-meshes instead of duplicating them. That is what would kill the JSON bloat and
+   memory blow-up for "100 of the same building" (placement alone still copies geometry).
 3. **Incremental Scene compilation.** Cache the `MjModel` and add/remove bodies
    instead of recompiling from the MJCF string on every edit — turns the O(N²) agent
    loop back into O(N). Cheapest interim mitigation is guidance (below) plus a batch
@@ -128,8 +143,9 @@ It isn't any single hot loop — it's an **architectural seam**. Mirage's thesis
 
 - To build a large scene in the Scene layer: **author everything, then render once.**
   Never render inside the add loop — that is the 17× (and worsening) tax.
-- To make a *path-traced* whole scene: **merge geometry into one `mesh` op** (as
-  case 17 does) and drive `mirage_render`. Expect a multi-MB op-log; it traces in
-  seconds thanks to the BVH.
+- To make a *path-traced* whole scene: **compose it with `place` ops** (as case 18
+  does) — author each object, `place(obj=…, at=…, material=…)` it, and drive
+  `mirage_render`; the op-log stays legible *and* small. (Flattening into one raw `mesh`
+  op, as case 17 does, is still fine for pure-scale dumps of identical geometry.)
 - Reuse of identical geometry is not free anywhere yet — until instancing lands,
   every copy is real vertices.

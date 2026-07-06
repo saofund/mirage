@@ -39,6 +39,10 @@ The MCP server (`python -m mirage.mcp_server`, auto-registered for Claude Code v
   **query** (`on: {"by": …}`), never a raw index. This is Mirage's sharpest edge.
 - **Compose a scene** of many objects + physics → `add_box`/`add_sphere`/… ,
   `place_on`/`stack`, `step`, `render`.
+- **Or skip MCP** (you're a local agent in the repo): edit the op-log JSON file
+  directly — a list of ops, `place` ops for a scene — then `mirage_render --oplog
+  file.json --out shot.ppm` and look. The op-log *is* the model; MCP is for decoupled
+  clients (Claude Desktop, remote).
 
 Details, the full op set, and worked examples: **`skills/mirage/SKILL.md`**.
 
@@ -46,11 +50,12 @@ Details, the full op set, and worked examples: **`skills/mirage/SKILL.md`**.
 
 - **Author, then render *once*.** A scene edit invalidates the sim; the next render
   recompiles the whole MuJoCo model. Rendering inside an add loop is **O(N²)**.
-- **The op-log is single-model** (primitives replace). Compose many objects via the
-  scene tools, or merge geometry into one `mesh` op.
-- **To path-trace a whole scene,** merge it into one op-log mesh and run
-  `mirage_render` — the scene layer can't reach the path tracer.
-  (`examples/cases/17_city_scene.py` does this.)
+- **Compose scenes with `place`** — the op-log is natively multi-object. Primitives
+  replace the running mesh, but a `place` op *adds* a sub-object at a transform, so a
+  whole scene is a legible list of `place` ops (`examples/cases/18_interior_scene.py`).
+- **To path-trace a whole scene,** build that `place`-op-log and run `mirage_render`
+  (`--cam-*` place the camera, `--threads` caps CPU workers) — the engine composes it,
+  no manual merge. The Scene/MuJoCo layer still can't reach the path tracer.
 
 ## Conventions
 

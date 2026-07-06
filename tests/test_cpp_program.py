@@ -407,6 +407,41 @@ OPLOGS = {
         {"op": "bridge", "on": {"by": "all"}},   # tunnel the 2 disjoint quads -> tube
         {"op": "fill"},                          # cap -> closed box
     ],
+    # place (scene composition): disjoint-union a sub-object at a transform, so the
+    # op-log is natively multi-object. Both engines must merge it identically.
+    "place_starts_model": [   # place can be the FIRST op (it starts the mesh)
+        {"op": "place", "program": [{"op": "cube", "size": 1.0}], "translate": [2, 0, 0]},
+    ],
+    "place_two_cubes": [      # two disjoint cubes -> verts/edges/faces sum, euler 4
+        {"op": "place", "program": [{"op": "cube", "size": 1.0}]},
+        {"op": "place", "program": [{"op": "cube", "size": 1.0}], "translate": [2, 0, 0]},
+    ],
+    "place_rotated_scaled": [
+        {"op": "cube", "size": 1.0},
+        {"op": "place", "program": [{"op": "cylinder", "sides": 12, "radius": 0.3, "height": 1.0}],
+         "translate": [2, 0, 0], "rotate": [0, 0, 45], "scale": [1, 1, 2]},
+    ],
+    "place_inline_geometry": [   # inline verts/faces (a tetra) placed at a transform
+        {"op": "place", "verts": [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]],
+         "faces": [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]], "translate": [0, 0, 0.5]},
+    ],
+    "place_lathe_and_solid": [   # a single-walled lathe object + a solid, unioned
+        {"op": "place", "program": [
+            {"op": "profile", "points": [[0.1, -0.4], [0.3, 0.0], [0.1, 0.4]], "plane": "xz"},
+            {"op": "spin", "axis": "z", "steps": 16, "angle": 360}]},
+        {"op": "place", "program": [{"op": "cube", "size": 0.4}], "translate": [1.2, 0, 0]},
+    ],
+    "place_then_edit": [         # place, then operate on it via last_created
+        {"op": "place", "program": [{"op": "cube", "size": 1.0}]},
+        {"op": "inset", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "thickness": 0.3},
+        {"op": "extrude", "on": {"by": "last_created"}, "distance": 0.4},
+    ],
+    "place_nested": [            # a placed object whose program itself places another
+        {"op": "place", "program": [
+            {"op": "cube", "size": 1.0},
+            {"op": "place", "program": [{"op": "cube", "size": 0.5}], "translate": [1.5, 0, 0]}],
+         "translate": [0, 0, 0.5]},
+    ],
 }
 
 
@@ -552,6 +587,13 @@ MATERIAL_OPLOGS = {
          "faces": [[0, 1, 2, 3], [4, 5, 6, 7]],
          "face_materials": [{"color": [1.0, 0.2, 0.1], "metallic": 0.0, "roughness": 0.6},
                             {"color": [0.2, 0.9, 0.3], "metallic": 1.0, "roughness": 0.15}]},
+    ],
+    # place with a per-object material: the FIRST object's colour must survive the
+    # SECOND place (the merge preserves already-placed materials), in both engines.
+    "place_two_colored": [
+        {"op": "place", "program": [{"op": "cube", "size": 1.0}], "material": {"color": [1.0, 0.2, 0.1]}},
+        {"op": "place", "program": [{"op": "cube", "size": 1.0}], "translate": [2, 0, 0],
+         "material": {"color": [0.1, 0.3, 0.9], "metallic": 1.0, "roughness": 0.2}},
     ],
 }
 

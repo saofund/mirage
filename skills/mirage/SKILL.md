@@ -77,9 +77,10 @@ The core loop, **one op at a time**:
 Operators: primitives (`cube` `cylinder` `plane` `uv_sphere` `cone` `torus`
 `grid` `profile` `mesh`), edits (`extrude` `inset` `bevel` `edge_bevel`
 `loop_cut` `bridge` `fill` `delete` `solidify`), global (`mirror` `array`
-`bisect` `spin`=lathe `screw`=helix `subdivide` `boolean`=BSP CSG), and
-annotation (`tag` `material` `translate` `scale` `assert`). Same op-log builds
-**byte-identically** in the Python kernel and the C++ core (differential-tested).
+`bisect` `spin`=lathe `screw`=helix `subdivide` `boolean`=BSP CSG), composition
+(`place`=drop a sub-object at a transform — see §3), and annotation (`tag`
+`material` `translate` `scale` `assert`). Same op-log builds **byte-identically**
+in the Python kernel and the C++ core (differential-tested).
 
 ## 3. Scene composition — many objects + physics
 
@@ -99,19 +100,32 @@ Measured in `docs/scene-scaling.md`; internalize these:
   next `render`/`step` recompiles the whole MuJoCo model. Rendering inside an add
   loop is **O(N²)** — ~17× slower at 400 objects and worsening. Add everything,
   render at the end.
-- **The op-log is single-model.** Primitives *replace* the running mesh, so
-  `cube`,`cube`,`cube` yields one cube. You can't compose a scene op-by-op; use
-  the scene tools for many objects, or merge geometry into one `mesh` op.
-- **To path-trace a *whole scene*,** merge it into one op-log `mesh` and run
-  `mirage_render` — the Scene/MuJoCo layer can't reach the path tracer. The BVH
-  keeps tracing sub-linear in triangles (~40k faces in seconds); the linear knobs
-  are `spp`, resolution, `max_bounce`. See `examples/cases/17_city_scene.py`.
+- **Compose scenes with `place` (the op-log is natively multi-object).** Primitives
+  *replace* the running mesh (bare `cube`,`cube`,`cube` yields one cube), but a
+  `place` op **adds** a sub-object at a transform — so a whole scene is a legible list
+  of `place` ops, each carrying its object's operators + material. Author each object
+  in its own local frame, then `place(obj=…, at=…, rotate=…, material=…)` it;
+  `last_created` then resolves to the placed object so you can keep editing it. See
+  `examples/cases/18_interior_scene.py`.
+- **To path-trace a *whole scene*,** just build that `place`-op-log and run
+  `mirage_render` — no manual merge; the engine composes it. The BVH keeps tracing
+  sub-linear in triangles (~40k faces in seconds); the linear knobs are `spp`,
+  resolution, `max_bounce`. (The Scene/MuJoCo layer still can't reach the path tracer;
+  the mesh op-log is the path to it.)
 
 ## 5. Pointers
 
-- `docs/design.md` — the v0.1 architecture & thesis.
-- `docs/scene-scaling.md` — scene scaling, bottlenecks, the whole-scene render.
-- `examples/cases/` — 17 runnable scenarios (11–16 model the op-log; 17 = a scene
-  at scale; 01–10 = scene/physics/robot/dataset).
-- `mirage_render --oplog model.json --out shot.ppm --spp 160` — photoreal still
-  of any op-log. `mirage_viewer --oplog model.json` — the live GUI.
+- **Two ways to drive it, same op-log.** Over **MCP** (the tools above), *or* — since
+  you're a local agent in the repo — **edit the op-log file directly**: write the JSON
+  op-log (a list of ops; `place` ops for a scene), run `mirage_render --oplog file.json
+  --out shot.ppm`, and look at the result. The op-log *is* the model, so direct-file
+  editing is the lightest local path; MCP is for decoupled clients (Claude Desktop,
+  remote). `MeshProgram(...).to_json()` writes such a file; `mirage_viewer` Loads/Saves it.
+- `mirage_render --oplog model.json --out shot.ppm --spp 160 [--cam-eye X Y Z]
+  [--cam-target X Y Z] [--cam-fov RAD] [--threads N]` — photoreal still of any op-log;
+  `--cam-*` place the camera (e.g. *inside* a room), `--threads` caps CPU workers.
+  `mirage_viewer --oplog model.json` — the live GUI.
+- `docs/design.md` — architecture & thesis. `docs/scene-scaling.md` — scaling & the
+  `place` composition op.
+- `examples/cases/` — 18 runnable scenarios (11–16 model the op-log; 17 = a scene at
+  scale; **18 = a whole interior composed with `place`**; 01–10 = scene/physics/robot/dataset).

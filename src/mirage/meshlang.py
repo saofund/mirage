@@ -19,6 +19,7 @@ This is the layer an LLM (or the MCP server) drives.
 from __future__ import annotations
 
 import json
+import math
 
 from .kernel import (
     Mesh, make_cube, make_cylinder_ngon, make_plane, make_uv_sphere, make_cone,
@@ -57,6 +58,31 @@ def _bbox(mesh):
 
 def _tags(f):
     return f.attrs.get("tags", [])
+
+
+def _place_xform(V, t, rot, s):
+    """The `place` op's transform: scale -> rotate (Rz@Ry@Rx, degrees) -> translate.
+    Byte-mirrored in the C++ core (program.cpp)."""
+    rx, ry, rz = (math.radians(a) for a in rot)
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    cz, sz = math.cos(rz), math.sin(rz)
+    out = []
+    for x, y, z in V:
+        x *= s[0]; y *= s[1]; z *= s[2]
+        y, z = y * cx - z * sx, y * sx + z * cx
+        x, z = x * cy + z * sy, -x * sy + z * cy
+        x, y = x * cz - y * sz, x * sz + y * cz
+        out.append([x + t[0], y + t[1], z + t[2]])
+    return out
+
+
+def _place_material(pm):
+    """Normalise a place op's material (a dict) into the stored {color,metallic,roughness}."""
+    if pm is None:
+        return None
+    return {"color": list(pm.get("color", [0.8, 0.8, 0.8])),
+            "metallic": pm.get("metallic", 0.0), "roughness": pm.get("roughness", 0.5)}
 
 
 def _diagnostics(mesh):
@@ -452,6 +478,32 @@ class MeshProgram:
         return self.add(**_cmd("material", on=on, color=list(color), metallic=metallic, roughness=roughness))
     def translate(self, on, by): return self.add(**_cmd("translate", on=on, by=list(by)))
     def scale(self, on, by): return self.add(**_cmd("scale", on=on, by=list(by)))
+
+    def place(self, obj=None, at=(0.0, 0.0, 0.0), rotate=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0),
+              material=None, verts=None, faces=None, mark=None):
+        """Compose a sub-object into the running model at a transform — the SCENE op.
+
+        ``obj`` is a sub-program (a ``MeshProgram`` or an op list) built into its own
+        mesh, or pass inline ``verts``/``faces``. It is transformed (scale -> rotate
+        [degrees, XYZ] -> ``at``) then **disjoint-unioned** onto the current mesh —
+        which it *starts* if this is the first op. ``material`` (a dict) paints the
+        placed object; without it the sub-object keeps its own materials.
+        ``last_created`` resolves to the placed faces, so you can edit what you just
+        placed. This is what makes the op-log natively multi-object: a scene is a
+        legible list of ``place`` ops, each carrying its object's operators."""
+        params = {"translate": list(at), "rotate": list(rotate), "scale": list(scale)}
+        if obj is not None:
+            params["program"] = obj.ops if isinstance(obj, MeshProgram) else [dict(o) for o in obj]
+        else:
+            params["verts"] = [list(v) for v in verts]
+            params["faces"] = [list(f) for f in faces]
+        if material is not None:
+            params["material"] = material if isinstance(material, dict) else {
+                "color": list(material[0]),
+                "metallic": material[1] if len(material) > 1 else 0.0,
+                "roughness": material[2] if len(material) > 2 else 0.5}
+        return self.add(**_cmd("place", mark=mark, **params))
+
     def assert_(self, **kw): return self.add(**_cmd("assert", **kw))
 
     # -- replay -------------------------------------------------------------- #
@@ -505,6 +557,43 @@ class MeshProgram:
                     mesh = make_profile(cmd.get("points", []), cmd.get("plane", "xz"),
                                         cmd.get("closed", False))
                     outs = list(mesh.faces)   # a wire has no faces; last_created is undefined
+                elif op == "place":
+                    # compose a sub-object at a transform (the scene op). It can START
+                    # the model (mesh is None) or append to it — a disjoint union, so
+                    # the op-log is natively multi-object. Byte-mirrored in C++.
+                    sub_ops = cmd.get("program")
+                    if sub_ops is not None:
+                        sub = MeshProgram(sub_ops).build()
+                    else:
+                        sub = Mesh.from_pydata([tuple(float(c) for c in v) for v in cmd.get("verts", [])],
+                                               [list(f) for f in cmd.get("faces", [])])
+                    subV = _place_xform([list(v.co) for v in sub.verts], cmd.get("translate", [0, 0, 0]),
+                                        cmd.get("rotate", [0, 0, 0]), cmd.get("scale", [1, 1, 1]))
+                    sidx = {v.id: k for k, v in enumerate(sub.verts)}
+                    subF = [[sidx[lp.vert.id] for lp in sub.face_loops(f)] for f in sub.faces]
+                    subTags = [list(_tags(f)) for f in sub.faces]
+                    subMats = [f.attrs.get("material") for f in sub.faces]
+                    if mesh is None:                       # place starts the model
+                        aV, aF, aTags, aMats = [], [], [], []
+                    else:
+                        aidx = {v.id: k for k, v in enumerate(mesh.verts)}
+                        aV = [list(v.co) for v in mesh.verts]
+                        aF = [[aidx[lp.vert.id] for lp in mesh.face_loops(f)] for f in mesh.faces]
+                        aTags = [list(_tags(f)) for f in mesh.faces]
+                        aMats = [f.attrs.get("material") for f in mesh.faces]
+                    nA, base = len(aF), len(aV)
+                    V = aV + subV
+                    F = aF + [[base + i for i in f] for f in subF]
+                    Tags = aTags + subTags
+                    mesh = Mesh.from_pydata(V, F, [({"tags": list(t)} if t else {}) for t in Tags])
+                    place_mat = _place_material(cmd.get("material"))
+                    all_mats = aMats + ([place_mat] * len(subF) if place_mat is not None else subMats)
+                    for f, m2 in zip(mesh.faces, all_mats):
+                        if m2:
+                            f.attrs["material"] = {"color": list(m2["color"]),
+                                                   "metallic": m2.get("metallic", 0.0),
+                                                   "roughness": m2.get("roughness", 0.5)}
+                    outs = list(mesh.faces[nA:])           # last_created = the placed object
                 elif mesh is None:
                     raise MeshLangError(f"op '{op}' before any primitive")
                 elif op == "extrude":

@@ -1,6 +1,7 @@
 #include "mirage/program.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <map>
 
@@ -59,6 +60,58 @@ std::array<double, 3> json_by(const json& cmd, const std::array<double, 3>& dflt
     const json& b = cmd.at("by");
     if (!b.is_array() || b.size() != 3) throw MeshLangError("'by' must be a [x,y,z] triple: " + cmd.dump());
     return {b[0].get<double>(), b[1].get<double>(), b[2].get<double>()};
+}
+
+// -- the `place` op (scene composition) — byte-mirror of Python meshlang ------ //
+constexpr double kPlacePi = 3.14159265358979323846;
+
+std::array<double, 3> json_vec3(const json& cmd, const std::string& key,
+                                const std::array<double, 3>& dflt) {
+    if (!cmd.contains(key)) return dflt;
+    const json& a = cmd.at(key);
+    if (!a.is_array() || a.size() < 3) return dflt;
+    return {a[0].get<double>(), a[1].get<double>(), a[2].get<double>()};
+}
+
+// Transform a point: scale -> rotate (Rz@Ry@Rx, degrees) -> translate.
+std::array<double, 3> place_xform(std::array<double, 3> p, const std::array<double, 3>& t,
+                                  const std::array<double, 3>& rot, const std::array<double, 3>& s) {
+    const double rx = rot[0] * kPlacePi / 180.0, ry = rot[1] * kPlacePi / 180.0,
+                 rz = rot[2] * kPlacePi / 180.0;
+    double x = p[0] * s[0], y = p[1] * s[1], z = p[2] * s[2];
+    const double cx = std::cos(rx), sx = std::sin(rx);
+    const double y1 = y * cx - z * sx, z1 = y * sx + z * cx; y = y1; z = z1;
+    const double cy = std::cos(ry), sy = std::sin(ry);
+    const double x1 = x * cy + z * sy, z2 = -x * sy + z * cy; x = x1; z = z2;
+    const double cz = std::cos(rz), sz = std::sin(rz);
+    const double x2 = x * cz - y * sz, y2 = x * sz + y * cz; x = x2; y = y2;
+    return {x + t[0], y + t[1], z + t[2]};
+}
+
+// A mesh flattened to (positions, ngon faces, per-face tags, per-face materials) —
+// the operands the place-merge concatenates before one from_pydata rebuild.
+struct MeshArrays {
+    std::vector<std::array<double, 3>> verts;
+    std::vector<std::vector<int>> faces;
+    std::vector<std::vector<std::string>> tags;
+    std::vector<Material> mats;
+};
+
+MeshArrays mesh_to_arrays(const Mesh& m) {
+    MeshArrays a;
+    std::map<int, int> id2idx;
+    for (const auto& v : m.verts()) {
+        id2idx[v->id] = static_cast<int>(a.verts.size());
+        a.verts.push_back(v->co);
+    }
+    for (const auto& f : m.faces()) {
+        std::vector<int> fi;
+        for (const Loop* lp : m.face_loops(f.get())) fi.push_back(id2idx[lp->vert->id]);
+        a.faces.push_back(std::move(fi));
+        a.tags.push_back(f->tags);
+        a.mats.push_back(f->material);
+    }
+    return a;
 }
 
 std::string num(double v) {
@@ -347,6 +400,69 @@ Mesh Program::build(std::string* last_tag_out) const {
                 mesh = make_profile(pts, cmd.value("plane", std::string("xz")), cmd.value("closed", false));
                 has = true;
                 for (const auto& f : mesh.faces()) outs.push_back(f.get());   // wire: no faces
+            } else if (op == "place") {
+                // compose a sub-object at a transform (the scene op): build it (a nested
+                // op-log, or inline verts/faces), transform, and DISJOINT-UNION onto the
+                // running mesh — which it starts if this is the first op. So the op-log is
+                // natively multi-object. Byte-mirror of the Python meshlang place branch.
+                Mesh sub;
+                if (cmd.contains("program")) {
+                    sub = Program(cmd.at("program").get<std::vector<json>>()).build();
+                } else {
+                    std::vector<std::array<double, 3>> sv;
+                    for (const auto& v : cmd.value("verts", json::array()))
+                        sv.push_back({v.at(0).get<double>(), v.at(1).get<double>(), v.at(2).get<double>()});
+                    std::vector<std::vector<int>> sf;
+                    for (const auto& f : cmd.value("faces", json::array())) {
+                        std::vector<int> fi;
+                        for (const auto& idx : f) fi.push_back(idx.get<int>());
+                        sf.push_back(std::move(fi));
+                    }
+                    sub = Mesh::from_pydata(sv, sf);
+                }
+                MeshArrays B = mesh_to_arrays(sub);
+                const std::array<double, 3> tt = json_vec3(cmd, "translate", {0, 0, 0});
+                const std::array<double, 3> rr = json_vec3(cmd, "rotate", {0, 0, 0});
+                const std::array<double, 3> ss = json_vec3(cmd, "scale", {1, 1, 1});
+                for (auto& p : B.verts) p = place_xform(p, tt, rr, ss);
+                MeshArrays A;
+                if (has) A = mesh_to_arrays(mesh);
+                const std::size_t nA = A.faces.size();
+                const int base = static_cast<int>(A.verts.size());
+                std::vector<std::array<double, 3>> V = std::move(A.verts);
+                for (const auto& p : B.verts) V.push_back(p);
+                std::vector<std::vector<int>> F = std::move(A.faces);
+                for (const auto& f : B.faces) {
+                    std::vector<int> fi;
+                    for (int k : f) fi.push_back(base + k);
+                    F.push_back(std::move(fi));
+                }
+                std::vector<std::vector<std::string>> tags = std::move(A.tags);
+                for (auto& t : B.tags) tags.push_back(std::move(t));
+                mesh = Mesh::from_pydata(V, F, tags);
+                has = true;
+                // materials: A's preserved; placed faces get the place material (if given),
+                // else keep the sub-object's own materials.
+                const bool has_pm = cmd.contains("material") && cmd.at("material").is_object();
+                Material pm;
+                if (has_pm) {
+                    const json& mj = cmd.at("material");
+                    if (mj.contains("color")) {
+                        const json& c = mj.at("color");
+                        pm.color = {c[0].get<double>(), c[1].get<double>(), c[2].get<double>()};
+                    }
+                    pm.metallic = mj.value("metallic", 0.0);
+                    pm.roughness = mj.value("roughness", 0.5);
+                    pm.set = true;
+                }
+                std::vector<Material> mats = std::move(A.mats);
+                for (std::size_t k = 0; k < B.faces.size(); ++k) mats.push_back(has_pm ? pm : B.mats[k]);
+                std::size_t fi = 0;
+                for (const auto& f : mesh.faces()) {
+                    if (fi < mats.size()) const_cast<Face*>(f.get())->material = mats[fi];
+                    if (fi >= nA) outs.push_back(f.get());
+                    ++fi;
+                }
             } else if (op == "boolean") {
                 // current mesh = operand A; inline verts+faces = operand B (the tool/cutter)
                 std::vector<std::array<double, 3>> bverts;
