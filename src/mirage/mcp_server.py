@@ -326,7 +326,12 @@ def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
       `height` per turn — threads / springs / augers; always open);
     subdivide{levels}; tag{on,name}; scale/translate{on,by}; assert{closed_manifold,euler};
     material{on,color:[r,g,b],metallic,roughness} (per-face PBR material the path tracer
-      renders; assign it AFTER the geometry ops — it does not propagate through later rebuilds).
+      renders; assign it AFTER the geometry ops — it does not propagate through later rebuilds);
+    place{program|verts+faces, translate, rotate, scale, material} (SCENE composition:
+      build a sub-object [a nested op-log, or inline geometry], transform it, and
+      DISJOINT-UNION it onto the model — so the op-log holds many distinct objects and a
+      scene is a legible list of place ops; last_created selects what you placed. The
+      place_object tool wraps this).
     Selectors (the `on` value): {"by":"normal","axis":"z","sign":1} | {"by":"tag","name":..} |
     {"by":"extreme","axis":"z","which":"max"} | {"by":"last_created"} | {"by":"all"} |
     {"by":"material","color":[r,g,b]} (faces carrying a material; omit color for any) |
@@ -359,6 +364,37 @@ def apply_mesh_op(command: dict, auto_repair: bool = True) -> dict:
                     "diagnostic": res.diagnostic, "suggestions": res.suggestions}
         _model.ops.pop()
         return {"ok": False, "error": str(exc)}
+
+
+@mcp.tool()
+def place_object(program: Optional[list] = None, at: Optional[list] = None,
+                 rotate: Optional[list] = None, scale: Optional[list] = None,
+                 material: Optional[dict] = None, verts: Optional[list] = None,
+                 faces: Optional[list] = None, auto_repair: bool = True) -> dict:
+    """Compose a sub-object into the current model at a transform — the SCENE op.
+
+    `program` is a sub-op-log (a list of {op,...} dicts, built into its own mesh), OR pass
+    inline `verts`+`faces`. It is transformed (scale -> rotate [degrees, XYZ] -> `at`) and
+    DISJOINT-UNIONED onto the current model — which it STARTS if the model is empty. So a
+    whole scene is a legible list of place ops, each carrying its object's operators and a
+    transform. `material`={color:[r,g,b],metallic,roughness} paints the placed object (else
+    it keeps its own); `last_created` then selects it, so you can keep editing what you
+    placed. This is how you compose many DISTINCT objects in ONE op-log (primitives alone
+    replace the running mesh). Example: new_model(), then place_object(program=[{"op":
+    "profile","points":[[0.1,0],[0.2,0.3],[0.1,0.6]]},{"op":"spin","axis":"z"}],
+    at=[0,0,0], material={"color":[0.3,0.5,0.5]}) drops a lathe-turned vase at the origin."""
+    cmd = {"op": "place",
+           "translate": list(at) if at else [0, 0, 0],
+           "rotate": list(rotate) if rotate else [0, 0, 0],
+           "scale": list(scale) if scale else [1, 1, 1]}
+    if program is not None:
+        cmd["program"] = program
+    else:
+        cmd["verts"] = verts or []
+        cmd["faces"] = faces or []
+    if material is not None:
+        cmd["material"] = material
+    return apply_mesh_op(cmd, auto_repair=auto_repair)
 
 
 @mcp.tool()

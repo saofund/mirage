@@ -32,3 +32,16 @@ def test_render_returns_image():
     M.step(dt=0.05, steps=10)
     img = M.render(160, 120)
     assert type(img).__name__ == "Image"  # FastMCP image content, not prose
+
+
+def test_place_object_composes_scene_via_mcp():
+    # place_object composes many DISTINCT objects into ONE legible op-log (not replace)
+    M.new_model()
+    assert M.place_object(program=[{"op": "cube", "size": 1.0}], at=[0, 0, 0],
+                          material={"color": [1, 0, 0]})["ok"]
+    r = M.place_object(program=[{"op": "cube", "size": 1.0}], at=[2, 0, 0],
+                       material={"color": [0, 1, 0]})
+    assert r["ok"]
+    assert [o["op"] for o in M.get_mesh_program()] == ["place", "place"]
+    assert r["stats"]["faces"] == 12          # 6 + 6 disjoint, not one replaced cube
+    assert len(r["components"]) == 2          # two separate objects in one model

@@ -1,0 +1,193 @@
+[
+  {
+    "op": "place",
+    "translate": [0, 0, -0.045],
+    "rotate": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "program": [
+      {
+        "op": "cube",
+        "size": 1.0
+      },
+      {
+        "op": "scale",
+        "on": {
+          "by": "all"
+        },
+        "by": [1.7, 0.95, 0.09]
+      }
+    ],
+    "material": {
+      "color": [0.45, 0.29, 0.16],
+      "metallic": 0.0,
+      "roughness": 0.4
+    }
+  },
+  {
+    "op": "place",
+    "translate": [-0.42, 0.06, 0.0],
+    "rotate": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "program": [
+      {
+        "op": "profile",
+        "points": [
+          [0.13, 0.0],
+          [0.15, 0.03],
+          [0.09, 0.15],
+          [0.12, 0.34],
+          [0.15, 0.5],
+          [0.1, 0.58]
+        ],
+        "plane": "xz",
+        "closed": false
+      },
+      {
+        "op": "spin",
+        "axis": "z",
+        "steps": 48,
+        "angle": 360.0
+      }
+    ],
+    "material": {
+      "color": [0.28, 0.47, 0.52],
+      "metallic": 0.0,
+      "roughness": 0.14
+    }
+  },
+  {
+    "op": "place",
+    "translate": [0.42, 0.14, 0.03],
+    "rotate": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "program": [
+      {
+        "op": "cube",
+        "size": 1.0
+      },
+      {
+        "op": "scale",
+        "on": {
+          "by": "all"
+        },
+        "by": [0.42, 0.3, 0.06]
+      }
+    ],
+    "material": {
+      "color": [0.62, 0.24, 0.2],
+      "metallic": 0.0,
+      "roughness": 0.6
+    }
+  },
+  {
+    "op": "place",
+    "translate": [0.44, 0.12, 0.085],
+    "rotate": [0, 0, -7],
+    "scale": [1.0, 1.0, 1.0],
+    "program": [
+      {
+        "op": "cube",
+        "size": 1.0
+      },
+      {
+        "op": "scale",
+        "on": {
+          "by": "all"
+        },
+        "by": [0.4, 0.28, 0.05]
+      }
+    ],
+    "material": {
+      "color": [0.24, 0.36, 0.46],
+      "metallic": 0.0,
+      "roughness": 0.6
+    }
+  },
+  {
+    "op": "place",
+    "translate": [0.13, -0.24, 0.0],
+    "rotate": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "program": [
+      {
+        "op": "profile",
+        "points": [
+          [0.0, 0.05],
+          [0.09, 0.012],
+          [0.17, 0.02],
+          [0.21, 0.09]
+        ],
+        "plane": "xz",
+        "closed": false
+      },
+      {
+        "op": "spin",
+        "axis": "z",
+        "steps": 40,
+        "angle": 360.0
+      }
+    ],
+    "material": {
+      "color": [0.9, 0.88, 0.83],
+      "metallic": 0.0,
+      "roughness": 0.2
+    }
+  },
+  {
+    "op": "place",
+    "translate": [0.1, -0.24, 0.07],
+    "rotate": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "program": [
+      {
+        "op": "uv_sphere",
+        "segments": 16,
+        "rings": 10,
+        "radius": 0.05
+      }
+    ],
+    "material": {
+      "color": [0.78, 0.24, 0.18],
+      "metallic": 0.0,
+      "roughness": 0.4
+    }
+  },
+  {
+    "op": "place",
+    "translate": [0.19, -0.21, 0.07],
+    "rotate": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "program": [
+      {
+        "op": "uv_sphere",
+        "segments": 16,
+        "rings": 10,
+        "radius": 0.05
+      }
+    ],
+    "material": {
+      "color": [0.86, 0.52, 0.16],
+      "metallic": 0.0,
+      "roughness": 0.4
+    }
+  },
+  {
+    "op": "place",
+    "translate": [-0.03, -0.3, 0.065],
+    "rotate": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "program": [
+      {
+        "op": "cylinder",
+        "sides": 20,
+        "radius": 0.07,
+        "height": 0.13
+      }
+    ],
+    "material": {
+      "color": [0.9, 0.88, 0.83],
+      "metallic": 0.0,
+      "roughness": 0.2
+    }
+  }
+]
