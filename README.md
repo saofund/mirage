@@ -28,6 +28,14 @@ case can be captured — regenerate this one (`.mp4` for video, `.gif` for inlin
 
 ![Modelling the airliner in Mirage's viewport, operator by operator](docs/gallery/airplane_assembly.gif)
 
+**A whole scene, not just a model.** A downtown of 169 buildings composed into a
+single op-log mesh and path-traced by the same renderer — proof the engine reaches
+past one object. How large scenes build, and where they bottleneck, is measured in
+[docs/scene-scaling.md](docs/scene-scaling.md); reproduce with `uv run python
+examples/cases/17_city_scene.py --hero`.
+
+![A whole scene: 169 buildings as one merged op-log mesh, path-traced](docs/gallery/city.png)
+
 The core operators, one panel each (regenerate with `uv run python docs/gallery/render_gallery.py`):
 
 ![Mirage modeling gallery](docs/gallery/showcase.png)
@@ -61,7 +69,7 @@ pip install -e .
 python examples/falling_box.py
 ```
 
-## Use with Claude Code
+## Use with Claude Code (and Codex, and any MCP client)
 
 This repo ships a **project-scoped** MCP config (`.mcp.json`), so Claude Code
 picks Mirage up automatically when you open this folder as the workspace:
@@ -79,6 +87,12 @@ Then `/mcp` shows `mirage` connected. The agent can **author** (`add_box`,
 `diff_scene`, `save_scene`, `load_scene`, `get_log`, `replay_log`), and
 **simulate & see** (`step`, `render`). Every tool returns structured JSON;
 `render` returns a PNG the agent can look at.
+
+**A portable skill ships with Mirage.** [`skills/mirage/SKILL.md`](skills/mirage/SKILL.md)
+(a Claude Code skill) and [`AGENTS.md`](AGENTS.md) (which OpenAI Codex reads
+natively) teach any agent to set up, connect, and drive the engine — model
+authoring, scene composition, rendering, and the performance rules — so a coding
+agent is productive in one read.
 
 Run the server standalone (for any other MCP client):
 
