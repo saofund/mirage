@@ -192,11 +192,11 @@ float shadow_vis(vec4 lp, float NoL){
   vec3 p = lp.xyz/lp.w * 0.5 + 0.5;
   if(p.z > 1.0) return 1.0;
   float bias = max(0.003*(1.0-NoL), 0.0010);
-  vec2 tx = 1.0/vec2(textureSize(uShadow,0));
+  vec2 tx = 1.3/vec2(textureSize(uShadow,0));       // slightly wider taps -> softer penumbra
   float s = 0.0;
-  for(int x=-1;x<=1;x++) for(int y=-1;y<=1;y++)
+  for(int x=-2;x<=2;x++) for(int y=-2;y<=2;y++)      // 5x5 PCF (softer than 3x3)
     s += (p.z - bias > texture(uShadow, p.xy + vec2(x,y)*tx).r) ? 0.0 : 1.0;
-  return s/9.0;
+  return s/25.0;
 }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
 
@@ -218,7 +218,10 @@ void main(){
   col += brdf(N,V, normalize(vec3(-0.6, 0.2, 0.3)), vec3(0.5,0.6,0.8), albedo,metallic,rough); // fill (cool)
   col += brdf(N,V, normalize(vec3( 0.1,-0.7, 0.4)), vec3(0.5,0.45,0.4), albedo,metallic,rough); // rim (warm)
   float hemi = 0.5+0.5*N.z;                          // sky/ground hemispherical ambient
-  col += mix(vec3(0.10,0.10,0.12), vec3(0.32,0.35,0.40), hemi) * albedo * (1.0-metallic*0.7);
+  // a warmer ground bounce + a brighter, cooler sky dome — a cheap stand-in for the
+  // tracer's sky+sun environment, so the room reads less flat under raster lighting.
+  vec3 ground = vec3(0.17,0.145,0.125), sky = vec3(0.40,0.44,0.52);
+  col += mix(ground, sky, hemi) * albedo * (1.0-metallic*0.7);
   frag = vec4(pow(aces(col), vec3(0.4545)), 1.0);
 }
 )";
@@ -252,11 +255,11 @@ uniform float uFade;
 float shadow_vis(vec4 lp){
   vec3 p = lp.xyz/lp.w * 0.5 + 0.5;
   if(p.z > 1.0) return 1.0;
-  vec2 tx = 1.0/vec2(textureSize(uShadow,0));
+  vec2 tx = 1.3/vec2(textureSize(uShadow,0));
   float s = 0.0;
-  for(int x=-1;x<=1;x++) for(int y=-1;y<=1;y++)
+  for(int x=-2;x<=2;x++) for(int y=-2;y<=2;y++)      // 5x5 PCF (softer floor shadow)
     s += (p.z - 0.0015 > texture(uShadow, p.xy + vec2(x,y)*tx).r) ? 0.0 : 1.0;
-  return s/9.0;
+  return s/25.0;
 }
 float gridline(vec2 p, float scale){
   vec2 c = abs(fract(p/scale - 0.5) - 0.5) / fwidth(p/scale);
@@ -618,6 +621,7 @@ int main(int argc, char** argv) {
         else if (a == "--nohighlight") nohl = true;
         else if (a == "--automode") g_auto_force = true;  // force the AI "AUTO" HUD (hide the panel)
         else if (a == "--wire") g_wire = true;            // force the wireframe overlay (promo / verification)
+        else if (a == "--smooth") g_flat = false;         // force smooth shading (beauty frames — no facets)
         else if (a == "--autocap" && i + 1 < argc) std::snprintf(g_auto_msg, sizeof(g_auto_msg), "%s", argv[++i]);
         else if (a == "--autocap-file" && i + 1 < argc) {  // read the HUD line as UTF-8 from a file
             std::ifstream cf(argv[++i], std::ios::binary);  // (Windows argv is ANSI-mangled; a file is byte-exact)
@@ -655,6 +659,7 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_SAMPLES, 4);  // 4x MSAA — smooth edges (raster's biggest tell vs the tracer)
     if (!shot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     int W = 1100, H = 760;
     if (win_w > 0 && win_h > 0) { W = win_w; H = win_h; }
@@ -671,6 +676,7 @@ int main(int argc, char** argv) {
         glfwSetScrollCallback(win, on_scroll);
     }
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_MULTISAMPLE);  // honour the 4x MSAA buffer requested above
 
     GLuint prog_gl = make_program(VERT, FRAG);
     const GLint locMVP = glGetUniformLocation(prog_gl, "uMVP");

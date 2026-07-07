@@ -48,6 +48,26 @@ def default_viewer() -> Path:
     return _repo_root() / "core" / "build" / "Release" / "mirage_viewer.exe"
 
 
+def default_render() -> Path:
+    """Where the headless path tracer lands in a standard Release build."""
+    import os
+    env = os.environ.get("MIRAGE_RENDER")
+    if env:
+        return Path(env)
+    return _repo_root() / "core" / "build" / "Release" / "mirage_render.exe"
+
+
+def _orbit_eye(cam, tgt):
+    """The world-space eye for an orbit pose — matches the viewer's ``orbit_eye`` exactly,
+    so a path-traced frame frames identically to the viewer frame at the same (yaw, pitch,
+    dist) about ``tgt``. Lets the tracer stand in for the viewport with the same camera."""
+    yaw, pitch, dist = cam
+    cx, cy, cz = tgt
+    return (cx + dist * math.cos(pitch) * math.sin(yaw),
+            cy - dist * math.cos(pitch) * math.cos(yaw),
+            cz + dist * math.sin(pitch))
+
+
 # --------------------------------------------------------------------------- #
 # Turning an arbitrary "stage" into an op-log the viewer can load, and reading
 # its geometry back for framing.
@@ -99,6 +119,18 @@ def _interp_keyframes(kfs, t):
                 tgt = tuple(a[4 + k] + (b[4 + k] - a[4 + k]) * u for k in range(3))
             return (y, p, d, tgt)
     return pose(kfs[-1])
+
+
+def _flat_tail_t(kfs):
+    """The clip-time ``t`` at which the camera stops moving — the start of the final
+    equal-pose (yaw/pitch/dist/aim) segment, or 1.0 if there is none. Lets the caller
+    path-trace ONLY the static held frames (one render) and leave the motion to the fast
+    real-time renderer (where per-frame path-tracing would be slow and would shimmer)."""
+    last = tuple(kfs[-1][1:])
+    for i in range(len(kfs) - 2, -1, -1):
+        if tuple(kfs[i][1:]) != last:
+            return kfs[i + 1][0]
+    return kfs[0][0]
 
 
 # --------------------------------------------------------------------------- #
@@ -169,7 +201,9 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
                  view=(2.30, 0.36, 9.0), size=(1280, 720), fps=24,
                  per=13, hold=24, reveal=0.0, reveal_sweep=0.5, gif_w=760,
                  gif_fps=None, target=None, floorz=None, viewer=None, tmp=None,
-                 caption_pos=None, automode=False, keyframes=None, quiet=False):
+                 caption_pos=None, automode=False, keyframes=None, smooth=False,
+                 renderer="viewer", trace_hold=False, trace_spp=96, trace_threads=None,
+                 trace_knobs=None, cam_fov=0.9, render=None, quiet=False):
     """Film ``stages`` assembling in the real viewer; write ``<out_base>.mp4`` + ``.gif``.
 
     stages       ordered models (MeshProgram | .v/.f/.m object | (v,f,m) tuple); each is
@@ -195,6 +229,19 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
                  fixed ``view``. Smoothstep-eased between keys; make the last two keys
                  equal so the final dwell is static (and cache-cheap). Overrides ``view``
                  / ``reveal``. Motion means each frame is its own render (no cam cache).
+    smooth       pass ``--smooth`` to the viewer (smooth shading, no facets) — nicer for
+                 organic/curved models in beauty frames.
+    renderer     ``"viewer"`` (default, fast real-time raster) or ``"raytrace"`` — render
+                 EVERY frame with the path tracer (``mirage_render``) for promo-grade
+                 footage (global illumination, soft shadows, sky+sun). Far slower, and a
+                 moving camera at low spp can shimmer, so raise ``trace_spp``.
+    trace_hold   with ``renderer="viewer"``: path-trace just the final dwell (the static
+                 hold) — one render, held — so the clip *ends* on a Cycles-class beauty
+                 frame while the build stays cheap real-time. The best of both.
+    trace_spp / trace_threads / trace_knobs / cam_fov
+                 the tracer's samples-per-pixel, worker cap, extra ``--k v`` knobs (e.g.
+                 ``{"sun": 1.2, "env": 1.15, "exposure": 1.1}``), and vertical FOV (match
+                 the viewer's 0.9 so framing is identical).
 
     Returns ``(mp4_path, gif_path)``. Renders are cached on (stage, camera), so a build
     of N stages held H frames each with an R-frame reveal costs ~``N + R/2`` viewer runs,
@@ -211,6 +258,11 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
     if not viewer.exists():
         raise FileNotFoundError(
             f"mirage_viewer not built (-DMIRAGE_BUILD_VIEWER=ON): {viewer}")
+    # the path tracer is only needed if some frame is rendered with it
+    want_trace = renderer == "raytrace" or trace_hold
+    render_exe = (Path(render) if render else default_render()) if want_trace else None
+    if want_trace and not render_exe.exists():
+        raise FileNotFoundError(f"mirage_render not built: {render_exe}")
     ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
 
     out_dir = Path(out_dir) if out_dir else (_repo_root() / "docs" / "gallery")
@@ -259,63 +311,94 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
             _capfiles[i] = p
         return _capfiles[i]
 
-    # render cache: (stage, cam-signature, aim-signature) -> captioned PNG. Identical held
-    # frames and symmetric reveal poses hit the cache instead of re-running the viewer.
+    # render cache: (stage, cam, aim, renderer) -> captioned PNG. Identical held frames and
+    # symmetric reveal poses hit the cache instead of re-rendering.
     _cache = {}
-    def base_png(stage, cam, tgt=None):
-        if tgt is None:
-            tgt = (tx, ty, tz)
-        key = (stage, "%.4f_%.4f_%.4f" % cam, "%.4f_%.4f_%.4f" % tgt)
-        if key in _cache:
-            return _cache[key]
-        ppm = tmp / "_cur.ppm"
-        if ppm.exists():
-            ppm.unlink()
+    def _run_viewer(stage, cam, tgt, ppm):
         args = [str(viewer), "--oplog", str(oplog(stage)), "--winsize", str(W), str(H),
                 "--cam", "%.5f" % cam[0], "%.5f" % cam[1], "%.5f" % cam[2],
                 "--target", "%.5f" % tgt[0], "%.5f" % tgt[1], "%.5f" % tgt[2],
                 "--floorz", "%.5f" % floorz, "--nohighlight", "--screenshot", str(ppm)]
+        if smooth:
+            args.append("--smooth")
         if automode:  # hide the panel; the top-left HUD names the stage instead
             args.append("--automode")
             if captions:
                 args += ["--autocap-file", str(capfile(stage))]
         r = subprocess.run(args, capture_output=True, text=True)
+        return r, "viewer"
+
+    def _run_tracer(stage, cam, tgt, ppm):
+        eye = _orbit_eye(cam, tgt)  # same orbit pose the viewer would use -> identical framing
+        args = [str(render_exe), "--oplog", str(oplog(stage)), "--out", str(ppm),
+                "--w", str(W), "--h", str(H), "--spp", str(trace_spp), "--bounce", "8",
+                "--cam-eye", *("%.5f" % v for v in eye),
+                "--cam-target", *("%.5f" % v for v in tgt), "--cam-fov", "%.5f" % cam_fov]
+        if trace_threads:
+            args += ["--threads", str(trace_threads)]
+        for k, v in (trace_knobs or {}).items():
+            args += [f"--{k}", str(v)]
+        r = subprocess.run(args, capture_output=True, text=True)
+        return r, "tracer"
+
+    def base_png(stage, cam, tgt=None, mode="viewer"):
+        if tgt is None:
+            tgt = (tx, ty, tz)
+        key = (stage, "%.4f_%.4f_%.4f" % cam, "%.4f_%.4f_%.4f" % tgt, mode)
+        if key in _cache:
+            return _cache[key]
+        ppm = tmp / "_cur.ppm"
+        if ppm.exists():
+            ppm.unlink()
+        r, who = (_run_tracer if mode == "raytrace" else _run_viewer)(stage, cam, tgt, ppm)
         if not ppm.exists():
             raise RuntimeError(
-                f"viewer produced no frame (stage {stage}, rc={r.returncode}):\n{r.stderr[-400:]}")
+                f"{who} produced no frame (stage {stage}, rc={r.returncode}):\n{r.stderr[-400:]}")
         img = Image.open(ppm).convert("RGB")
-        if captions and not automode:  # in AUTO mode the HUD carries the caption
+        # AUTO mode's HUD carries the caption in the viewer; the tracer draws no HUD, so a
+        # traced AUTO frame (e.g. the money-shot hold) stays clean. Otherwise caption in PIL.
+        if captions and not automode:
             _caption(img, captions[min(stage, len(captions) - 1)], f"{stage + 1}/{NP}", cpos, fonts)
         out = cache_dir / f"r{len(_cache):04d}.png"
         img.save(out)
         _cache[key] = out
         return out
 
-    # the frame plan: (stage, cam, target) per frame (target None -> the fixed default)
+    # the frame plan: (stage, cam, target, mode) per frame. mode picks the renderer:
+    # "raytrace" for all frames (renderer="raytrace"), or just the STATIC closing dwell
+    # (trace_hold) — a single traced beauty frame held, while the motion stays real-time.
+    def frame_mode(is_static_tail):
+        if renderer == "raytrace":
+            return "raytrace"
+        if trace_hold and is_static_tail:
+            return "raytrace"
+        return "viewer"
+
     plan = []
     if keyframes:
         # a moving camera: interpolate the keyframe path across the whole clip while the
         # build stages advance underneath it; a flat final key-segment gives a static
         # dwell. Motion means most frames are their own render (no fixed-cam cache reuse).
         F = per * NP + hold
+        flat_t = _flat_tail_t(keyframes)          # where the camera stops moving
         for n in range(F):
             stage = min(NP - 1, n // per)
             t = n / max(1, F - 1)
             y, p, d, tgt = _interp_keyframes(keyframes, t)
-            plan.append((stage, (y, p, d), tgt))
+            plan.append((stage, (y, p, d), tgt, frame_mode(t >= flat_t - 1e-9)))
     else:
         # fixed camera during the build -> optional eased reveal swing -> end dwell
-        for f in range(per * NP):
-            plan.append((min(NP - 1, f // per), (yaw0, pitch0, dist0), None))
         R = round(reveal * fps)
+        for f in range(per * NP):
+            plan.append((min(NP - 1, f // per), (yaw0, pitch0, dist0), None, frame_mode(False)))
         for i in range(R):                           # a single eased swing out and back
             yaw = yaw0 + reveal_sweep * math.sin(math.pi * i / R)
-            plan.append((NP - 1, (yaw, pitch0, dist0), None))
-        for _ in range(hold):
-            plan.append((NP - 1, (yaw0, pitch0, dist0), None))
+            plan.append((NP - 1, (yaw, pitch0, dist0), None, frame_mode(False)))
+        for _ in range(hold):                        # the static end dwell
+            plan.append((NP - 1, (yaw0, pitch0, dist0), None, frame_mode(True)))
 
-    for n, (stage, cam, tgt) in enumerate(plan):
-        shutil.copyfile(base_png(stage, cam, tgt), frames_dir / f"f{n:04d}.png")
+    for n, (stage, cam, tgt, mode) in enumerate(plan):
+        shutil.copyfile(base_png(stage, cam, tgt, mode), frames_dir / f"f{n:04d}.png")
 
     mp4, gif = _encode(ffmpeg, frames_dir, out_dir, out_base, fps, gif_w, gif_fps or fps, tmp)
     if not quiet:

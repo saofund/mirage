@@ -43,9 +43,11 @@ examples/cases/18_interior_scene.py --hero`.
 Here is that room **being built in Mirage's own viewport**, in the editor's **AUTO mode** —
 when the AI is driving the op-log the tool panel steps aside for a top-left status HUD
 (*what's being modelled right now*), so the frame is all model: the lathe sweeping the vase,
-`boolean` punching the window, `bevel` rounding the armchair, then each object *placed*. Every
-frame is a headless screenshot of the real native GUI. Regenerate with
-`uv run python examples/cases/18_interior_scene.py --film`.
+`boolean` punching the window, `bevel` rounding the armchair, then each object *placed* — and
+it **settles onto a path-traced close-up** of the finished scene (the real-time viewport for
+the build, the first-party path tracer for the money shot, both off one op-log). Regenerate
+with `uv run python examples/cases/18_interior_scene.py --film` (add `ANIM_RAYTRACE=1` for a
+fully path-traced promo pass).
 
 ![Building the interior in Mirage's viewport, object by object](docs/gallery/interior_build.gif)
 

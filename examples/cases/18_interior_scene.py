@@ -17,7 +17,10 @@ path tracer (``mirage_render``) shoots it from a camera standing *inside* the ro
 
 The still needs ``mirage_render.exe`` (``cmake --build core/build --config
 Release``; ``--cam-*`` / ``--threads``) and Pillow. ``--film`` needs
-``mirage_viewer.exe`` (``-DMIRAGE_BUILD_VIEWER=ON``) and ffmpeg.
+``mirage_viewer.exe`` (``-DMIRAGE_BUILD_VIEWER=ON``) and ffmpeg; it films the build
+in the real-time viewport and **settles onto a path-traced close-up** (so it also
+uses ``mirage_render``). ``ANIM_RAYTRACE=1 ... --film`` path-traces *every* frame — a
+slower, promo-grade pass.
 """
 import sys
 import time
@@ -361,8 +364,16 @@ def film():
         (0.90, 0.91, 0.31, 2.95, -0.31, 0.15, 0.71),  # focus-pull close on the vase / table (材质)
         (1.00, 0.91, 0.31, 2.95, -0.31, 0.15, 0.71),  # hold on the close-up (flat -> cached dwell)
     ]
+    hq = os.environ.get("ANIM_RAYTRACE") == "1"   # full path-traced promo pass (slow, gorgeous)
     record_build(
         stages, "interior_build", captions=captions, automode=True, keyframes=moves,
+        smooth=True,                              # smooth shading in the real-time frames (no facets)
+        renderer="raytrace" if hq else "viewer",
+        trace_hold=not hq,                        # default: path-trace only the closing close-up (money shot)
+        trace_spp=120 if hq else 420,             # hq: many moving frames (modest); default: one held frame (crisp)
+        trace_threads=12,
+        trace_knobs={"sun": 1.2, "env": 1.15, "exposure": 1.1},  # match the hero still's light
+        cam_fov=0.9,                              # == the viewer's FOV, so framing is identical
         size=(854, 480) if quick else (1280, 720),
         fps=24, per=8 if quick else 12, hold=12 if quick else 26,
         gif_w=480, gif_fps=10,   # a moving clip can't dedupe frames -> keep the .gif lean
