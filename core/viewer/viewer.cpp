@@ -11,6 +11,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -201,6 +202,7 @@ vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0
 
 void main(){
   if(uHighlight==1){ frag = vec4(pow(vec3(1.0,0.55,0.12),vec3(0.4545)),1.0); return; }
+  if(uHighlight==2){ frag = vec4(pow(vec3(0.60,0.80,0.86),vec3(0.4545)),1.0); return; }  // wireframe lines
   vec3 N = (uFlat==1) ? normalize(cross(dFdx(vWorld), dFdy(vWorld))) : normalize(vN);
   vec3 V = normalize(uEye - vWorld);
   if(dot(N,V) < 0.0) N = -N;                       // two-sided shading
@@ -431,6 +433,7 @@ static char g_auto_msg[192] = "";         // "what the AI is editing" line (op d
 static float g_albedo[3] = {0.82f, 0.80f, 0.74f};
 static float g_metallic = 0.0f, g_rough = 0.45f;
 static bool g_flat = true;
+static bool g_wire = false;  // wireframe overlay (a viewport shading toggle)
 
 static json current_on() {
     if (g_sel_mode == SEL_PICK) return sel::near(g_sel);
@@ -932,6 +935,17 @@ int main(int argc, char** argv) {
             glDrawArrays(GL_TRIANGLES, 0, hl_verts);
             glDisable(GL_POLYGON_OFFSET_FILL);
         }
+        if (g_wire) {  // wireframe overlay: the mesh edges as flat teal lines over the solid
+            glUseProgram(prog_gl);
+            glUniform1i(locHighlight, 2);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glEnable(GL_POLYGON_OFFSET_LINE); glPolygonOffset(-1.0f, -1.0f);
+            glBindVertexArray(vao);
+            glDrawArrays(GL_TRIANGLES, 0, g.verts);
+            glDisable(GL_POLYGON_OFFSET_LINE);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            glUniform1i(locHighlight, 0);
+        }
     };
 
     IMGUI_CHECKVERSION();
@@ -954,16 +968,28 @@ int main(int argc, char** argv) {
         static ImVector<ImWchar> ranges;
         ImFontGlyphRangesBuilder gb;
         gb.AddRanges(io.Fonts->GetGlyphRangesDefault());
-        gb.AddText("\xe2\x80\x94\xe2\x97\x8f\xe2\x97\x8b");  // U+2014 —, U+25CF ●, U+25CB ○
+        gb.AddText("\xe2\x80\x94\xe2\x97\x8f\xe2\x97\x8b\xe2\x96\xb8");  // U+2014 —, U+25CF ●, U+25CB ○, U+25B8 ▸
         gb.BuildRanges(&ranges);
         const ImWchar* gr = ranges.Data;
         const char* body_ttf = "C:\\Windows\\Fonts\\segoeui.ttf";
         const char* semi_ttf = "C:\\Windows\\Fonts\\seguisb.ttf";
         const char* mono_ttf = "C:\\Windows\\Fonts\\consola.ttf";
-        if (std::filesystem::exists(body_ttf)) font_body  = io.Fonts->AddFontFromFileTTF(body_ttf, 17.5f, &cfg, gr);
-        if (std::filesystem::exists(semi_ttf)) font_title = io.Fonts->AddFontFromFileTTF(semi_ttf, 22.0f, &cfg, gr);
-        if (std::filesystem::exists(semi_ttf)) font_h     = io.Fonts->AddFontFromFileTTF(semi_ttf, 15.5f, &cfg, gr);
-        if (std::filesystem::exists(mono_ttf)) font_mono  = io.Fonts->AddFontFromFileTTF(mono_ttf, 15.0f, &cfg, gr);
+        // Microsoft YaHei carries the CJK glyphs Segoe UI lacks; merge it in so the AUTO
+        // HUD / captions can read Chinese (e.g. "AI 正在编辑:沙发") while Latin stays Segoe UI.
+        const char* cjk_ttf = "C:\\Windows\\Fonts\\msyh.ttc";
+        const bool has_cjk = std::filesystem::exists(cjk_ttf);
+        const ImWchar* cjk_gr = io.Fonts->GetGlyphRangesChineseSimplifiedCommon();
+        ImFontConfig mcfg; mcfg.MergeMode = true; mcfg.OversampleH = 2; mcfg.OversampleV = 1;
+        auto add_font = [&](const char* ttf, float sz, bool cjk) -> ImFont* {
+            if (!std::filesystem::exists(ttf)) return nullptr;
+            ImFont* f = io.Fonts->AddFontFromFileTTF(ttf, sz, &cfg, gr);
+            if (cjk && has_cjk) io.Fonts->AddFontFromFileTTF(cjk_ttf, sz, &mcfg, cjk_gr);  // merge CJK into f
+            return f;
+        };
+        font_body  = add_font(body_ttf, 17.5f, true);
+        font_title = add_font(semi_ttf, 22.0f, false);   // "AUTO" / "MIRAGE" — Latin only
+        font_h     = add_font(semi_ttf, 15.5f, true);
+        font_mono  = add_font(mono_ttf, 15.0f, true);
         if (!font_body)  font_body  = io.Fonts->AddFontDefault();
         if (!font_title) font_title = font_body;
         if (!font_h)     font_h     = font_body;
@@ -1144,6 +1170,7 @@ int main(int argc, char** argv) {
         ImGui::SetNextItemWidth(-74); ImGui::SliderFloat("metallic", &g_metallic, 0.0f, 1.0f, "%.2f");
         ImGui::SetNextItemWidth(-74); ImGui::SliderFloat("roughness", &g_rough, 0.04f, 1.0f, "%.2f");
         ImGui::Checkbox("flat shading (faceted)", &g_flat);
+        ImGui::SameLine(); ImGui::Checkbox("wireframe", &g_wire);
         ImGui::Spacing();
         // Bake these as a PER-FACE `material` op on the current selection — it writes
         // to the op-log SoT, so the same assignment shows in the viewport, the path
@@ -1251,8 +1278,16 @@ int main(int argc, char** argv) {
             ImGui::PopStyleColor();
             ImGui::PopFont();
         }
-        ImGui::Dummy(ImVec2(0, 2));
+        // a streaming tail of the op-log — the last few ops as they land (newest marked)
+        ImGui::Dummy(ImVec2(0, 3));
         ImGui::PushFont(font_mono);
+        const size_t nops = prog.size();
+        for (size_t k = (nops > 3 ? nops - 3 : 0); k < nops; ++k) {
+            const bool newest = (k + 1 == nops);
+            ImGui::PushStyleColor(ImGuiCol_Text, newest ? ui::accent_br : ui::text_dim);
+            ImGui::Text("%s %s", newest ? "\xe2\x96\xb8" : "  ", Program::label(prog.ops()[k]).c_str());  // U+25B8 marks newest
+            ImGui::PopStyleColor();
+        }
         ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
         ImGui::Text("%zu ops  \xc2\xb7  %zu faces", prog.size(), model.num_faces());
         ImGui::PopStyleColor();
@@ -1263,7 +1298,47 @@ int main(int argc, char** argv) {
             ImGui::TextUnformatted("click anywhere to take control");
             ImGui::PopStyleColor();
         }
+        // a thin accent spine down the card's left edge — reads as a live/product chip
+        const ImVec2 wp = ImGui::GetWindowPos();
+        dl->AddRectFilled(wp, ImVec2(wp.x + 3.0f, wp.y + ImGui::GetWindowHeight()), acc);
         ImGui::End();
+    };
+
+    // A small orientation gizmo in the bottom-right corner: the world axes projected
+    // by the live camera basis, so you always know which way is up (a human navigation
+    // aid — hidden while the AI drives, to keep AUTO frames clean). ±X/Y/Z as coloured
+    // tips, positive ends labelled, drawn far-to-near so the nearest overlays.
+    auto axis_gizmo = [&]() {
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        const ImVec2 ds = ImGui::GetIO().DisplaySize;
+        const ImVec2 o(ds.x - 58.0f, ds.y - 58.0f);
+        const float R = 25.0f;
+        const V3 fwd = cross(g_cam_up, g_cam_right);  // camera forward (eye -> scene)
+        struct Tip { float depth; ImVec2 p; ImU32 col; char n; bool pos; };
+        std::array<Tip, 6> tips;
+        const V3 dir[3] = {{1,0,0}, {0,1,0}, {0,0,1}};
+        const ImU32 col[3] = {IM_COL32(216,98,98,255), IM_COL32(122,198,114,255), IM_COL32(114,154,234,255)};
+        const char nm[3] = {'X', 'Y', 'Z'};
+        int ti = 0;
+        for (int a = 0; a < 3; ++a)
+            for (int s = 1; s >= -1; s -= 2) {
+                const V3 d{dir[a][0]*s, dir[a][1]*s, dir[a][2]*s};
+                const float sx = dot(d, g_cam_right), sy = -dot(d, g_cam_up);
+                tips[ti++] = {dot(d, fwd), ImVec2(o.x + sx * R, o.y + sy * R), col[a], nm[a], s > 0};
+            }
+        std::sort(tips.begin(), tips.end(), [](const Tip& x, const Tip& y) { return x.depth > y.depth; });
+        for (const auto& tp : tips) {
+            dl->AddLine(o, tp.p, IM_COL32(205, 210, 220, 80), 1.6f);
+            if (tp.pos) {
+                dl->AddCircleFilled(tp.p, 8.5f, tp.col);
+                char lbl[2] = {tp.n, 0};
+                const ImVec2 ts = ImGui::CalcTextSize(lbl);
+                dl->AddText(ImVec2(tp.p.x - ts.x * 0.5f, tp.p.y - ts.y * 0.5f), IM_COL32(18, 20, 24, 255), lbl);
+            } else {
+                dl->AddCircleFilled(tp.p, 6.0f, IM_COL32(38, 42, 50, 255));
+                dl->AddCircle(tp.p, 6.0f, tp.col, 0, 1.6f);
+            }
+        }
     };
 
     auto frame = [&]() {
@@ -1276,6 +1351,7 @@ int main(int argc, char** argv) {
             model = prog.build(&last_tag); g = build_gpu(model); upload(); build_ground(); rebuild_highlight();
             if (g_live_sync) save_oplog();  // push the human's edit to the shared op-log
         }
+        if (!g_auto_mode && g.verts > 0) axis_gizmo();  // orientation aid (human mode only)
         draw();
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

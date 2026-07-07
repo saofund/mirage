@@ -350,7 +350,7 @@ def film():
         stages, "interior_build", captions=captions, automode=True,
         view=(float(os.environ.get("ANIM_YAW", 0.80)),     # stand in the OPEN +x,-y corner, looking IN
               float(os.environ.get("ANIM_PITCH", 0.44)),
-              float(os.environ.get("ANIM_DIST", 7.4))),
+              float(os.environ.get("ANIM_DIST", 6.2))),     # pulled in close, framed like the hero still
         size=(854, 480) if quick else (1280, 720),
         fps=24, per=6 if quick else 16, hold=10 if quick else 28,
         reveal=0.4 if quick else 1.2, reveal_sweep=0.34,
