@@ -617,6 +617,7 @@ int main(int argc, char** argv) {
         else if (a == "--floorz" && i + 1 < argc) { floorz_set = true; floorz_val = float(std::atof(argv[++i])); }
         else if (a == "--nohighlight") nohl = true;
         else if (a == "--automode") g_auto_force = true;  // force the AI "AUTO" HUD (hide the panel)
+        else if (a == "--wire") g_wire = true;            // force the wireframe overlay (promo / verification)
         else if (a == "--autocap" && i + 1 < argc) std::snprintf(g_auto_msg, sizeof(g_auto_msg), "%s", argv[++i]);
         else if (a == "--autocap-file" && i + 1 < argc) {  // read the HUD line as UTF-8 from a file
             std::ifstream cf(argv[++i], std::ios::binary);  // (Windows argv is ANSI-mangled; a file is byte-exact)
