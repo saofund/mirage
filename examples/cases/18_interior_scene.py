@@ -346,18 +346,20 @@ def film():
     from mirage.capture import record_build
     stages, captions = film_stages()
     quick = os.environ.get("ANIM_QUICK") == "1"
-    # a moving camera (dolly + orbit) through the open +x,-y corner: establish high &
-    # wide, push in to the closest beat as the vase turns on the lathe, ease back and
-    # swing to a frontal read, then settle to the hero framing and hold. (t, yaw, pitch,
-    # dist); the last two keys are equal so the final dwell is static.
+    # a moving camera (dolly + orbit + a closing focus-pull) through the open +x,-y
+    # corner: establish high & wide, push in to the closest beat as the vase turns on
+    # the lathe, ease back and swing to a frontal read, then drive all the way IN to an
+    # intimate close-up of the vase / table (aim pulling onto it) so the materials read,
+    # and hold there. (t, yaw, pitch, dist, tx, ty, tz); last two keys equal -> static dwell.
     moves = [
-        (0.00, 0.66, 0.54, 6.8),   # establishing — high & wide, from the right
-        (0.16, 0.82, 0.46, 5.7),   # dolly in as the shell + table go up
-        (0.32, 0.96, 0.40, 4.9),   # closest — the vase on the lathe (hero beat)
-        (0.52, 0.86, 0.43, 5.4),   # ease back, drift across the room
-        (0.70, 0.64, 0.46, 5.7),   # swing to a frontal angle (sofa / armchair)
-        (0.85, 0.82, 0.42, 5.2),   # settle to the hero framing
-        (1.00, 0.82, 0.42, 5.2),   # hold (flat segment -> cached dwell)
+        (0.00, 0.66, 0.54, 6.8, -0.10, 0.50, 0.95),   # establishing — high & wide, room centre
+        (0.15, 0.82, 0.46, 5.7, -0.10, 0.50, 0.95),   # dolly in as the shell + table go up
+        (0.30, 0.96, 0.40, 4.9, -0.22, 0.30, 0.82),   # closest on the vase beat, aim drifting in
+        (0.48, 0.86, 0.44, 5.5, -0.10, 0.50, 0.95),   # ease back, recentre on the room
+        (0.64, 0.64, 0.46, 5.7, -0.10, 0.50, 0.95),   # swing to a frontal angle (sofa / armchair)
+        (0.78, 0.84, 0.40, 4.6, -0.16, 0.40, 0.86),   # come back in
+        (0.90, 0.91, 0.31, 2.95, -0.31, 0.15, 0.71),  # focus-pull close on the vase / table (材质)
+        (1.00, 0.91, 0.31, 2.95, -0.31, 0.15, 0.71),  # hold on the close-up (flat -> cached dwell)
     ]
     record_build(
         stages, "interior_build", captions=captions, automode=True, keyframes=moves,

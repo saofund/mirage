@@ -75,21 +75,30 @@ def _stage_verts(stage):
 
 
 def _interp_keyframes(kfs, t):
-    """A smooth camera pose at clip-time ``t`` in [0,1] from ``(t, yaw, pitch, dist)``
-    keyframes — smoothstep-eased between the two bracketing keys. Used to drive a moving
-    camera (a dolly / orbit) across the making-of, instead of a single fixed viewpoint."""
+    """A smooth camera pose at clip-time ``t`` in [0,1] from keyframes, smoothstep-eased
+    between the two bracketing keys. Each key is ``(t, yaw, pitch, dist)`` or, to pull the
+    aim as well, ``(t, yaw, pitch, dist, tx, ty, tz)``. Returns ``(yaw, pitch, dist,
+    target)`` where ``target`` is a 3-tuple or ``None`` (meaning: use the fixed default).
+    Drives a moving camera (a dolly / orbit / focus-pull) instead of one fixed viewpoint."""
+    def pose(k):
+        return (k[1], k[2], k[3], (k[4], k[5], k[6]) if len(k) >= 7 else None)
     if t <= kfs[0][0]:
-        return kfs[0][1:]
+        return pose(kfs[0])
     if t >= kfs[-1][0]:
-        return kfs[-1][1:]
+        return pose(kfs[-1])
     for i in range(len(kfs) - 1):
-        t0, y0, p0, d0 = kfs[i]
-        t1, y1, p1, d1 = kfs[i + 1]
-        if t0 <= t <= t1:
-            u = (t - t0) / (t1 - t0) if t1 > t0 else 0.0
+        a, b = kfs[i], kfs[i + 1]
+        if a[0] <= t <= b[0]:
+            u = (t - a[0]) / (b[0] - a[0]) if b[0] > a[0] else 0.0
             u = u * u * (3.0 - 2.0 * u)              # smoothstep ease
-            return (y0 + (y1 - y0) * u, p0 + (p1 - p0) * u, d0 + (d1 - d0) * u)
-    return kfs[-1][1:]
+            y = a[1] + (b[1] - a[1]) * u
+            p = a[2] + (b[2] - a[2]) * u
+            d = a[3] + (b[3] - a[3]) * u
+            tgt = None
+            if len(a) >= 7 and len(b) >= 7:          # both keys carry an aim -> pull it too
+                tgt = tuple(a[4 + k] + (b[4 + k] - a[4 + k]) * u for k in range(3))
+            return (y, p, d, tgt)
+    return pose(kfs[-1])
 
 
 # --------------------------------------------------------------------------- #
@@ -250,11 +259,13 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
             _capfiles[i] = p
         return _capfiles[i]
 
-    # render cache: (stage, cam-signature) -> captioned PNG. Identical held frames and
-    # symmetric reveal poses hit the cache instead of re-running the viewer.
+    # render cache: (stage, cam-signature, aim-signature) -> captioned PNG. Identical held
+    # frames and symmetric reveal poses hit the cache instead of re-running the viewer.
     _cache = {}
-    def base_png(stage, cam):
-        key = (stage, "%.4f_%.4f_%.4f" % cam)
+    def base_png(stage, cam, tgt=None):
+        if tgt is None:
+            tgt = (tx, ty, tz)
+        key = (stage, "%.4f_%.4f_%.4f" % cam, "%.4f_%.4f_%.4f" % tgt)
         if key in _cache:
             return _cache[key]
         ppm = tmp / "_cur.ppm"
@@ -262,7 +273,7 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
             ppm.unlink()
         args = [str(viewer), "--oplog", str(oplog(stage)), "--winsize", str(W), str(H),
                 "--cam", "%.5f" % cam[0], "%.5f" % cam[1], "%.5f" % cam[2],
-                "--target", "%.5f" % tx, "%.5f" % ty, "%.5f" % tz,
+                "--target", "%.5f" % tgt[0], "%.5f" % tgt[1], "%.5f" % tgt[2],
                 "--floorz", "%.5f" % floorz, "--nohighlight", "--screenshot", str(ppm)]
         if automode:  # hide the panel; the top-left HUD names the stage instead
             args.append("--automode")
@@ -280,7 +291,7 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
         _cache[key] = out
         return out
 
-    # the frame plan: (stage, cam) per frame
+    # the frame plan: (stage, cam, target) per frame (target None -> the fixed default)
     plan = []
     if keyframes:
         # a moving camera: interpolate the keyframe path across the whole clip while the
@@ -290,20 +301,21 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
         for n in range(F):
             stage = min(NP - 1, n // per)
             t = n / max(1, F - 1)
-            plan.append((stage, _interp_keyframes(keyframes, t)))
+            y, p, d, tgt = _interp_keyframes(keyframes, t)
+            plan.append((stage, (y, p, d), tgt))
     else:
         # fixed camera during the build -> optional eased reveal swing -> end dwell
         for f in range(per * NP):
-            plan.append((min(NP - 1, f // per), (yaw0, pitch0, dist0)))
+            plan.append((min(NP - 1, f // per), (yaw0, pitch0, dist0), None))
         R = round(reveal * fps)
         for i in range(R):                           # a single eased swing out and back
             yaw = yaw0 + reveal_sweep * math.sin(math.pi * i / R)
-            plan.append((NP - 1, (yaw, pitch0, dist0)))
+            plan.append((NP - 1, (yaw, pitch0, dist0), None))
         for _ in range(hold):
-            plan.append((NP - 1, (yaw0, pitch0, dist0)))
+            plan.append((NP - 1, (yaw0, pitch0, dist0), None))
 
-    for n, (stage, cam) in enumerate(plan):
-        shutil.copyfile(base_png(stage, cam), frames_dir / f"f{n:04d}.png")
+    for n, (stage, cam, tgt) in enumerate(plan):
+        shutil.copyfile(base_png(stage, cam, tgt), frames_dir / f"f{n:04d}.png")
 
     mp4, gif = _encode(ffmpeg, frames_dir, out_dir, out_base, fps, gif_w, gif_fps or fps, tmp)
     if not quiet:
