@@ -40,9 +40,11 @@ examples/cases/18_interior_scene.py --hero`.
 
 ![A whole interior, every object native-modelled, engine-composed](docs/gallery/interior.png)
 
-Here is that room **being built in Mirage's own viewport** — the lathe sweeping the vase,
-`boolean` punching the window, `bevel` rounding the armchair, then each object *placed* —
-every frame a headless screenshot of the real native GUI. Regenerate with
+Here is that room **being built in Mirage's own viewport**, in the editor's **AUTO mode** —
+when the AI is driving the op-log the tool panel steps aside for a top-left status HUD
+(*what's being modelled right now*), so the frame is all model: the lathe sweeping the vase,
+`boolean` punching the window, `bevel` rounding the armchair, then each object *placed*. Every
+frame is a headless screenshot of the real native GUI. Regenerate with
 `uv run python examples/cases/18_interior_scene.py --film`.
 
 ![Building the interior in Mirage's viewport, object by object](docs/gallery/interior_build.gif)

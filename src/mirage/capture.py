@@ -142,7 +142,7 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
                  view=(2.30, 0.36, 9.0), size=(1280, 720), fps=24,
                  per=13, hold=24, reveal=0.0, reveal_sweep=0.5, gif_w=760,
                  gif_fps=None, target=None, floorz=None, viewer=None, tmp=None,
-                 caption_pos=None, quiet=False):
+                 caption_pos=None, automode=False, quiet=False):
     """Film ``stages`` assembling in the real viewer; write ``<out_base>.mp4`` + ``.gif``.
 
     stages       ordered models (MeshProgram | .v/.f/.m object | (v,f,m) tuple); each is
@@ -159,6 +159,10 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
     gif_w/gif_fps  the .gif's width and (optionally lower) frame rate; the .mp4 always
                  keeps ``size`` / ``fps``. Drop ``gif_fps`` when a moving reveal would
                  otherwise inflate the .gif.
+    automode     film in the viewer's AI "AUTO" mode — the tool panel is hidden and a
+                 top-left status HUD names what's being built (each stage's caption),
+                 so the frame is all model. The clip then reads as the AI driving the
+                 editor. Without it, the real tool panel is shown (a human-facing tour).
 
     Returns ``(mp4_path, gif_path)``. Renders are cached on (stage, camera), so a build
     of N stages held H frames each with an R-frame reveal costs ~``N + R/2`` viewer runs,
@@ -212,6 +216,17 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
             _oplogs[i] = p
         return _oplogs[i]
 
+    # AUTO-mode HUD line per stage, written UTF-8 (argv is ANSI-mangled on Windows, so
+    # the viewer reads the caption from a file to keep the "·" and any Unicode intact).
+    _capfiles = {}
+    def capfile(i):
+        if i not in _capfiles:
+            p = oplog_dir / f"cap_{i}.txt"
+            txt = f"{i + 1}/{NP}  ·  {captions[min(i, len(captions) - 1)]}" if captions else ""
+            p.write_text(txt, encoding="utf-8")
+            _capfiles[i] = p
+        return _capfiles[i]
+
     # render cache: (stage, cam-signature) -> captioned PNG. Identical held frames and
     # symmetric reveal poses hit the cache instead of re-running the viewer.
     _cache = {}
@@ -222,18 +237,20 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
         ppm = tmp / "_cur.ppm"
         if ppm.exists():
             ppm.unlink()
-        r = subprocess.run(
-            [str(viewer), "--oplog", str(oplog(stage)), "--winsize", str(W), str(H),
-             "--cam", "%.5f" % cam[0], "%.5f" % cam[1], "%.5f" % cam[2],
-             "--target", "%.5f" % tx, "%.5f" % ty, "%.5f" % tz,
-             "--floorz", "%.5f" % floorz, "--nohighlight", "--screenshot", str(ppm)],
-            capture_output=True, text=True,
-        )
+        args = [str(viewer), "--oplog", str(oplog(stage)), "--winsize", str(W), str(H),
+                "--cam", "%.5f" % cam[0], "%.5f" % cam[1], "%.5f" % cam[2],
+                "--target", "%.5f" % tx, "%.5f" % ty, "%.5f" % tz,
+                "--floorz", "%.5f" % floorz, "--nohighlight", "--screenshot", str(ppm)]
+        if automode:  # hide the panel; the top-left HUD names the stage instead
+            args.append("--automode")
+            if captions:
+                args += ["--autocap-file", str(capfile(stage))]
+        r = subprocess.run(args, capture_output=True, text=True)
         if not ppm.exists():
             raise RuntimeError(
                 f"viewer produced no frame (stage {stage}, rc={r.returncode}):\n{r.stderr[-400:]}")
         img = Image.open(ppm).convert("RGB")
-        if captions:
+        if captions and not automode:  # in AUTO mode the HUD carries the caption
             _caption(img, captions[min(stage, len(captions) - 1)], f"{stage + 1}/{NP}", cpos, fonts)
         out = cache_dir / f"r{len(_cache):04d}.png"
         img.save(out)

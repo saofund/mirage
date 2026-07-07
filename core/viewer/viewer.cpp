@@ -415,6 +415,17 @@ static bool g_live_sync = false;
 static double g_last_poll = 0.0;
 static long long g_last_mtime = 0;  // mtime we last reloaded/wrote (to ignore our own writes)
 
+// AI "AUTO" mode. When an operator that isn't the human is driving the op-log —
+// the AI streaming edits into the shared file under live sync — the wall of tool
+// buttons gives way to a slim top-left status HUD, and the viewport shows the
+// model building itself. It's the editor saying "hands off, I've got this": the
+// panel returns the instant the human clicks (take control) or the AI goes quiet.
+static bool g_auto_mode = false;          // currently showing the AUTO HUD (vs the tool panel)
+static bool g_auto_force = false;         // --automode: pin the HUD (headless promo / making-of)
+static double g_auto_last_edit = 0.0;     // when the last external (AI) edit landed
+static double g_auto_suppress_until = 0.0;// after a human takes control, don't re-arm until this time
+static char g_auto_msg[192] = "";         // "what the AI is editing" line (op delta / label, or --autocap)
+
 // viewport material (PBR) — a warm off-white dielectric by default; flat shading
 // reads more truthfully for hard-surface models.
 static float g_albedo[3] = {0.82f, 0.80f, 0.74f};
@@ -447,6 +458,9 @@ static bool ray_tri(V3 o, V3 d, V3 a, V3 b, V3 c, float& t) {  // Moller-Trumbor
 
 static bool ui_wants_mouse() { return g_imgui && ImGui::GetIO().WantCaptureMouse; }
 static void on_mouse(GLFWwindow* w, int button, int action, int) {
+    if (action == GLFW_PRESS) {  // any click is the human taking control back from AUTO
+        g_auto_mode = false; g_auto_suppress_until = glfwGetTime() + 3.0;
+    }
     if (button == GLFW_MOUSE_BUTTON_RIGHT) {  // right-drag pans the orbit target
         if (action == GLFW_PRESS && !ui_wants_mouse()) {
             g_panning = true; glfwGetCursorPos(w, &g_lx, &g_ly);
@@ -599,6 +613,16 @@ int main(int argc, char** argv) {
         else if (a == "--target" && i + 3 < argc) { tgt_set = true; tgt_x = std::atof(argv[++i]); tgt_y = std::atof(argv[++i]); tgt_z = std::atof(argv[++i]); }
         else if (a == "--floorz" && i + 1 < argc) { floorz_set = true; floorz_val = float(std::atof(argv[++i])); }
         else if (a == "--nohighlight") nohl = true;
+        else if (a == "--automode") g_auto_force = true;  // force the AI "AUTO" HUD (hide the panel)
+        else if (a == "--autocap" && i + 1 < argc) std::snprintf(g_auto_msg, sizeof(g_auto_msg), "%s", argv[++i]);
+        else if (a == "--autocap-file" && i + 1 < argc) {  // read the HUD line as UTF-8 from a file
+            std::ifstream cf(argv[++i], std::ios::binary);  // (Windows argv is ANSI-mangled; a file is byte-exact)
+            if (cf) {
+                std::string s((std::istreambuf_iterator<char>(cf)), std::istreambuf_iterator<char>());
+                while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+                std::snprintf(g_auto_msg, sizeof(g_auto_msg), "%.*s", int(sizeof(g_auto_msg) - 1), s.c_str());
+            }
+        }
     }
 
     Program prog;
@@ -721,6 +745,7 @@ int main(int argc, char** argv) {
     Mesh model = prog.build(&last_tag);
     Gpu g = build_gpu(model);
     g_dist = g.radius * 3.0f;
+    g_auto_mode = g_auto_force;  // headless promo / a forced demo opens straight into AUTO
     auto upload = [&]() {
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(g.data.size() * sizeof(float)),
@@ -1187,11 +1212,67 @@ int main(int argc, char** argv) {
         return dirty;
     };
 
+    // The AUTO HUD: what the panel collapses to while the AI drives. A pulsing
+    // status dot, the AUTO mark, and the one line that matters — what's being
+    // edited right now (an op delta under live sync, or the caller's --autocap).
+    // Deliberately tiny, top-left, so the viewport is all model.
+    auto auto_hud = [&]() {
+        ImGui::SetNextWindowPos(ImVec2(24, 24), ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.92f);
+        ImGui::Begin("##auto", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoFocusOnAppearing);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // a live pulse when interactive; a steady dot for deterministic headless frames
+        const float t = float(glfwGetTime());
+        const float pulse = shot.empty() ? (0.5f + 0.5f * std::sin(t * 5.2f)) : 1.0f;
+        ImGui::PushFont(font_title);
+        const float lh = ImGui::GetTextLineHeight();
+        const ImVec2 dp = ImGui::GetCursorScreenPos();
+        const ImVec2 dc(dp.x + 8.0f, dp.y + lh * 0.5f);
+        const ImU32 acc  = ImGui::GetColorU32(ui::accent_br);
+        const ImU32 glow = ImGui::GetColorU32(ImVec4(ui::accent_br.x, ui::accent_br.y, ui::accent_br.z, 0.30f * pulse));
+        dl->AddCircleFilled(dc, 6.0f + 5.0f * pulse, glow);
+        dl->AddCircleFilled(dc, 6.0f, acc);
+        ImGui::Dummy(ImVec2(24.0f, lh)); ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::accent_br);
+        ImGui::TextUnformatted("AUTO");
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
+        ImGui::TextUnformatted("Mirage is modeling  \xc2\xb7  the op-log is the model");
+        ImGui::PopStyleColor();
+        if (g_auto_msg[0]) {  // the headline: what's being edited right now
+            ImGui::Dummy(ImVec2(0, 3));
+            ImGui::PushFont(font_h);
+            ImGui::PushStyleColor(ImGuiCol_Text, ui::text);
+            ImGui::TextUnformatted(g_auto_msg);
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
+        }
+        ImGui::Dummy(ImVec2(0, 2));
+        ImGui::PushFont(font_mono);
+        ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
+        ImGui::Text("%zu ops  \xc2\xb7  %zu faces", prog.size(), model.num_faces());
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+        if (shot.empty()) {  // interactive: tell the human how to reclaim the tools
+            ImGui::Dummy(ImVec2(0, 1));
+            ImGui::PushStyleColor(ImGuiCol_Text, ui::text_dim);
+            ImGui::TextUnformatted("click anywhere to take control");
+            ImGui::PopStyleColor();
+        }
+        ImGui::End();
+    };
+
     auto frame = [&]() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-        if (panel()) {
+        if (g_auto_mode) {
+            auto_hud();  // the AI is driving; the panel steps aside for the status HUD
+        } else if (panel()) {
             model = prog.build(&last_tag); g = build_gpu(model); upload(); build_ground(); rebuild_highlight();
             if (g_live_sync) save_oplog();  // push the human's edit to the shared op-log
         }
@@ -1256,14 +1337,27 @@ int main(int argc, char** argv) {
             glfwPollEvents();
             if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) break;
             if (g_pick_request) { g_pick_request = false; do_pick(g_px, g_py); }
+            const double now = glfwGetTime();
             if (g_live_sync) {  // watch the shared op-log; reload the AI's edits (~4 Hz)
-                double now = glfwGetTime();
                 if (now - g_last_poll > 0.25) {
                     g_last_poll = now;
                     long long m = file_mtime(g_oplog_path);
-                    if (m != 0 && m != g_last_mtime) { g_last_mtime = m; reload_oplog(); }
+                    if (m != 0 && m != g_last_mtime) {
+                        g_last_mtime = m;
+                        const int before = int(prog.size());
+                        if (reload_oplog()) {  // an AI edit landed -> arm AUTO and name it
+                            const int delta = int(prog.size()) - before;
+                            const std::string last = prog.size() ? Program::label(prog.ops().back()) : std::string("idle");
+                            if (delta > 0) std::snprintf(g_auto_msg, sizeof(g_auto_msg), "+%d  \xc2\xb7  %.120s", delta, last.c_str());
+                            else           std::snprintf(g_auto_msg, sizeof(g_auto_msg), "%.150s", last.c_str());
+                            if (now > g_auto_suppress_until) g_auto_mode = true;  // unless the human just took control
+                            g_auto_last_edit = now;
+                        }
+                    }
                 }
             }
+            if (g_auto_mode && !g_auto_force && now - g_auto_last_edit > 2.2)
+                g_auto_mode = false;  // the AI went quiet — hand the tools back
             frame();
             glfwSwapBuffers(win);
         }
