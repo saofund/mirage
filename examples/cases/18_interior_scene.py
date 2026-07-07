@@ -346,15 +346,24 @@ def film():
     from mirage.capture import record_build
     stages, captions = film_stages()
     quick = os.environ.get("ANIM_QUICK") == "1"
+    # a moving camera (dolly + orbit) through the open +x,-y corner: establish high &
+    # wide, push in to the closest beat as the vase turns on the lathe, ease back and
+    # swing to a frontal read, then settle to the hero framing and hold. (t, yaw, pitch,
+    # dist); the last two keys are equal so the final dwell is static.
+    moves = [
+        (0.00, 0.66, 0.54, 6.8),   # establishing — high & wide, from the right
+        (0.16, 0.82, 0.46, 5.7),   # dolly in as the shell + table go up
+        (0.32, 0.96, 0.40, 4.9),   # closest — the vase on the lathe (hero beat)
+        (0.52, 0.86, 0.43, 5.4),   # ease back, drift across the room
+        (0.70, 0.64, 0.46, 5.7),   # swing to a frontal angle (sofa / armchair)
+        (0.85, 0.82, 0.42, 5.2),   # settle to the hero framing
+        (1.00, 0.82, 0.42, 5.2),   # hold (flat segment -> cached dwell)
+    ]
     record_build(
-        stages, "interior_build", captions=captions, automode=True,
-        view=(float(os.environ.get("ANIM_YAW", 0.80)),     # stand in the OPEN +x,-y corner, looking IN
-              float(os.environ.get("ANIM_PITCH", 0.44)),
-              float(os.environ.get("ANIM_DIST", 6.2))),     # pulled in close, framed like the hero still
+        stages, "interior_build", captions=captions, automode=True, keyframes=moves,
         size=(854, 480) if quick else (1280, 720),
-        fps=24, per=6 if quick else 16, hold=10 if quick else 28,
-        reveal=0.4 if quick else 1.2, reveal_sweep=0.34,
-        gif_w=640, gif_fps=12,
+        fps=24, per=8 if quick else 12, hold=12 if quick else 26,
+        gif_w=480, gif_fps=10,   # a moving clip can't dedupe frames -> keep the .gif lean
         tmp=Path(os.environ["ANIM_TMP"]) if os.environ.get("ANIM_TMP") else None,
     )
 

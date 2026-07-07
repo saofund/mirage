@@ -74,6 +74,24 @@ def _stage_verts(stage):
     return list(stage[0])
 
 
+def _interp_keyframes(kfs, t):
+    """A smooth camera pose at clip-time ``t`` in [0,1] from ``(t, yaw, pitch, dist)``
+    keyframes — smoothstep-eased between the two bracketing keys. Used to drive a moving
+    camera (a dolly / orbit) across the making-of, instead of a single fixed viewpoint."""
+    if t <= kfs[0][0]:
+        return kfs[0][1:]
+    if t >= kfs[-1][0]:
+        return kfs[-1][1:]
+    for i in range(len(kfs) - 1):
+        t0, y0, p0, d0 = kfs[i]
+        t1, y1, p1, d1 = kfs[i + 1]
+        if t0 <= t <= t1:
+            u = (t - t0) / (t1 - t0) if t1 > t0 else 0.0
+            u = u * u * (3.0 - 2.0 * u)              # smoothstep ease
+            return (y0 + (y1 - y0) * u, p0 + (p1 - p0) * u, d0 + (d1 - d0) * u)
+    return kfs[-1][1:]
+
+
 # --------------------------------------------------------------------------- #
 # Caption overlay (a subtle step index + operator name, bottom-left, clear of
 # the viewer's tool panel).
@@ -142,7 +160,7 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
                  view=(2.30, 0.36, 9.0), size=(1280, 720), fps=24,
                  per=13, hold=24, reveal=0.0, reveal_sweep=0.5, gif_w=760,
                  gif_fps=None, target=None, floorz=None, viewer=None, tmp=None,
-                 caption_pos=None, automode=False, quiet=False):
+                 caption_pos=None, automode=False, keyframes=None, quiet=False):
     """Film ``stages`` assembling in the real viewer; write ``<out_base>.mp4`` + ``.gif``.
 
     stages       ordered models (MeshProgram | .v/.f/.m object | (v,f,m) tuple); each is
@@ -163,6 +181,11 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
                  top-left status HUD names what's being built (each stage's caption),
                  so the frame is all model. The clip then reads as the AI driving the
                  editor. Without it, the real tool panel is shown (a human-facing tour).
+    keyframes    optional camera path as ``[(t, yaw, pitch, dist), ...]`` with ``t`` in
+                 [0,1] over the whole clip — a moving shot (dolly / orbit) instead of the
+                 fixed ``view``. Smoothstep-eased between keys; make the last two keys
+                 equal so the final dwell is static (and cache-cheap). Overrides ``view``
+                 / ``reveal``. Motion means each frame is its own render (no cam cache).
 
     Returns ``(mp4_path, gif_path)``. Renders are cached on (stage, camera), so a build
     of N stages held H frames each with an R-frame reveal costs ~``N + R/2`` viewer runs,
@@ -257,16 +280,27 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
         _cache[key] = out
         return out
 
-    # the frame plan: build (fixed cam, stage advances) -> reveal swing -> end dwell
-    plan = []                                        # (stage, cam) per frame
-    for f in range(per * NP):
-        plan.append((min(NP - 1, f // per), (yaw0, pitch0, dist0)))
-    R = round(reveal * fps)
-    for i in range(R):                               # a single eased swing out and back
-        yaw = yaw0 + reveal_sweep * math.sin(math.pi * i / R)
-        plan.append((NP - 1, (yaw, pitch0, dist0)))
-    for _ in range(hold):
-        plan.append((NP - 1, (yaw0, pitch0, dist0)))
+    # the frame plan: (stage, cam) per frame
+    plan = []
+    if keyframes:
+        # a moving camera: interpolate the keyframe path across the whole clip while the
+        # build stages advance underneath it; a flat final key-segment gives a static
+        # dwell. Motion means most frames are their own render (no fixed-cam cache reuse).
+        F = per * NP + hold
+        for n in range(F):
+            stage = min(NP - 1, n // per)
+            t = n / max(1, F - 1)
+            plan.append((stage, _interp_keyframes(keyframes, t)))
+    else:
+        # fixed camera during the build -> optional eased reveal swing -> end dwell
+        for f in range(per * NP):
+            plan.append((min(NP - 1, f // per), (yaw0, pitch0, dist0)))
+        R = round(reveal * fps)
+        for i in range(R):                           # a single eased swing out and back
+            yaw = yaw0 + reveal_sweep * math.sin(math.pi * i / R)
+            plan.append((NP - 1, (yaw, pitch0, dist0)))
+        for _ in range(hold):
+            plan.append((NP - 1, (yaw0, pitch0, dist0)))
 
     for n, (stage, cam) in enumerate(plan):
         shutil.copyfile(base_png(stage, cam), frames_dir / f"f{n:04d}.png")
