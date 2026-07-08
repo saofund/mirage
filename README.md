@@ -51,6 +51,12 @@ fully path-traced promo pass).
 
 ![Building the interior in Mirage's viewport, object by object](docs/gallery/interior_build.gif)
 
+And the same build **rendered entirely by the first-party path tracer** — every frame global
+illumination, soft shadows, sky+sun — a promo pass (`ANIM_RAYTRACE=1 … --film`). A moving
+path-traced clip still carries some grain at these sample counts (no denoiser *yet*):
+
+![The interior making-of, every frame path-traced](docs/gallery/interior_raytrace.gif)
+
 (How large scenes scale, and where the layers used to bottleneck, is measured in
 [docs/scene-scaling.md](docs/scene-scaling.md) — the composition seam that once forced a
 manual merge is now closed by the `place` op.)

@@ -364,21 +364,29 @@ def film():
         (0.90, 0.91, 0.31, 2.95, -0.31, 0.15, 0.71),  # focus-pull close on the vase / table (材质)
         (1.00, 0.91, 0.31, 2.95, -0.31, 0.15, 0.71),  # hold on the close-up (flat -> cached dwell)
     ]
-    hq = os.environ.get("ANIM_RAYTRACE") == "1"   # full path-traced promo pass (slow, gorgeous)
-    record_build(
-        stages, "interior_build", captions=captions, automode=True, keyframes=moves,
-        smooth=True,                              # smooth shading in the real-time frames (no facets)
-        renderer="raytrace" if hq else "viewer",
-        trace_hold=not hq,                        # default: path-trace only the closing close-up (money shot)
-        trace_spp=120 if hq else 420,             # hq: many moving frames (modest); default: one held frame (crisp)
-        trace_threads=12,
-        trace_knobs={"sun": 1.2, "env": 1.15, "exposure": 1.1},  # match the hero still's light
-        cam_fov=0.9,                              # == the viewer's FOV, so framing is identical
-        size=(854, 480) if quick else (1280, 720),
-        fps=24, per=8 if quick else 12, hold=12 if quick else 26,
-        gif_w=480, gif_fps=10,   # a moving clip can't dedupe frames -> keep the .gif lean
-        tmp=Path(os.environ["ANIM_TMP"]) if os.environ.get("ANIM_TMP") else None,
-    )
+    tmp = Path(os.environ["ANIM_TMP"]) if os.environ.get("ANIM_TMP") else None
+    knobs = {"sun": 1.2, "env": 1.15, "exposure": 1.1}     # match the hero still's light
+    if os.environ.get("ANIM_RAYTRACE") == "1":
+        # a fully PATH-TRACED promo reel -> its OWN gallery asset (interior_raytrace.*), so
+        # it sits alongside the fast default clip. Every frame via mirage_render (GI, soft
+        # shadows, sky+sun), captioned in PIL (the tracer draws no HUD). Moving frames still
+        # carry some grain at this spp (no denoiser yet), so keep the res modest.
+        record_build(
+            stages, "interior_raytrace", captions=captions, automode=False, keyframes=moves,
+            renderer="raytrace", trace_spp=128, trace_threads=16, trace_knobs=knobs, cam_fov=0.9,
+            size=(800, 450), fps=24, per=6, hold=16, gif_w=480, gif_fps=10, tmp=tmp,
+        )
+    else:
+        # the default clip: fast smooth AA'd viewport for the build, a single path-traced
+        # frame for the static close-up hold (the money shot) -> interior_build.*.
+        record_build(
+            stages, "interior_build", captions=captions, automode=True, keyframes=moves,
+            smooth=True, trace_hold=True, trace_spp=420, trace_threads=12, trace_knobs=knobs,
+            cam_fov=0.9,
+            size=(854, 480) if quick else (1280, 720),
+            fps=24, per=8 if quick else 12, hold=12 if quick else 26,
+            gif_w=480, gif_fps=10, tmp=tmp,
+        )
 
 
 def main():
