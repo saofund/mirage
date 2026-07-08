@@ -2,6 +2,11 @@
 //
 //   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N] [--threads N]
 //                 [--cam-eye X Y Z] [--cam-target X Y Z] [--cam-up X Y Z] [--cam-fov RAD]
+//                 [--denoise [N]]
+//
+// --denoise runs an edge-avoiding a-trous wavelet filter (N passes, default 5) so a
+// low-spp render comes out clean — the difference between a grainy path-traced clip
+// and a usable one.
 //
 // --threads caps the worker count (default 0 = every logical core, which pins the
 // CPU for the duration of a high-spp render); set it below your core count to
@@ -53,6 +58,10 @@ int main(int argc, char** argv) {
         else if (a == "--exposure") s.exposure = next(s.exposure);
         else if (a == "--clamp") s.clamp_indirect = next(s.clamp_indirect);
         else if (a == "--threads") s.threads = unsigned(next(double(s.threads)));
+        else if (a == "--denoise") {  // edge-avoiding a-trous denoise; optional iteration count
+            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') s.denoise = std::atoi(argv[++i]);
+            else s.denoise = 5;
+        }
         else if (a == "--cam-eye") cam.eye = next3(cam.eye);
         else if (a == "--cam-target") cam.target = next3(cam.target);
         else if (a == "--cam-up") cam.up = next3(cam.up);
@@ -73,8 +82,9 @@ int main(int argc, char** argv) {
     try { mesh = prog.build(); }
     catch (const std::exception& e) { std::fprintf(stderr, "build failed: %s\n", e.what()); return 1; }
 
-    std::printf("path-tracing %zu faces  %dx%d  spp=%d  bounce=%d ...\n",
-                mesh.num_faces(), s.width, s.height, s.spp, s.max_bounce);
+    std::printf("path-tracing %zu faces  %dx%d  spp=%d  bounce=%d%s ...\n",
+                mesh.num_faces(), s.width, s.height, s.spp, s.max_bounce,
+                s.denoise ? "  +denoise" : "");
     Image img = path_trace(mesh, cam, s);
     write_ppm(img, out);
     std::printf("wrote %s (%dx%d)\n", out.c_str(), img.w, img.h);

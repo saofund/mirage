@@ -203,7 +203,7 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
                  gif_fps=None, target=None, floorz=None, viewer=None, tmp=None,
                  caption_pos=None, automode=False, keyframes=None, smooth=False,
                  renderer="viewer", trace_hold=False, trace_spp=96, trace_threads=None,
-                 trace_knobs=None, cam_fov=0.9, render=None, quiet=False):
+                 trace_knobs=None, trace_denoise=0, cam_fov=0.9, render=None, quiet=False):
     """Film ``stages`` assembling in the real viewer; write ``<out_base>.mp4`` + ``.gif``.
 
     stages       ordered models (MeshProgram | .v/.f/.m object | (v,f,m) tuple); each is
@@ -238,10 +238,12 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
     trace_hold   with ``renderer="viewer"``: path-trace just the final dwell (the static
                  hold) — one render, held — so the clip *ends* on a Cycles-class beauty
                  frame while the build stays cheap real-time. The best of both.
-    trace_spp / trace_threads / trace_knobs / cam_fov
+    trace_spp / trace_threads / trace_knobs / trace_denoise / cam_fov
                  the tracer's samples-per-pixel, worker cap, extra ``--k v`` knobs (e.g.
-                 ``{"sun": 1.2, "env": 1.15, "exposure": 1.1}``), and vertical FOV (match
-                 the viewer's 0.9 so framing is identical).
+                 ``{"sun": 1.2, "env": 1.15, "exposure": 1.1}``), denoise passes (>0 runs
+                 the edge-avoiding a-trous filter so a LOW-spp traced clip comes out clean —
+                 the practical way to path-trace an animation), and vertical FOV (match the
+                 viewer's 0.9 so framing is identical).
 
     Returns ``(mp4_path, gif_path)``. Renders are cached on (stage, camera), so a build
     of N stages held H frames each with an R-frame reveal costs ~``N + R/2`` viewer runs,
@@ -336,6 +338,8 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
                 "--cam-target", *("%.5f" % v for v in tgt), "--cam-fov", "%.5f" % cam_fov]
         if trace_threads:
             args += ["--threads", str(trace_threads)]
+        if trace_denoise:
+            args += ["--denoise", str(trace_denoise)]
         for k, v in (trace_knobs or {}).items():
             args += [f"--{k}", str(v)]
         r = subprocess.run(args, capture_output=True, text=True)

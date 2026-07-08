@@ -316,6 +316,55 @@ V3 aces(const V3& x) {
     return {f(x[0]), f(x[1]), f(x[2])};
 }
 
+// Edge-avoiding a-trous wavelet denoise (Dammertz et al. 2010): blur the HDR
+// illumination to kill Monte-Carlo grain, but weight each tap by how well the
+// neighbour matches the pixel's primary normal / depth / brightness, so real edges
+// (silhouettes, face boundaries, shadow terminators) survive. Albedo is demodulated
+// first — we denoise the *lighting* and re-apply the texture — so material detail
+// isn't smeared. Guided by the noise-free primary G-buffer (centre-ray hit). Five
+// passes with doubling tap spacing cover a wide radius at O(25) taps per pixel.
+void denoise_atrous(std::vector<V3>& color, const std::vector<V3>& gAlb,
+                    const std::vector<V3>& gNrm, const std::vector<double>& gDep,
+                    const std::vector<char>& gMask, int w, int h, int iters, double scale) {
+    const std::size_t N = std::size_t(w) * h;
+    std::vector<V3> irr(N), tmp(N);
+    for (std::size_t i = 0; i < N; ++i) {              // demodulate albedo -> lighting only
+        const V3 a = gAlb[i];
+        irr[i] = {color[i][0] / std::max(a[0], 0.03),
+                  color[i][1] / std::max(a[1], 0.03),
+                  color[i][2] / std::max(a[2], 0.03)};
+    }
+    const double kern[5] = {0.0625, 0.25, 0.375, 0.25, 0.0625};   // B3-spline row
+    const double sn = 64.0;                            // normal sharpness (rejects across edges)
+    const double sz = std::max(scale * 0.06, 1e-4);    // depth sigma (scene-relative)
+    double sl = 6.0;                                   // luminance sigma (loosened per pass)
+    for (int it = 0; it < iters; ++it) {
+        const int step = 1 << it;                      // 1,2,4,8,16 — the "a-trous" holes
+        for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+            const std::size_t p = std::size_t(y) * w + x;
+            if (!gMask[p]) { tmp[p] = irr[p]; continue; }   // sky/miss: leave untouched
+            const V3 np = gNrm[p], cp = irr[p];
+            const double zp = gDep[p], lp = luminance(cp);
+            V3 sum{0, 0, 0}; double wsum = 0.0;
+            for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) {
+                const int xx = x + dx * step, yy = y + dy * step;
+                if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue;
+                const std::size_t q = std::size_t(yy) * w + xx;
+                if (!gMask[q]) continue;
+                const double wn = std::pow(std::max(0.0, dot(np, gNrm[q])), sn);
+                const double wz = std::exp(-std::fabs(zp - gDep[q]) / sz);
+                const double wl = std::exp(-std::fabs(lp - luminance(irr[q])) / sl);
+                const double wk = kern[dx + 2] * kern[dy + 2] * wn * wz * wl;
+                sum = sum + irr[q] * wk; wsum += wk;
+            }
+            tmp[p] = wsum > 1e-8 ? sum * (1.0 / wsum) : irr[p];
+        }
+        std::swap(irr, tmp);
+        sl *= 2.0;                                     // grain averaged out -> loosen the colour test
+    }
+    for (std::size_t i = 0; i < N; ++i) color[i] = mulv(irr[i], gAlb[i]);   // remodulate texture
+}
+
 }  // namespace
 
 Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& settings) {
@@ -354,6 +403,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         double rad = len(hi - lo) * 0.5;
         sc.ground_r2 = (rad * 9.0) * (rad * 9.0);
     }
+    const double scene_diag = mesh.num_verts() ? len(hi - lo) : 1.0;  // depth-weight scale for the denoiser
 
     // BVH over the triangles.
     sc.tbox.resize(sc.tris.size());
@@ -380,6 +430,16 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     img.w = settings.width;
     img.h = settings.height;
     img.rgb.assign(std::size_t(img.w) * img.h * 3, 0);
+    const std::size_t NP = std::size_t(img.w) * img.h;
+
+    // HDR accumulation buffer, plus (only if denoising) a noise-free primary G-buffer:
+    // the centre-ray hit's albedo / normal / depth, which guides the edge-avoiding filter.
+    std::vector<V3> hdr(NP, V3{0, 0, 0});
+    const bool want_gbuf = settings.denoise > 0;
+    std::vector<V3> gAlb(want_gbuf ? NP : 0, V3{1, 1, 1});
+    std::vector<V3> gNrm(want_gbuf ? NP : 0, V3{0, 0, 1});
+    std::vector<double> gDep(want_gbuf ? NP : 0, 1e30);
+    std::vector<char> gMask(want_gbuf ? NP : 0, 0);
 
     unsigned nthreads = settings.threads ? settings.threads : std::thread::hardware_concurrency();
     if (nthreads == 0) nthreads = 4;
@@ -387,6 +447,13 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     auto render_rows = [&](int y0, int y1) {
         for (int y = y0; y < y1; ++y) {
             for (int x = 0; x < img.w; ++x) {
+                const std::size_t p = std::size_t(y) * img.w + x;
+                if (want_gbuf) {  // centre-ray primary hit: albedo/normal/depth (noise-free)
+                    const double uc = (2.0 * (x + 0.5) / img.w - 1.0) * aspect * th;
+                    const double vc = (1.0 - 2.0 * (y + 0.5) / img.h) * th;
+                    const Hit gh = intersect(sc, eye, norm(fwd + right * uc + up2 * vc));
+                    if (gh.t < 1e29) { gMask[p] = 1; gAlb[p] = gh.albedo; gNrm[p] = gh.n; gDep[p] = gh.t; }
+                }
                 V3 acc{0, 0, 0};
                 for (int s = 0; s < settings.spp; ++s) {
                     Rng rng(std::uint32_t((x * 1973u) ^ (y * 9277u) ^ (s * 26699u)) | 1u);
@@ -396,10 +463,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                     const V3 d = norm(fwd + right * u + up2 * v);
                     acc = acc + radiance(sc, eye, d, settings.max_bounce, rng);
                 }
-                acc = aces(acc * (settings.exposure / settings.spp));
-                unsigned char* px = &img.rgb[(std::size_t(y) * img.w + x) * 3];
-                for (int k = 0; k < 3; ++k)
-                    px[k] = (unsigned char)(std::pow(std::clamp(acc[k], 0.0, 1.0), 1.0 / 2.2) * 255.0 + 0.5);
+                hdr[p] = acc * (1.0 / settings.spp);
             }
         }
     };
@@ -411,6 +475,15 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         if (y0 < y1) pool.emplace_back(render_rows, y0, y1);
     }
     for (auto& t : pool) t.join();
+
+    if (settings.denoise > 0)  // edge-avoiding a-trous wavelet, guided by the G-buffer
+        denoise_atrous(hdr, gAlb, gNrm, gDep, gMask, img.w, img.h, settings.denoise, scene_diag);
+
+    for (std::size_t p = 0; p < NP; ++p) {  // exposure -> ACES -> gamma -> 8-bit sRGB
+        const V3 c = aces(hdr[p] * settings.exposure);
+        for (int k = 0; k < 3; ++k)
+            img.rgb[p * 3 + k] = (unsigned char)(std::pow(std::clamp(c[k], 0.0, 1.0), 1.0 / 2.2) * 255.0 + 0.5);
+    }
     return img;
 }
 

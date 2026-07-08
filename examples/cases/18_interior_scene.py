@@ -373,8 +373,9 @@ def film():
         # carry some grain at this spp (no denoiser yet), so keep the res modest.
         record_build(
             stages, "interior_raytrace", captions=captions, automode=False, keyframes=moves,
-            renderer="raytrace", trace_spp=128, trace_threads=16, trace_knobs=knobs, cam_fov=0.9,
-            size=(800, 450), fps=24, per=6, hold=16, gif_w=480, gif_fps=10, tmp=tmp,
+            renderer="raytrace", trace_spp=96, trace_threads=16, trace_denoise=5,  # low spp + denoise = clean
+            trace_knobs=knobs, cam_fov=0.9,
+            size=(960, 540), fps=24, per=6, hold=16, gif_w=480, gif_fps=10, tmp=tmp,
         )
     else:
         # the default clip: fast smooth AA'd viewport for the build, a single path-traced

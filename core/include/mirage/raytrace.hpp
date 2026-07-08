@@ -43,6 +43,10 @@ struct RenderSettings {
     // rare high-variance specular bounce can't leave a white speckle. 0 = off. The
     // first hit's direct light is never clamped, so highlights stay crisp.
     double clamp_indirect = 12.0;
+    // Denoise: N iterations of an edge-avoiding a-trous wavelet filter (guided by the
+    // primary hit's albedo / normal / depth) applied to the HDR image before tonemap.
+    // 0 = off. Lets a low-spp render (or a path-traced animation) come out clean.
+    int denoise = 0;
 };
 
 struct Image {
