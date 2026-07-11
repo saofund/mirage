@@ -92,6 +92,17 @@ and the render proves every one landed (`examples/cases/20_diff_merge.py`):
 
 ![base, a human branch, an AI branch, and their automatic 3-way merge](docs/gallery/diff_merge.png)
 
+## Self-refinement — the agent sees its own model and fixes it
+
+A puppet-an-app MCP is blind: it fires commands and can't tell what came out. Mirage's agent
+can **read** the op-log, **render** it (first-party tracer + denoiser), **look** at the frame,
+and **edit** the op-log to fix what it sees — a closed perception→action loop on its own
+creation. Starting from a scene with deliberate, render-only flaws — a floating vase, a book
+clipping it, a muddy bowl, a blown-out frame — it converges round by round, *each edit derived
+from the previous render* (`examples/cases/21_self_refine.py`):
+
+![round 0 flawed, round 1 grounded, round 2 composed — a self-refinement loop](docs/gallery/self_refine.png)
+
 The core operators, one panel each (regenerate with `uv run python docs/gallery/render_gallery.py`):
 
 ![Mirage modeling gallery](docs/gallery/showcase.png)
