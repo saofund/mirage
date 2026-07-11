@@ -30,6 +30,9 @@ add_library(mirage_core STATIC
   src/raytrace.cpp
 )
 target_include_directories(mirage_core PUBLIC include)
+# Position-independent so this static lib can be linked into the _mirage_core pybind
+# shared module on Linux/ELF (Windows/PE doesn't need it; harmless there).
+set_target_properties(mirage_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(mirage_core PUBLIC nlohmann_json::nlohmann_json)
 find_package(Threads REQUIRED)
 target_link_libraries(mirage_core PUBLIC Threads::Threads)
