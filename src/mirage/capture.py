@@ -39,22 +39,30 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _bin(name: str) -> Path:
+    """Locate a built binary cross-platform: MSVC drops it in ``core/build/Release/`` with
+    a ``.exe`` suffix; a single-config Linux/make build has no suffix (and may or may not
+    use a ``Release/`` subdir). Returns the first that exists, else the Windows default."""
+    base = _repo_root() / "core" / "build"
+    for p in (base / "Release" / f"{name}.exe", base / "Release" / name,
+              base / f"{name}.exe", base / name):
+        if p.exists():
+            return p
+    return base / "Release" / f"{name}.exe"
+
+
 def default_viewer() -> Path:
-    """Where the native viewer lands in a standard Release build."""
+    """Where the native viewer lands (cross-platform; ``MIRAGE_VIEWER`` overrides)."""
     import os
     env = os.environ.get("MIRAGE_VIEWER")
-    if env:
-        return Path(env)
-    return _repo_root() / "core" / "build" / "Release" / "mirage_viewer.exe"
+    return Path(env) if env else _bin("mirage_viewer")
 
 
 def default_render() -> Path:
-    """Where the headless path tracer lands in a standard Release build."""
+    """Where the headless path tracer lands (cross-platform; ``MIRAGE_RENDER`` overrides)."""
     import os
     env = os.environ.get("MIRAGE_RENDER")
-    if env:
-        return Path(env)
-    return _repo_root() / "core" / "build" / "Release" / "mirage_render.exe"
+    return Path(env) if env else _bin("mirage_render")
 
 
 def _orbit_eye(cam, tgt):

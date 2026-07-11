@@ -29,9 +29,10 @@ import subprocess
 from pathlib import Path
 
 from mirage.meshlang import MeshProgram, Sel
+from mirage.capture import default_render
 
 ROOT = Path(__file__).resolve().parents[2]
-RENDER = ROOT / "core" / "build" / "Release" / "mirage_render.exe"
+RENDER = default_render()          # cross-platform: mirage_render[.exe], Release/ or not
 OUT = Path(__file__).resolve().parent / "outputs" / "18_interior_scene"
 
 
