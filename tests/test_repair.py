@@ -62,10 +62,13 @@ def test_auto_scalar_scale_broadcast():
 
 
 def test_auto_numeric_string_coerce():
+    # A numeric string is now a valid (constant) EXPRESSION in the parametric op-log —
+    # it builds directly and resolves to the number, so there is nothing to repair.
+    from mirage.meshlang import _resolve_program
     ops = _ops({"op": "cube"}, {"op": "extrude", "on": {"by": "all"}, "distance": "0.5"})
     r = repair_program(ops)
-    assert r.ok and r.repaired
-    assert r.program[1]["distance"] == 0.5
+    assert r.ok and not r.repaired                 # valid input -> no repair needed
+    assert _resolve_program(ops)[1]["distance"] == 0.5
 
 
 def test_auto_op_name_typo_with_param_signature():

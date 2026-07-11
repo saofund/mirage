@@ -402,6 +402,191 @@ def _cmd(op, on=None, mark=None, **params):
 
 
 # --------------------------------------------------------------------------- #
+# Parametric op-log: a `params` block, arithmetic EXPRESSIONS in numeric fields,
+# and a `repeat` loop — resolved to a plain op-log before build(). This is what
+# turns the model into a re-runnable *generator*: change one parameter and the
+# whole form rebuilds. (A `place` inside a `repeat` whose transform is an
+# expression of the loop index `i` grows a spiral, a colonnade, a tower...)
+# --------------------------------------------------------------------------- #
+_EXPR_FUNCS = {
+    "sin": math.sin, "cos": math.cos, "tan": math.tan, "sqrt": math.sqrt,
+    "abs": abs, "floor": math.floor, "ceil": math.ceil, "round": round,
+    "exp": math.exp, "log": math.log, "min": min, "max": max, "pow": pow,
+    "atan2": math.atan2, "hypot": math.hypot, "sign": lambda x: float((x > 0) - (x < 0)),
+    "lerp": lambda a, b, t: a + (b - a) * t, "clamp": lambda x, a, b: max(a, min(b, x)),
+}
+_EXPR_CONSTS = {"pi": math.pi, "tau": math.tau, "e": math.e}
+
+
+def _tokenize(s):
+    out, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c.isspace():
+            i += 1
+        elif c in "+-*/%^(),":
+            out.append(c); i += 1
+        elif c.isdigit() or c == ".":
+            j = i
+            while j < n and (s[j].isdigit() or s[j] in ".eE" or (s[j] in "+-" and s[j - 1] in "eE")):
+                j += 1
+            out.append(("num", float(s[i:j]))); i = j
+        elif c.isalpha() or c == "_":
+            j = i
+            while j < n and (s[j].isalnum() or s[j] == "_"):
+                j += 1
+            out.append(("name", s[i:j])); i = j
+        else:
+            raise ValueError(f"bad character {c!r} in expression {s!r}")
+    return out
+
+
+def _eval_expr(s, env):
+    """Evaluate an arithmetic expression string over ``env`` (the params). Recursive
+    descent: + -  <  * / %  <  unary +/-  <  ^ (right-assoc)  <  atom (number | const |
+    param | fn(args...)). Deterministic and side-effect-free."""
+    if not isinstance(s, str):
+        return s
+    toks = _tokenize(s)
+    pos = [0]
+
+    def peek():
+        return toks[pos[0]] if pos[0] < len(toks) else None
+
+    def take():
+        t = toks[pos[0]]; pos[0] += 1; return t
+
+    def atom():
+        t = take()
+        if t == "(":
+            v = expr()
+            if take() != ")":
+                raise ValueError(f"missing ) in {s!r}")
+            return v
+        if isinstance(t, tuple) and t[0] == "num":
+            return t[1]
+        if isinstance(t, tuple) and t[0] == "name":
+            name = t[1]
+            if peek() == "(":                      # function call
+                take(); args = []
+                if peek() != ")":
+                    args.append(expr())
+                    while peek() == ",":
+                        take(); args.append(expr())
+                if take() != ")":
+                    raise ValueError(f"missing ) after {name}( in {s!r}")
+                return float(_EXPR_FUNCS[name](*args))
+            if name in _EXPR_CONSTS:
+                return _EXPR_CONSTS[name]
+            if name in env:
+                return float(env[name])
+            raise ValueError(f"unknown name {name!r} in expression {s!r}")
+        raise ValueError(f"unexpected token {t!r} in {s!r}")
+
+    def powf():
+        b = atom()
+        if peek() == "^":
+            take(); return b ** powf()             # right-associative
+        return b
+
+    def unary():
+        if peek() == "-":
+            take(); return -unary()
+        if peek() == "+":
+            take(); return unary()
+        return powf()
+
+    def term():
+        v = unary()
+        while peek() in ("*", "/", "%"):
+            o = take(); r = unary()
+            v = v * r if o == "*" else (v / r if o == "/" else math.fmod(v, r))
+        return v
+
+    def expr():
+        v = term()
+        while peek() in ("+", "-"):
+            o = take(); r = term()
+            v = v + r if o == "+" else v - r
+        return v
+
+    v = expr()
+    if pos[0] != len(toks):
+        raise ValueError(f"trailing tokens in expression {s!r}")
+    return v
+
+
+# The numeric fields of each op (values that may be a number OR an expression string,
+# possibly nested in a list). Structural fields (op / axis / plane / on / mode / name)
+# are never resolved. Counts are rounded to ints so range()/tessellation stays exact.
+_NUM_FIELDS = {
+    "cube": ("size",), "cylinder": ("sides", "radius", "height"),
+    "plane": ("size_x", "size_y"), "uv_sphere": ("segments", "rings", "radius"),
+    "cone": ("sides", "radius", "height"),
+    "torus": ("major_segments", "minor_segments", "major_radius", "minor_radius"),
+    "grid": ("size_x", "size_y", "x_div", "y_div"), "profile": ("points",),
+    "extrude": ("distance",), "inset": ("thickness",), "bevel": ("width", "depth"),
+    "edge_bevel": ("width",), "solidify": ("thickness",),
+    "array": ("count", "offset"), "bisect": ("point", "normal"),
+    "spin": ("steps", "angle"), "screw": ("steps", "turns", "height", "angle"),
+    "subdivide": ("levels",), "material": ("color", "metallic", "roughness"),
+    "translate": ("by",), "scale": ("by",),
+    "place": ("translate", "rotate", "scale"),
+}
+_INT_FIELDS = {"sides", "steps", "segments", "rings", "levels", "count",
+               "major_segments", "minor_segments", "x_div", "y_div", "turns"}
+
+
+def _resolve_value(v, env):
+    if isinstance(v, str):
+        return _eval_expr(v, env)
+    if isinstance(v, list):
+        return [_resolve_value(x, env) for x in v]
+    return v
+
+
+def _resolve_program(ops, env=None):
+    """Resolve a parametric op-log to a plain one: apply ``params``, expand ``repeat``
+    loops (binding the loop index), and evaluate every expression in a numeric field.
+    Idempotent on a plain op-log (numbers pass straight through), so it's safe to run
+    unconditionally before build — existing op-logs are unaffected."""
+    env = dict(env or {})
+    out = []
+    for cmd in ops:
+        op = cmd.get("op")
+        if op == "params":
+            for k, val in (cmd.get("set") or {}).items():
+                env[k] = _resolve_value(val, env)
+            continue
+        if op == "repeat":
+            count = cmd.get("count", 0)
+            n = int(round(_eval_expr(count, env) if isinstance(count, str) else count))
+            idx = cmd.get("index", "i")
+            for k in range(max(0, n)):
+                e2 = dict(env); e2[idx] = float(k)
+                out.extend(_resolve_program(cmd.get("body", []), e2))
+            continue
+        c = dict(cmd)
+        for f in _NUM_FIELDS.get(op, ()):
+            if f in c:
+                val = _resolve_value(c[f], env)
+                if f in _INT_FIELDS and isinstance(val, float):
+                    val = int(round(val))
+                c[f] = val
+        if op == "place":
+            if isinstance(c.get("material"), dict):
+                m = dict(c["material"])
+                for mk in ("color", "metallic", "roughness"):
+                    if mk in m:
+                        m[mk] = _resolve_value(m[mk], env)
+                c["material"] = m
+            if "program" in c:
+                c["program"] = _resolve_program(c["program"], env)
+        out.append(c)
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # The program (op-log) — the canonical, replayable model
 # --------------------------------------------------------------------------- #
 class MeshProgram:
@@ -506,11 +691,34 @@ class MeshProgram:
 
     def assert_(self, **kw): return self.add(**_cmd("assert", **kw))
 
+    # -- parametric: the op-log as a re-runnable generator ------------------- #
+    def params(self, **values):
+        """Set named parameters. Later ops can reference them in expression strings
+        (e.g. ``size="w*2"``); change a parameter and the whole model rebuilds."""
+        return self.add(**_cmd("params", set=dict(values)))
+
+    def repeat(self, count, body, index="i"):
+        """Instantiate ``body`` (a MeshProgram / op list) ``count`` times, binding the
+        loop index (``i``) so each instance's expressions can vary — a colonnade, a
+        stack of floors, a spiral. ``count`` may itself be a parameter/expression."""
+        body_ops = body.ops if isinstance(body, MeshProgram) else [dict(o) for o in body]
+        return self.add(**_cmd("repeat", count=count, index=index, body=body_ops))
+
+    def resolved(self):
+        """The plain op-log this parametric program resolves to (params applied,
+        repeats expanded, expressions evaluated) — what the kernels actually build."""
+        return _resolve_program(self.ops)
+
+    def resolved_json(self, indent=None):
+        return json.dumps(_resolve_program(self.ops), indent=indent)
+
     # -- replay -------------------------------------------------------------- #
     def build(self) -> Mesh:
-        """Replay the program into a fresh, validated mesh."""
+        """Replay the program into a fresh, validated mesh. The op-log is resolved first
+        (``params`` / ``repeat`` / expressions -> a plain op-log), so a parametric program
+        and its resolved form build identically."""
         mesh, last_tag = None, None
-        for i, cmd in enumerate(self.ops):
+        for i, cmd in enumerate(_resolve_program(self.ops)):
             op = cmd.get("op")
             out_tag = f"__out{i}"
             try:

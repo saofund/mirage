@@ -303,3 +303,47 @@ def test_last_created_after_scale():
          .assert_(closed_manifold=True, euler=2)).build()
     m.validate()
     assert m.is_closed_manifold() and m.euler() == 2
+
+
+# --- parametric op-log: params + expressions + repeat ---------------------- #
+def test_expression_evaluator():
+    from mirage.meshlang import _eval_expr
+    env = {"belly": 0.3, "h": 1.0, "n": 6.0}
+    cases = [("belly*2", 0.6), ("h*0.35", 0.35), ("2^3", 8.0), ("-belly+1", 0.7),
+             ("max(belly, 0.5)", 0.5), ("floor(n/2)", 3.0), ("(h+belly)*10", 13.0),
+             ("cos(0)*belly", 0.3), ("tau/n", 1.0471975512)]
+    for expr, want in cases:
+        assert abs(_eval_expr(expr, env) - want) < 1e-9, f"{expr} -> {_eval_expr(expr, env)}"
+
+
+def test_parametric_shape_morphs_topology_stable():
+    # profile control points are expressions of params: change belly -> the vase
+    # reshapes, but the topology is identical (same number of faces).
+    def vase(belly):
+        p = MeshProgram()
+        p.params(belly=belly, height=1.0, neck=0.18)
+        p.profile([["belly*0.6", 0.0], ["belly", "height*0.4"], ["neck", "height"]], plane="xz")
+        return p.spin(axis="z", steps=32)
+    a, b = vase(0.2).build(), vase(0.5).build()
+    assert a.stats()["faces"] == b.stats()["faces"]      # same topology
+    # the resolved op-log is plain (every numeric field is a number, no expr strings)
+    prof = vase(0.3).resolved()[0]
+    assert all(isinstance(c, (int, float)) for pt in prof["points"] for c in pt)
+
+
+def test_repeat_generates_variable_count():
+    # a `repeat` over `floors`, each floor placed by expressions of the loop index i.
+    def tower(floors):
+        p = MeshProgram().params(floors=floors, twist=10.0)
+        return p.repeat("floors", MeshProgram().place(
+            obj=[{"op": "cube", "size": 1.0}], at=[0, 0, "i*0.5"], rotate=[0, 0, "twist*i"]))
+    t4, t8 = tower(4).build(), tower(8).build()
+    assert t8.stats()["faces"] == 2 * t4.stats()["faces"]    # count is a parameter
+
+
+def test_resolve_is_identity_on_plain_oplog():
+    # a non-parametric op-log resolves to itself (numbers untouched) — existing logs
+    # build exactly as before.
+    from mirage.meshlang import _resolve_program
+    ops = [{"op": "cube", "size": 1.0}, {"op": "bevel", "on": {"by": "all"}, "width": 0.2, "depth": 0.1}]
+    assert _resolve_program(ops) == ops
