@@ -442,6 +442,31 @@ OPLOGS = {
             {"op": "place", "program": [{"op": "cube", "size": 0.5}], "translate": [1.5, 0, 0]}],
          "translate": [0, 0, 0.5]},
     ],
+    # --- parametric op-log: params + expressions + repeat (resolved before build) ----
+    "param_expr_primitive": [    # numeric fields as expressions of params
+        {"op": "params", "set": {"w": 0.5, "n": 12}},
+        {"op": "cylinder", "sides": "n", "radius": "w*0.8", "height": "w*2 + 0.1"},
+    ],
+    "param_vase_lathe": [        # a profile whose points are expressions, spun on the lathe
+        {"op": "params", "set": {"belly": 0.3, "height": 1.0, "neck": 0.18}},
+        {"op": "profile", "points": [["belly*0.6", 0.0], ["belly", "height*0.4"],
+                                     ["neck", "height"]], "plane": "xz"},
+        {"op": "spin", "axis": "z", "steps": "floor(48/2)", "angle": 360.0},
+    ],
+    "param_repeat_tower": [      # a repeat loop placing cubes by expressions of the index i
+        {"op": "params", "set": {"floors": 7, "twist": 12.0}},
+        {"op": "repeat", "count": "floors", "index": "i", "body": [
+            {"op": "place", "program": [{"op": "cube", "size": 1.0}],
+             "translate": [0, 0, "i*0.5"], "rotate": [0, 0, "twist*i"],
+             "scale": ["0.95^i", "0.95^i", 0.3]}]},
+    ],
+    "param_repeat_nested": [     # nested repeat (floors x columns), trig placement
+        {"op": "params", "set": {"floors": 3, "cols": 5, "r": 0.8}},
+        {"op": "repeat", "count": "floors", "index": "i", "body": [
+            {"op": "repeat", "count": "cols", "index": "j", "body": [
+                {"op": "place", "program": [{"op": "cube", "size": 0.2}],
+                 "translate": ["r*cos(tau*j/cols)", "r*sin(tau*j/cols)", "i*0.4"]}]}]},
+    ],
 }
 
 

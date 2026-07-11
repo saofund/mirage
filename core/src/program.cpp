@@ -1,9 +1,11 @@
 #include "mirage/program.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <set>
 
 namespace mirage {
 
@@ -134,6 +136,178 @@ std::string on_suffix(const json& op) {
     if (!by.empty()) return "  @" + by;
     if (on.contains("and") || on.contains("or") || on.contains("not")) return "  @(combo)";
     return "";
+}
+
+// --------------------------------------------------------------------------- //
+// Parametric op-log: a `params` block, arithmetic EXPRESSIONS in numeric fields, and
+// a `repeat` loop, lowered to a plain op-log before build(). Mirrors _resolve_program
+// in src/mirage/meshlang.py so a parametric op-log builds byte-identically in both
+// kernels (same precedence: + - < * / % < unary < ^ right-assoc < atom).
+// --------------------------------------------------------------------------- //
+constexpr double kParamPi = 3.14159265358979323846;
+using Env = std::map<std::string, double>;
+
+double eval_fn(const std::string& n, const std::vector<double>& a) {
+    auto need = [&](std::size_t k) { if (a.size() != k) throw MeshLangError("expr fn " + n + " wrong arity"); };
+    if (n == "sin")   { need(1); return std::sin(a[0]); }
+    if (n == "cos")   { need(1); return std::cos(a[0]); }
+    if (n == "tan")   { need(1); return std::tan(a[0]); }
+    if (n == "sqrt")  { need(1); return std::sqrt(a[0]); }
+    if (n == "abs")   { need(1); return std::fabs(a[0]); }
+    if (n == "floor") { need(1); return std::floor(a[0]); }
+    if (n == "ceil")  { need(1); return std::ceil(a[0]); }
+    if (n == "round") { need(1); return std::round(a[0]); }
+    if (n == "exp")   { need(1); return std::exp(a[0]); }
+    if (n == "log")   { need(1); return std::log(a[0]); }
+    if (n == "sign")  { need(1); return double((a[0] > 0) - (a[0] < 0)); }
+    if (n == "min")   { need(2); return std::min(a[0], a[1]); }
+    if (n == "max")   { need(2); return std::max(a[0], a[1]); }
+    if (n == "pow")   { need(2); return std::pow(a[0], a[1]); }
+    if (n == "atan2") { need(2); return std::atan2(a[0], a[1]); }
+    if (n == "hypot") { need(2); return std::hypot(a[0], a[1]); }
+    if (n == "lerp")  { need(3); return a[0] + (a[1] - a[0]) * a[2]; }
+    if (n == "clamp") { need(3); return std::max(a[1], std::min(a[2], a[0])); }
+    throw MeshLangError("unknown function '" + n + "' in expression");
+}
+
+// Recursive-descent evaluator over a param environment.
+struct ExprEval {
+    const std::string& s;
+    const Env& env;
+    std::size_t i = 0;
+    ExprEval(const std::string& str, const Env& e) : s(str), env(e) {}
+    void ws() { while (i < s.size() && std::isspace((unsigned char)s[i])) ++i; }
+    char peek() { ws(); return i < s.size() ? s[i] : '\0'; }
+    double run() { double v = expr(); ws(); if (i != s.size()) throw MeshLangError("trailing tokens in expr: " + s); return v; }
+    double expr() {  // + -
+        double v = term();
+        for (;;) { char c = peek(); if (c == '+') { ++i; v += term(); } else if (c == '-') { ++i; v -= term(); } else break; }
+        return v;
+    }
+    double term() {  // * / %
+        double v = unary();
+        for (;;) { char c = peek();
+            if (c == '*') { ++i; v *= unary(); }
+            else if (c == '/') { ++i; v /= unary(); }
+            else if (c == '%') { ++i; double r = unary(); v = std::fmod(v, r); }
+            else break; }
+        return v;
+    }
+    double unary() {  // + -
+        char c = peek();
+        if (c == '-') { ++i; return -unary(); }
+        if (c == '+') { ++i; return unary(); }
+        return powf();
+    }
+    double powf() {  // ^ right-associative
+        double b = atom();
+        if (peek() == '^') { ++i; return std::pow(b, powf()); }
+        return b;
+    }
+    double atom() {
+        char c = peek();
+        if (c == '(') { ++i; double v = expr(); if (peek() != ')') throw MeshLangError("missing ) in expr: " + s); ++i; return v; }
+        if (std::isdigit((unsigned char)c) || c == '.') return number();
+        if (std::isalpha((unsigned char)c) || c == '_') return name();
+        throw MeshLangError("unexpected token in expr: " + s);
+    }
+    double number() {
+        ws(); std::size_t j = i;
+        while (i < s.size() && (std::isdigit((unsigned char)s[i]) || s[i] == '.' || s[i] == 'e' || s[i] == 'E' ||
+                                ((s[i] == '+' || s[i] == '-') && (s[i - 1] == 'e' || s[i - 1] == 'E')))) ++i;
+        return std::stod(s.substr(j, i - j));
+    }
+    double name() {
+        ws(); std::size_t j = i;
+        while (i < s.size() && (std::isalnum((unsigned char)s[i]) || s[i] == '_')) ++i;
+        const std::string id = s.substr(j, i - j);
+        if (peek() == '(') {  // function call
+            ++i; std::vector<double> args;
+            if (peek() != ')') { args.push_back(expr()); while (peek() == ',') { ++i; args.push_back(expr()); } }
+            if (peek() != ')') throw MeshLangError("missing ) after " + id + "( in expr: " + s); ++i;
+            return eval_fn(id, args);
+        }
+        if (id == "pi") return kParamPi;
+        if (id == "tau") return 2.0 * kParamPi;
+        if (id == "e") return 2.718281828459045235360287;
+        auto it = env.find(id);
+        if (it != env.end()) return it->second;
+        throw MeshLangError("unknown name '" + id + "' in expr: " + s);
+    }
+};
+double eval_expr(const std::string& s, const Env& env) { return ExprEval(s, env).run(); }
+
+json resolve_value(const json& v, const Env& env) {
+    if (v.is_string()) return eval_expr(v.get<std::string>(), env);
+    if (v.is_array()) { json out = json::array(); for (const auto& x : v) out.push_back(resolve_value(x, env)); return out; }
+    return v;  // number / bool / null pass through unchanged
+}
+
+const std::map<std::string, std::vector<std::string>>& num_fields() {
+    static const std::map<std::string, std::vector<std::string>> m = {
+        {"cube", {"size"}}, {"cylinder", {"sides", "radius", "height"}},
+        {"plane", {"size_x", "size_y"}}, {"uv_sphere", {"segments", "rings", "radius"}},
+        {"cone", {"sides", "radius", "height"}},
+        {"torus", {"major_segments", "minor_segments", "major_radius", "minor_radius"}},
+        {"grid", {"size_x", "size_y", "x_div", "y_div"}}, {"profile", {"points"}},
+        {"extrude", {"distance"}}, {"inset", {"thickness"}}, {"bevel", {"width", "depth"}},
+        {"edge_bevel", {"width"}}, {"solidify", {"thickness"}},
+        {"array", {"count", "offset"}}, {"bisect", {"point", "normal"}},
+        {"spin", {"steps", "angle"}}, {"screw", {"steps", "turns", "height", "angle"}},
+        {"subdivide", {"levels"}}, {"material", {"color", "metallic", "roughness"}},
+        {"translate", {"by"}}, {"scale", {"by"}}, {"place", {"translate", "rotate", "scale"}},
+    };
+    return m;
+}
+bool is_int_field(const std::string& f) {
+    static const std::set<std::string> s = {"sides", "steps", "segments", "rings", "levels", "count",
+                                            "major_segments", "minor_segments", "x_div", "y_div", "turns"};
+    return s.count(f) > 0;
+}
+
+void resolve_into(const std::vector<json>& ops, Env env, std::vector<json>& out) {
+    for (const json& cmd : ops) {
+        if (!cmd.is_object() || !cmd.contains("op")) { out.push_back(cmd); continue; }
+        const std::string op = cmd.at("op").get<std::string>();
+        if (op == "params") {
+            if (cmd.contains("set") && cmd["set"].is_object())
+                for (auto it = cmd["set"].begin(); it != cmd["set"].end(); ++it)
+                    env[it.key()] = resolve_value(it.value(), env).get<double>();
+            continue;
+        }
+        if (op == "repeat") {
+            const json& cnt = cmd.value("count", json(0));
+            const double cd = cnt.is_string() ? eval_expr(cnt.get<std::string>(), env) : cnt.get<double>();
+            const long n = std::lround(cd);
+            const std::string idx = cmd.value("index", std::string("i"));
+            const std::vector<json> body = cmd.value("body", std::vector<json>{});
+            for (long k = 0; k < n; ++k) { Env e2 = env; e2[idx] = double(k); resolve_into(body, e2, out); }
+            continue;
+        }
+        json c = cmd;
+        auto nf = num_fields().find(op);
+        if (nf != num_fields().end())
+            for (const std::string& f : nf->second)
+                if (c.contains(f)) {
+                    json rv = resolve_value(c[f], env);
+                    if (is_int_field(f) && rv.is_number()) rv = static_cast<long long>(std::llround(rv.get<double>()));
+                    c[f] = std::move(rv);
+                }
+        if (op == "place") {
+            if (c.contains("material") && c["material"].is_object())
+                for (const char* mk : {"color", "metallic", "roughness"})
+                    if (c["material"].contains(mk)) c["material"][mk] = resolve_value(c["material"][mk], env);
+            if (c.contains("program")) {
+                std::vector<json> sub;
+                resolve_into(c["program"].get<std::vector<json>>(), env, sub);
+                c["program"] = sub;
+            }
+        }
+        out.push_back(std::move(c));
+    }
+}
+std::vector<json> resolve_program(const std::vector<json>& ops) {
+    std::vector<json> out; resolve_into(ops, Env{}, out); return out;
 }
 
 }  // namespace
@@ -321,8 +495,11 @@ Mesh Program::build(std::string* last_tag_out) const {
     bool has = false;
     std::string last_tag;  // most recent "__out<i>" (empty = none) -> last_created
 
-    for (std::size_t i = 0; i < ops_.size(); ++i) {
-        const json& cmd = ops_[i];
+    // Resolve the parametric layer (params / repeat / expressions) to a plain op-log,
+    // then replay it. Identity on a plain op-log, so non-parametric programs are unaffected.
+    const std::vector<json> ops = resolve_program(ops_);
+    for (std::size_t i = 0; i < ops.size(); ++i) {
+        const json& cmd = ops[i];
         if (!cmd.is_object() || !cmd.contains("op"))
             throw MeshLangError("op #" + std::to_string(i) + " is not a command dict: " + cmd.dump());
         const std::string op = cmd.at("op").get<std::string>();
