@@ -79,6 +79,19 @@ path-traced and denoised (`examples/cases/19_parametric_tower.py --grid`):
 
 ![A parametric tower morphing as its parameters sweep](docs/gallery/parametric_morph.gif)
 
+## Diff & merge — the model is version-controllable
+
+Because the op-log is legible, two versions can be **diffed** and **3-way merged** like source
+code — a human at the GUI and an AI over MCP editing the same model on separate branches, then
+reconciling. Disjoint edits to different objects merge automatically; a spot both changed
+differently surfaces as a **conflict** (never silently lost). No opaque scene file can do this.
+
+Below: one base scene, a *human* branch (recolour the vase, move the bowl) and an *AI* branch
+(repaint the floor, add a book) — `merge_by_key` combines all four edits with zero conflicts,
+and the render proves every one landed (`examples/cases/20_diff_merge.py`):
+
+![base, a human branch, an AI branch, and their automatic 3-way merge](docs/gallery/diff_merge.png)
+
 The core operators, one panel each (regenerate with `uv run python docs/gallery/render_gallery.py`):
 
 ![Mirage modeling gallery](docs/gallery/showcase.png)
