@@ -61,6 +61,24 @@ low sample counts by the tracer's own **edge-avoiding à-trous denoiser** (`--de
 [docs/scene-scaling.md](docs/scene-scaling.md) — the composition seam that once forced a
 manual merge is now closed by the `place` op.)
 
+## Parametric — the op-log is a re-runnable generator
+
+The model isn't a bag of geometry to poke at; it's a **legible program**. Give the op-log a
+`params` block, arithmetic **expressions** in any numeric field, and a `repeat` loop, and the
+whole form regenerates when you change one number — `floors` stacks storeys, `twist` spirals
+them, `taper` pinches the silhouette. Five legible ops resolve to ~100. This is the thing a
+puppet-an-app MCP can't do — and it's **byte-identical in the C++ core and the Python kernel**
+(differential-tested), so a parametric op-log path-traces and loads in the GUI natively.
+
+Sweep two parameters over that one program and you get a **design space** — 16 towers, each
+path-traced and denoised (`examples/cases/19_parametric_tower.py --grid`):
+
+![A parametric design space — 16 towers from one op-log](docs/gallery/parametric_grid.png)
+
+…or animate a parameter and the structure morphs, every frame path-traced (`--morph`):
+
+![A parametric tower morphing as its parameters sweep](docs/gallery/parametric_morph.gif)
+
 The core operators, one panel each (regenerate with `uv run python docs/gallery/render_gallery.py`):
 
 ![Mirage modeling gallery](docs/gallery/showcase.png)
