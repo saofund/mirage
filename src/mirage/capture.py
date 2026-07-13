@@ -349,7 +349,8 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
         if trace_denoise:
             args += ["--denoise", str(trace_denoise)]
         for k, v in (trace_knobs or {}).items():
-            args += [f"--{k}", str(v)]
+            # a multi-value knob (e.g. sun-dir X Y Z) is given as a list/tuple
+            args += [f"--{k}", *([str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)])]
         r = subprocess.run(args, capture_output=True, text=True)
         return r, "tracer"
 

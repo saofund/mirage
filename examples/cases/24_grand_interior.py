@@ -130,25 +130,37 @@ def window_wall(width, thick, height, hw, hh, hcx, hcz):
     return p.boolean("difference", box(hcx, 0, hcz, hw, thick*3, hh))
 
 
-# ---- the room: every piece placed BY HAND ------------------------------------ #
-def build_room():
-    p = MeshProgram()
+# ---- the room: every piece placed BY HAND, grouped so the making-of can reuse it #
+CONX, CONY = -0.3, 3.2   # sideboard anchor (shared by console + its plant + mirror)
 
-    # -- shell: floor, left wall, back wall with a big window ------------------- #
+
+def _shell(p, windowed=True):
+    """Floor, left wall, and the back wall — solid, or with the window boolean cut."""
     slab(p, 0.0, 0.4, -0.06, 7.2, 6.0, 0.12, FLOOR)                       # floor
     slab(p, -3.5, 0.4, 1.35, 0.14, 6.0, 2.9, WALL)                        # left wall (x = -3.5)
+    if windowed:
+        _window(p)
+    else:
+        p.place(obj=MeshProgram().mesh(*box(0, 0, 1.45, 7.2, 0.14, 2.9)), at=(0, 3.42, 0), material=WALL)  # solid back wall
+
+
+def _window(p):
+    """The back wall with the window punched out, its mullions, and the glowing sky pane."""
     p.place(obj=window_wall(7.2, 0.14, 2.9, 2.6, 1.5, 0.4, 1.45), at=(0, 3.42, 0), material=WALL)  # back wall + window
     p.place(obj=MeshProgram().mesh(*box(-0.86, 0, 1.45, 0.04, 0.08, 1.5)).array(count=4, offset=(0.55, 0, 0)),
             at=(0, 3.34, 0), material=OAK)                                # window mullions (vertical)
     p.place(obj=MeshProgram().mesh(*box(-0.86, 0, 1.45, 2.65, 0.08, 0.04)).array(count=2, offset=(0, 0, 0.72)),
             at=(0, 3.34, 0), material=OAK)                                # window mullions (horizontal)
-    slab(p, 0.4, 3.55, 1.45, 2.5, 0.04, 1.42, WINGLOW)                    # glowing dusk sky behind the window
+    slab(p, 0.4, 3.55, 1.45, 2.5, 0.04, 1.42, WINGLOW)                    # glowing golden-hour sky behind the window
 
-    # -- the rug that anchors the living grouping ------------------------------ #
+
+def _rug(p):
     slab(p, -0.9, 0.7, 0.012, 3.6, 2.8, 0.02, RUG)
     slab(p, -0.9, 0.7, 0.024, 3.2, 2.4, 0.014, RUG2)
 
-    # -- main sofa against the LEFT wall, facing +x ---------------------------- #
+
+def _sofa(p):
+    """Main sofa against the LEFT wall, facing +x."""
     sx0, sy0 = -2.85, 0.7
     p.place(obj=rounded(0.98, 2.5, 0.34, 0.05), at=(sx0, sy0, 0.32), material=SOFA)        # seat base
     p.place(obj=rounded(0.30, 2.5, 0.78, 0.05), at=(sx0 - 0.34, sy0, 0.62), material=SOFA) # backrest
@@ -161,7 +173,9 @@ def build_room():
                 rotate=(0, 0, 18 - 16 * k), material=[CUSH_A, CUSH_B, CUSH_A][k])          # throw pillows
     p.place(obj=rounded(0.9, 1.0, 0.05, 0.03), at=(sx0 + 0.28, sy0 + 0.5, 0.56), rotate=(0, 0, 8), material=CUSH_B)  # throw
 
-    # -- coffee table on the rug, with a still life ---------------------------- #
+
+def _coffee(p):
+    """Coffee table on the rug, with a still life (the lathe turns the vase and bowl)."""
     ctx, cty = -0.95, 0.7
     p.place(obj=rounded(1.5, 0.86, 0.10, 0.03), at=(ctx, cty, 0.40), material=WALNUT)      # beveled top
     for lx in (-0.62, 0.62):
@@ -177,18 +191,30 @@ def build_room():
     p.place(obj=MeshProgram().mesh(*box(0, 0, 0, 0.40, 0.28, 0.045)).bevel(Sel.all(), 0.01),
             at=(ctx + 0.52, cty + 0.26, 0.49), rotate=(0, 0, -6), material=BOOKS[3])
 
-    # -- a single leather armchair (foreground), turned to the sofa, + a pouf -- #
-    def armchair(ax, ay, arot):
-        c, s = math.cos(math.radians(arot)), math.sin(math.radians(arot))
-        p.place(obj=rounded(0.80, 0.80, 0.30, 0.06), at=(ax, ay, 0.30), rotate=(0, 0, arot), material=CHAIR)
-        p.place(obj=rounded(0.22, 0.80, 0.60, 0.06), at=(ax + 0.29*c, ay + 0.29*s, 0.57), rotate=(0, 0, arot), material=CHAIR)
-        p.place(obj=MeshProgram().mesh(*box(0, 0.98, 0.42, 0.80, 0.22, 0.46)).mirror("y").bevel(Sel.all(), 0.05, 0.04),
-                at=(ax, ay, 0), rotate=(0, 0, arot), material=CHAIR)                       # arms
-        p.place(obj=rounded(0.66, 0.66, 0.15, 0.06), at=(ax, ay, 0.46), rotate=(0, 0, arot), material=CUSH_C)
-    armchair(0.55, -0.45, 150)
+
+def armchair(p, ax, ay, arot, blocked=False):
+    """A leather armchair, turned to the sofa. blocked=True leaves it as sharp boxes
+    (the making-of shows `bevel` rounding it)."""
+    c, s = math.cos(math.radians(arot)), math.sin(math.radians(arot))
+    if blocked:
+        p.place(obj=MeshProgram().mesh(*box(0, 0, 0, 0.80, 0.80, 0.30)), at=(ax, ay, 0.30), rotate=(0, 0, arot), material=CHAIR)
+        p.place(obj=MeshProgram().mesh(*box(0, 0, 0, 0.22, 0.80, 0.60)), at=(ax + 0.29*c, ay + 0.29*s, 0.57), rotate=(0, 0, arot), material=CHAIR)
+        return
+    p.place(obj=rounded(0.80, 0.80, 0.30, 0.06), at=(ax, ay, 0.30), rotate=(0, 0, arot), material=CHAIR)
+    p.place(obj=rounded(0.22, 0.80, 0.60, 0.06), at=(ax + 0.29*c, ay + 0.29*s, 0.57), rotate=(0, 0, arot), material=CHAIR)
+    p.place(obj=MeshProgram().mesh(*box(0, 0.98, 0.42, 0.80, 0.22, 0.46)).mirror("y").bevel(Sel.all(), 0.05, 0.04),
+            at=(ax, ay, 0), rotate=(0, 0, arot), material=CHAIR)                           # arms
+    p.place(obj=rounded(0.66, 0.66, 0.15, 0.06), at=(ax, ay, 0.46), rotate=(0, 0, arot), material=CUSH_C)
+
+
+def _nook(p):
+    """The reading armchair (foreground) + a knitted pouf."""
+    armchair(p, 0.55, -0.45, 150)
     p.place(obj=rounded(0.52, 0.52, 0.26, 0.09), at=(-0.5, -0.7, 0.15), material=CUSH_A)     # a knitted pouf
 
-    # -- bookshelf against the back wall (right of the window) ----------------- #
+
+def _bookshelf(p):
+    """Bookshelf against the back wall (right of the window)."""
     bx, by = 2.5, 3.16
     p.place(obj=MeshProgram().mesh(*box(0, 0, 1.05, 1.7, 0.36, 2.1)).boolean("difference", box(0, 0.12, 1.06, 1.54, 0.36, 1.9)),
             at=(bx, by, 0), material=OAK)                                                   # carcass
@@ -209,28 +235,32 @@ def build_room():
             p.place(obj=vase("squat") if shelf == 1 else bowl(),
                     at=(bx + 0.45, by - 0.02, z0 + 0.02), material=[CERAMIC, TEAL][shelf == 3])
 
-    # -- sideboard under the window, with a mirror + lamp + plant -------------- #
-    conx, cony = -0.3, 3.2
+
+def _console(p):
+    """Sideboard under the window, with vases, a dish, and a glowing table lamp."""
+    conx, cony = CONX, CONY
     p.place(obj=rounded(2.0, 0.5, 0.7, 0.03), at=(conx, cony, 0.42), material=WALNUT)       # console body
     for lx in (-0.9, 0.9):
         p.place(obj=cyl(10, 0.03, 0.36), at=(conx + lx, cony - 0.02, 0.18), rotate=(0, 0, 0), material=BRASS)  # legs
     p.place(obj=vase("tall"), at=(conx - 0.7, cony, 0.77), material=CERAMIC)
     p.place(obj=lathe([(0.0, 0.05), (0.09, 0.01), (0.16, 0.02), (0.2, 0.09)], 36), at=(conx + 0.6, cony, 0.77), material=TEAL)  # a dish
-    # table lamp on the console
-    p.place(obj=lathe([(0.05, 0), (0.09, 0.02), (0.05, 0.10), (0.04, 0.24)], 32), at=(conx + 0.0, cony + 0.02, 0.77), material=BRASS)
-    p.place(obj=lamp_shade(0.10, 0.15, 0.18), at=(conx + 0.0, cony + 0.02, 1.12), material=SHADE)
+    p.place(obj=lathe([(0.05, 0), (0.09, 0.02), (0.05, 0.10), (0.04, 0.24)], 32), at=(conx + 0.0, cony + 0.02, 0.77), material=BRASS)  # lamp base
+    p.place(obj=lamp_shade(0.10, 0.15, 0.18), at=(conx + 0.0, cony + 0.02, 1.12), material=SHADE)  # glowing shade
 
-    # -- floor lamp in the back-right reading corner (by the bookshelf) -------- #
+
+def _floor_lamp(p):
+    """Floor lamp in the back-right reading corner (by the bookshelf)."""
     lx, ly = 2.95, 2.35
     p.place(obj=cyl(24, 0.14, 0.05), at=(lx, ly, 0.025), material=BLACKM)
     p.place(obj=cyl(14, 0.022, 1.55), at=(lx, ly, 0.80), material=BRASS)
     p.place(obj=lamp_shade(0.13, 0.20, 0.24), at=(lx, ly, 1.58), material=SHADE)
 
-    # -- plants: a big one in the corner, a small one on the console ----------- #
+
+def _greenery_and_art(p):
+    """Plants in the corner + on the console, framed art on the left wall, a round mirror."""
+    conx, cony = CONX, CONY
     p.place(obj=plant(pot_r=0.24, pot_h=0.5, spread=0.34, blobs=11), at=(-3.05, 2.7, 0.0))
     p.place(obj=plant(pot_r=0.10, pot_h=0.16, spread=0.13, blobs=6, leaf=LEAF2), at=(conx + 0.85, cony, 0.77))
-
-    # -- wall art + a round mirror -------------------------------------------- #
     p.place(obj=framed(1.0, 0.72), at=(-3.42, 0.2, 1.7), material=WALNUT)                  # large picture on left wall
     slab(p, -3.39, 0.2, 1.7, 0.02, 0.86, 0.58, CANVAS)
     p.place(obj=framed(0.62, 0.5), at=(-3.42, 1.6, 1.55), material=BRASS)                  # smaller picture
@@ -239,7 +269,99 @@ def build_room():
             at=(conx, 3.38, 1.9), rotate=(90, 0, 0), material=BRASS)                        # round mirror frame over console
     p.place(obj=cyl(40, 0.33, 0.02), at=(conx, 3.39, 1.9), rotate=(90, 0, 0), material=mat((0.7, 0.75, 0.78), 0.3, 0.15))
 
+
+def build_room():
+    """The whole room, groups placed in the same order the making-of reveals them."""
+    p = MeshProgram()
+    _shell(p)
+    _rug(p)
+    _sofa(p)
+    _coffee(p)
+    _nook(p)
+    _bookshelf(p)
+    _console(p)
+    _floor_lamp(p)
+    _greenery_and_art(p)
     return p
+
+
+# ---- making-of: the room assembling in the real native viewer ----------------- #
+def film_stages():
+    """The build story, group by group, with a couple of hero-operator beats featured in
+    place — `boolean` punches the window, `bevel` rounds the blocked-out armchair. Each stage
+    is an independent op-log the viewer renders; the last stage equals build_room() exactly,
+    so the path-traced money-shot hold is the same geometry as the hero still."""
+    stages, caps = [], []
+    p = MeshProgram()
+
+    def snap(cap):
+        stages.append(MeshProgram(p.ops)); caps.append(cap)
+
+    _shell(p, windowed=False)                       # floor, left wall, a SOLID back wall
+    snap("room shell  ·  floor + walls up")
+
+    p.ops.pop()                                     # drop the solid wall; re-place it windowed
+    _window(p)
+    snap("window  ·  boolean cut + array mullions")
+
+    _rug(p);    snap("rug  ·  anchoring the living grouping")
+    _sofa(p);   snap("sofa  ·  bevel + mirrored arms")
+    _coffee(p); snap("coffee table  ·  the lathe turns the vase")
+
+    armchair(p, 0.55, -0.45, 150, blocked=True)     # sharp boxes, then bevel rounds them
+    snap("armchair  ·  blocked out (sharp boxes)")
+    p.ops.pop(); p.ops.pop()
+    _nook(p)
+    snap("armchair  ·  bevel rounds it, + a pouf")
+
+    _bookshelf(p);        snap("bookshelf  ·  array shelves + books")
+    _console(p);          snap("sideboard  ·  a turned lamp, vases")
+    _floor_lamp(p);       snap("floor lamp  ·  the reading corner")
+    _greenery_and_art(p); snap(f"complete  ·  {len(p.ops)} place ops, one op-log")
+    return stages, caps
+
+
+def film():
+    """Film the room building group-by-group in mirage_viewer -> grand_interior_build.mp4/.gif,
+    settling onto a path-traced golden-hour close-up (the money shot)."""
+    import os
+    from mirage.capture import record_build
+    stages, captions = film_stages()
+    quick = os.environ.get("ANIM_QUICK") == "1"
+    # a moving camera through the open +x,-y corner: establish high & wide, descend and push in
+    # as the shell/window go up, swing to the window & sofa reads with some 运镜, then drive IN
+    # and settle to a tight golden-hour framing of the whole grouping (materials read close).
+    # (t, yaw, pitch, dist, tx, ty, tz); last two keys equal -> a static, path-traced dwell.
+    moves = [
+        (0.00, 0.62, 0.50, 8.2, -0.30, 0.70, 0.95),   # establishing — high & wide over the corner
+        (0.14, 0.80, 0.40, 6.9, -0.35, 0.70, 0.92),   # descend + dolly in as walls/window go up
+        (0.30, 0.96, 0.30, 5.7, -0.10, 0.95, 0.92),   # swing to the window / console, lower
+        (0.46, 0.74, 0.34, 6.2, -0.55, 0.75, 0.90),   # ease back, recentre on the sofa grouping
+        (0.60, 0.57, 0.29, 5.6, -0.72, 0.55, 0.86),   # swing to a frontal read of sofa + armchair
+        (0.74, 0.82, 0.23, 4.9, -0.30, 0.80, 0.85),   # come back in, low — the materials read
+        (0.90, 0.85, 0.18, 5.6, -0.52, 0.98, 0.92),   # settle to the hero framing at money-shot dist
+        (1.00, 0.85, 0.18, 5.6, -0.52, 0.98, 0.92),   # hold (flat -> the path-traced money shot)
+    ]
+    tmp = Path(os.environ["ANIM_TMP"]) if os.environ.get("ANIM_TMP") else None
+    knobs = {"sun": 0.66, "env": 0.15, "exposure": 1.08, "sun-dir": (0.42, 0.62, 0.33)}  # golden-hour hero light
+    if os.environ.get("ANIM_RAYTRACE") == "1":
+        # a fully PATH-TRACED promo reel -> its own asset (grand_interior_raytrace.*): every
+        # frame via mirage_render (GI, soft shadows, emissive lamps), low spp + denoise = clean.
+        record_build(
+            stages, "grand_interior_raytrace", captions=captions, automode=False, keyframes=moves,
+            renderer="raytrace", trace_spp=110, trace_threads=16, trace_denoise=5,
+            trace_knobs=knobs, cam_fov=0.82,
+            size=(960, 540), fps=24, per=6, hold=16, gif_w=520, gif_fps=10, tmp=tmp,
+        )
+    else:
+        # default: fast smooth AA'd viewport for the build, one path-traced frame for the hold.
+        record_build(
+            stages, "grand_interior_build", captions=captions, automode=True, keyframes=moves,
+            smooth=True, trace_hold=True, trace_spp=420, trace_threads=12, trace_denoise=5, trace_knobs=knobs, cam_fov=0.82,
+            size=(854, 480) if quick else (1280, 720),
+            fps=24, per=8 if quick else 12, hold=12 if quick else 28,
+            gif_w=520, gif_fps=10, tmp=tmp,
+        )
 
 
 # ---- render ------------------------------------------------------------------ #
@@ -261,6 +383,9 @@ def main():
     p = build_room()
     m = p.build()
     print(f"  grand interior: {len(p.ops)} place ops, {len(m.faces)} faces")
+    if "--film" in sys.argv:
+        film()
+        return
     if "--preview" in sys.argv:
         trace(p, OUT / "preview.png", w=640, h=430, spp=40, denoise=4)
         print(f"  wrote {OUT / 'preview.png'}")

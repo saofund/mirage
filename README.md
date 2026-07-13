@@ -108,6 +108,17 @@ window-mullion shadows across the boards (`examples/cases/24_grand_interior.py`)
 
 ![A hand-composed living room at golden hour, textured surfaces and emissive lamps](docs/gallery/grand_interior.png)
 
+And here is that room **being built in Mirage's own viewport**, in the editor's **AUTO mode** — a
+moving camera through the open corner while the op-log assembles group by group: the `boolean`
+punches the window, the `lathe` turns the vase, the armchair is **blocked out sharp and then
+`bevel` rounds it**, and each piece is *placed* into the layout, the HUD naming the operator at
+work. It settles onto the **path-traced golden-hour close-up** (the real-time viewport for the
+build, the first-party tracer + denoiser for the money shot, both off one op-log). Regenerate
+with `uv run python examples/cases/24_grand_interior.py --film` (add `ANIM_RAYTRACE=1` for a
+fully path-traced pass).
+
+![Building the hand-composed interior in Mirage's viewport, group by group](docs/gallery/grand_interior_build.gif)
+
 ## Diff & merge — the model is version-controllable
 
 Because the op-log is legible, two versions can be **diffed** and **3-way merged** like source
