@@ -49,3 +49,6 @@ imgui.ini
 
 # local agent config / instructions — never publish
 .claude/
+
+# generated PBR texture maps (regenerated deterministically by mirage.textures) — 57 MB, not source
+assets/textures/

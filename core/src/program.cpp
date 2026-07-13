@@ -570,6 +570,10 @@ Mesh Program::build(std::string* last_tag_out) const {
                                 mtl.tex_scale = fm.value("tex_scale", 4.0);
                                 if (fm.contains("tex2")) { auto e = fm.at("tex2"); mtl.tex_color2 = {e[0], e[1], e[2]}; }
                             }
+                            if (fm.contains("albedo_map"))    mtl.albedo_map    = fm.at("albedo_map").get<std::string>();
+                            if (fm.contains("roughness_map")) mtl.roughness_map = fm.at("roughness_map").get<std::string>();
+                            if (fm.contains("normal_map"))    mtl.normal_map    = fm.at("normal_map").get<std::string>();
+                            mtl.uv_scale = fm.value("uv_scale", 1.0);
                             mtl.set = true;
                             const_cast<Face*>(f.get())->material = mtl;
                         }
@@ -644,6 +648,10 @@ Mesh Program::build(std::string* last_tag_out) const {
                         pm.tex_scale = mj.value("tex_scale", 4.0);
                         if (mj.contains("tex2")) { auto e = mj.at("tex2"); pm.tex_color2 = {e[0], e[1], e[2]}; }
                     }
+                    if (mj.contains("albedo_map"))    pm.albedo_map    = mj.at("albedo_map").get<std::string>();
+                    if (mj.contains("roughness_map")) pm.roughness_map = mj.at("roughness_map").get<std::string>();
+                    if (mj.contains("normal_map"))    pm.normal_map    = mj.at("normal_map").get<std::string>();
+                    pm.uv_scale = mj.value("uv_scale", 1.0);
                     pm.set = true;
                 }
                 std::vector<Material> mats = std::move(A.mats);
@@ -756,6 +764,10 @@ Mesh Program::build(std::string* last_tag_out) const {
                     m.tex_scale = cmd.value("tex_scale", 4.0);
                     if (cmd.contains("tex2")) { auto e = cmd.at("tex2"); m.tex_color2 = {e[0], e[1], e[2]}; }
                 }
+                if (cmd.contains("albedo_map"))    m.albedo_map    = cmd.at("albedo_map").get<std::string>();
+                if (cmd.contains("roughness_map")) m.roughness_map = cmd.at("roughness_map").get<std::string>();
+                if (cmd.contains("normal_map"))    m.normal_map    = cmd.at("normal_map").get<std::string>();
+                m.uv_scale = cmd.value("uv_scale", 1.0);
                 m.set = true;
                 for (const Face* f : seln) const_cast<Face*>(f)->material = m;
                 outs = seln;

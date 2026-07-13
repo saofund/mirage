@@ -56,6 +56,11 @@ struct Material {
     int tex = 0;                                     // procedural texture: 0 none, 1 wood, 2 fabric, 3 stone
     double tex_scale = 4.0;
     std::array<double, 3> tex_color2{0.0, 0.0, 0.0}; // pattern's second tint (mixed with color)
+    // Image texture maps (PPM paths), sampled triplanar by the path tracer. Empty = unused.
+    std::string albedo_map;                          // base colour (linear)
+    std::string roughness_map;                       // roughness (grayscale)
+    std::string normal_map;                          // tangent-space normal
+    double uv_scale = 1.0;                           // world units per texture tile
     bool set = false;
 };
 

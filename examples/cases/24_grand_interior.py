@@ -19,35 +19,44 @@ from pathlib import Path
 
 from mirage.meshlang import MeshProgram, Sel
 from mirage.capture import default_render
+from mirage.textures import ensure_textures
 
 ROOT = Path(__file__).resolve().parents[2]
 RENDER = default_render()
 OUT = Path(__file__).resolve().parent / "outputs" / "24_grand_interior"
 GALLERY = ROOT / "docs" / "gallery"
 
+# real PBR map sets (albedo / roughness / normal), generated on demand -> assets/textures/
+TEX = ensure_textures(["wood_floor", "wood_walnut", "wood_oak",
+                       "fabric_sofa", "fabric_cush", "fabric_rug", "plaster", "marble"])
+
 
 # ---- a cohesive, warm mid-century palette ------------------------------------ #
-def mat(c, metallic=0.0, roughness=0.5, emission=None, tex=None, tex_scale=4.0, tex2=None):
+def mat(c, metallic=0.0, roughness=0.5, emission=None, tex=None, tex_scale=4.0, tex2=None,
+        maps=None, uv_scale=1.0):
     m = {"color": list(c), "metallic": metallic, "roughness": roughness}
     if emission:
         m["emission"] = list(emission)     # a light source (radiance)
-    if tex:                                # procedural texture: "wood" / "fabric" / "stone"
+    if tex:                                # procedural texture fallback: "wood"/"fabric"/"stone"
         m["tex"] = tex; m["tex_scale"] = tex_scale
         if tex2:
             m["tex2"] = list(tex2)
+    if maps:                               # real image maps (triplanar); uv_scale = m per tile
+        m["albedo_map"] = str(maps["albedo"]); m["roughness_map"] = str(maps["rough"])
+        m["normal_map"] = str(maps["normal"]); m["uv_scale"] = uv_scale
     return m
 
-FLOOR   = mat((0.46, 0.32, 0.17), 0.0, 0.30, tex="wood", tex_scale=1.7, tex2=(0.25, 0.15, 0.075))
-WALL    = mat((0.85, 0.81, 0.74), 0.0, 0.95, tex="stone", tex_scale=1.1, tex2=(0.73, 0.68, 0.59))
-RUG     = mat((0.50, 0.28, 0.23), 0.0, 0.92, tex="fabric", tex_scale=6.0, tex2=(0.40, 0.22, 0.18))
+FLOOR   = mat((0.46, 0.32, 0.17), 0.0, 0.30, maps=TEX["wood_floor"],  uv_scale=1.5)
+WALL    = mat((0.85, 0.81, 0.74), 0.0, 0.95, maps=TEX["plaster"],     uv_scale=2.6)
+RUG     = mat((0.50, 0.28, 0.23), 0.0, 0.92, maps=TEX["fabric_rug"],  uv_scale=0.7)
 RUG2    = mat((0.66, 0.58, 0.46), 0.0, 0.92)   # cream border
-SOFA    = mat((0.40, 0.48, 0.39), 0.0, 0.88, tex="fabric", tex_scale=13.0, tex2=(0.33, 0.42, 0.33))
+SOFA    = mat((0.40, 0.48, 0.39), 0.0, 0.88, maps=TEX["fabric_sofa"], uv_scale=0.45)
 CHAIR   = mat((0.50, 0.27, 0.13), 0.0, 0.55)   # cognac leather (smooth)
-CUSH_A  = mat((0.80, 0.60, 0.26), 0.0, 0.85, tex="fabric", tex_scale=16.0, tex2=(0.68, 0.50, 0.20))
-CUSH_B  = mat((0.40, 0.28, 0.30), 0.0, 0.85, tex="fabric", tex_scale=16.0, tex2=(0.32, 0.22, 0.24))
-CUSH_C  = mat((0.85, 0.80, 0.70), 0.0, 0.85, tex="fabric", tex_scale=16.0, tex2=(0.74, 0.69, 0.60))
-WALNUT  = mat((0.30, 0.19, 0.12), 0.0, 0.38, tex="wood", tex_scale=3.5, tex2=(0.22, 0.13, 0.08))
-OAK     = mat((0.60, 0.44, 0.26), 0.0, 0.45, tex="wood", tex_scale=4.0, tex2=(0.50, 0.35, 0.20))
+CUSH_A  = mat((0.80, 0.60, 0.26), 0.0, 0.85, maps=TEX["fabric_cush"], uv_scale=0.35)
+CUSH_B  = mat((0.40, 0.28, 0.30), 0.0, 0.85, maps=TEX["fabric_cush"], uv_scale=0.35)
+CUSH_C  = mat((0.85, 0.80, 0.70), 0.0, 0.85, maps=TEX["fabric_cush"], uv_scale=0.35)
+WALNUT  = mat((0.30, 0.19, 0.12), 0.0, 0.38, maps=TEX["wood_walnut"], uv_scale=0.6)
+OAK     = mat((0.60, 0.44, 0.26), 0.0, 0.45, maps=TEX["wood_oak"],    uv_scale=0.7)
 BRASS   = mat((0.82, 0.62, 0.30), 1.0, 0.28)
 BLACKM  = mat((0.10, 0.10, 0.11), 0.6, 0.4)    # black metal
 CERAMIC = mat((0.92, 0.90, 0.85), 0.0, 0.14)

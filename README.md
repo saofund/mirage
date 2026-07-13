@@ -101,10 +101,13 @@ And not everything is generated. A large interior can be **composed by hand** �
 each modelled from operators (the lathe turns the vases and lamp bases, `bevel` softens every
 cushion, `boolean` cuts the window) and placed into a considered layout — then **lit and
 surfaced for mood**. Materials carry an `emission`, so the table and floor lamps are *real area
-lights* the tracer samples; they also carry a procedural **texture** (`tex`: wood / fabric /
-stone, evaluated from the world-space hit — no UVs), so the floor shows real grain and the
-upholstery a woven weave. Shot at golden hour under a low, art-directed sun that rakes the
-window-mullion shadows across the boards (`examples/cases/24_grand_interior.py`):
+lights* the tracer samples; they also carry real **PBR texture maps** — an albedo, a roughness,
+and a **normal map** each — sampled **triplanar** (projected off the world position, no UVs, no
+seams), so the floor reads as planked hardwood with grain that catches the light in relief, the
+console as figured walnut, and the upholstery as woven fabric. The starter map library is
+generated procedurally (`mirage.textures`), but any CC0 PBR set drops in as three image files.
+Shot at golden hour under a low, art-directed sun that rakes the window-mullion shadows across
+the boards (`examples/cases/24_grand_interior.py`):
 
 ![A hand-composed living room at golden hour, textured surfaces and emissive lamps](docs/gallery/grand_interior.png)
 

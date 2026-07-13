@@ -4,7 +4,9 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <string>
 #include <thread>
+#include <unordered_map>
 
 namespace mirage {
 
@@ -28,7 +30,8 @@ V3 norm(const V3& a) { double l = len(a); return l > 0 ? a * (1.0 / l) : a; }
 // fanning each face; flat normals match the hard-surface kernel) and the face's
 // PBR material baked in (the `material` op assigns it; default = scene material).
 struct Tri { V3 a, b, c, n; V3 albedo; double metallic; double rough; V3 emission{0, 0, 0};
-             int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0}; };
+             int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
+             int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; double uv_scale = 1.0; };  // image-map indices
 
 // Axis-aligned bounding box + a binary BVH so intersection is O(log n), not O(n)
 // per ray — the difference between seconds and minutes on a subdivided mesh.
@@ -78,6 +81,7 @@ struct Hit {
     double metallic = 0.0, rough = 0.5;
     V3 emission{0, 0, 0};
     int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
+    int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; double uv_scale = 1.0;
     bool is_ground = false;
 };
 
@@ -137,6 +141,67 @@ V3 sample_ggx(const V3& n, double a, Rng& rng) {
     return norm(tx * (st * std::cos(phi)) + ty * (st * std::sin(phi)) + n * ct);
 }
 
+// --- image textures: real map files (albedo / roughness / normal), sampled TRIPLANAR (no UVs) ---
+struct Texture {
+    int w = 0, h = 0, ch = 0;
+    std::vector<unsigned char> data;
+    bool ok() const { return w > 0 && h > 0 && !data.empty(); }
+    V3 texel(int x, int y) const {
+        x = ((x % w) + w) % w; y = ((y % h) + h) % h;              // wrap
+        const unsigned char* px = &data[(std::size_t(y) * w + x) * ch];
+        if (ch == 1) { const double g = px[0] / 255.0; return {g, g, g}; }
+        return {px[0] / 255.0, px[1] / 255.0, px[2] / 255.0};
+    }
+    V3 sample(double u, double v) const {                          // bilinear
+        const double fx = u * w - 0.5, fy = v * h - 0.5;
+        const int x0 = int(std::floor(fx)), y0 = int(std::floor(fy));
+        const double tx = fx - x0, ty = fy - y0;
+        const V3 a = texel(x0, y0), b = texel(x0 + 1, y0), c = texel(x0, y0 + 1), d = texel(x0 + 1, y0 + 1);
+        return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+    }
+};
+
+// Minimal binary PPM reader (P5 gray / P6 rgb) — no image-decoder dependency; a real CC0 PBR
+// set exported as PPM drops in unchanged. Empty texture on any failure (renderer falls back).
+Texture load_ppm(const std::string& path) {
+    Texture t;
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return t;
+    std::string magic; f >> magic;
+    if (magic != "P5" && magic != "P6") return t;
+    int maxv = 255;
+    f >> t.w >> t.h >> maxv;
+    f.get();  // consume the single whitespace before the binary block
+    if (t.w <= 0 || t.h <= 0) { t.w = t.h = 0; return t; }
+    t.ch = (magic == "P6") ? 3 : 1;
+    t.data.resize(std::size_t(t.w) * t.h * t.ch);
+    f.read(reinterpret_cast<char*>(t.data.data()), std::streamsize(t.data.size()));
+    if (!f) { t.w = t.h = 0; t.data.clear(); }
+    return t;
+}
+
+// Triplanar blend: sample a texture at world position p, weighting the three axis-plane
+// projections by the (squared) geometric normal, so surfaces need no UVs and show no seams.
+// uv_scale = world units per texture tile.
+V3 triplanar(const Texture& tex, const V3& p, const V3& n, double uv_scale) {
+    const double s = uv_scale > 1e-6 ? 1.0 / uv_scale : 1.0;
+    V3 w{n[0] * n[0], n[1] * n[1], n[2] * n[2]};
+    const double ws = w[0] + w[1] + w[2] + 1e-9;
+    w = w * (1.0 / ws);
+    const V3 cx = tex.sample(p[1] * s, p[2] * s);
+    const V3 cy = tex.sample(p[0] * s, p[2] * s);
+    const V3 cz = tex.sample(p[0] * s, p[1] * s);
+    return cx * w[0] + cy * w[1] + cz * w[2];
+}
+
+// Perturb the shading normal by a tangent-space normal-map value tn in [-1,1]^3 using a
+// consistent frame from N (exact for the axis-aligned faces that dominate hard-surface scenes).
+V3 perturb_normal(const V3& N, const V3& tn, double strength) {
+    const V3 aRef = std::fabs(N[0]) > 0.9 ? V3{0, 1, 0} : V3{1, 0, 0};
+    const V3 T = norm(cross(aRef, N)), B = cross(N, T);
+    return norm(T * (tn[0] * strength) + B * (tn[1] * strength) + N * std::max(tn[2], 0.05));
+}
+
 struct Scene {
     std::vector<Tri> tris;
     std::vector<AABB> tbox;     // per-triangle box
@@ -155,6 +220,8 @@ struct Scene {
     V3 sun_dir{0.4, 0.5, 0.8};      // the sun's direction (normalized in path_trace)
     double clamp_indirect = 12.0;   // firefly cap on indirect contributions (0 = off)
     std::vector<int> emitter_idx;   // triangle indices that emit (area lights, for NEE)
+    std::vector<Texture> textures;                    // loaded image maps (shared by index)
+    std::unordered_map<std::string, int> tex_cache;   // path -> index (load each map once)
 };
 
 // Recursive median-split BVH build. Returns the node index of the built subtree.
@@ -212,6 +279,7 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
                     V3 nn = t.n; if (dot(nn, d) > 0) nn = nn * -1.0;  // two-sided
                     h.n = nn; h.albedo = t.albedo; h.metallic = t.metallic; h.rough = t.rough;
                     h.emission = t.emission; h.tex = t.tex; h.tex_scale = t.tex_scale; h.tex2 = t.tex2;
+                    h.alb_tex = t.alb_tex; h.rgh_tex = t.rgh_tex; h.nrm_tex = t.nrm_tex; h.uv_scale = t.uv_scale;
                     h.is_ground = false;
                 }
             }
@@ -334,13 +402,26 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
         if (h.t > 1e29) { add(mulv(beta, sky(d) * sc.env_intensity), bounce); break; }  // escaped -> sky fill
         if (luminance(h.emission) > 0.0 && (bounce == 0 || spec_bounce))
             add(mulv(beta, h.emission), bounce);                                          // a lamp seen directly
-        const V3 N = h.n, V = d * -1.0;
+        const V3 wp = o + d * h.t;   // world hit position (texture lookups + offsets)
+        // Resolve the surface: image maps (albedo / roughness / normal) win over the procedural
+        // tex, which wins over the flat colour. Triplanar-projected off the geometric normal.
+        V3 N = h.n;
+        if (h.nrm_tex >= 0) {
+            const V3 tn = triplanar(sc.textures[h.nrm_tex], wp, h.n, h.uv_scale) * 2.0 - V3{1, 1, 1};
+            N = perturb_normal(h.n, tn, 1.0);
+        }
+        V3 alb;
+        if (h.alb_tex >= 0)  alb = triplanar(sc.textures[h.alb_tex], wp, h.n, h.uv_scale);
+        else if (h.tex)      alb = apply_tex(h.albedo, h.tex, h.tex_scale, h.tex2, wp);
+        else                 alb = h.albedo;
+        double rough = h.rough;
+        if (h.rgh_tex >= 0)  rough = std::clamp(triplanar(sc.textures[h.rgh_tex], wp, h.n, h.uv_scale)[0], 0.03, 1.0);
+        const V3 V = d * -1.0;
         const double NoV = std::max(dot(N, V), 1e-4);
-        const double a = std::max(h.rough * h.rough, 1e-3);
-        const V3 alb = h.tex ? apply_tex(h.albedo, h.tex, h.tex_scale, h.tex2, o + d * h.t) : h.albedo;
+        const double a = std::max(rough * rough, 1e-3);
         const V3 f0 = V3{0.04, 0.04, 0.04} * (1.0 - h.metallic) + alb * h.metallic;
         const V3 diff_alb = alb * (1.0 - h.metallic);
-        const V3 p = o + d * h.t + N * 1e-4;
+        const V3 p = wp + h.n * 1e-4;   // offset along the geometric normal (stable shadow origin)
 
         // NEE: direct sun (diffuse + specular through the microfacet BRDF)
         const V3 sdir = jittered_sun(sc.sun_dir, rng);
@@ -470,6 +551,16 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     sc.sun_intensity = settings.sun_intensity;
     sc.sun_dir = norm({settings.sun_dir[0], settings.sun_dir[1], settings.sun_dir[2]});
     sc.clamp_indirect = settings.clamp_indirect;
+    auto load_tex = [&](const std::string& path) -> int {   // load each map file once, keyed by path
+        if (path.empty()) return -1;
+        auto it = sc.tex_cache.find(path);
+        if (it != sc.tex_cache.end()) return it->second;
+        Texture tx = load_ppm(path);
+        const int idx = tx.ok() ? int(sc.textures.size()) : -1;
+        if (tx.ok()) sc.textures.push_back(std::move(tx));
+        sc.tex_cache[path] = idx;
+        return idx;
+    };
     V3 lo{1e30, 1e30, 1e30}, hi{-1e30, -1e30, -1e30};
     for (const auto& f : mesh.faces()) {
         std::vector<Vert*> vs = mesh.face_verts(f.get());
@@ -481,6 +572,10 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         const V3 emis = fm.set ? V3{fm.emission[0], fm.emission[1], fm.emission[2]} : V3{0, 0, 0};
         const int tex = fm.set ? fm.tex : 0;
         const V3 tc2{fm.tex_color2[0], fm.tex_color2[1], fm.tex_color2[2]};
+        const int at = fm.set ? load_tex(fm.albedo_map) : -1;      // image maps -> texture indices
+        const int rt = fm.set ? load_tex(fm.roughness_map) : -1;
+        const int nt = fm.set ? load_tex(fm.normal_map) : -1;
+        const double uvs = fm.set ? fm.uv_scale : 1.0;
         for (std::size_t i = 1; i + 1 < vs.size(); ++i) {
             Tri t;
             t.a = {vs[0]->co[0], vs[0]->co[1], vs[0]->co[2]};
@@ -489,6 +584,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
             t.n = n;
             t.albedo = alb; t.metallic = met; t.rough = rgh; t.emission = emis;
             t.tex = tex; t.tex_scale = fm.tex_scale; t.tex2 = tc2;
+            t.alb_tex = at; t.rgh_tex = rt; t.nrm_tex = nt; t.uv_scale = uvs;
             sc.tris.push_back(t);
         }
     }
@@ -554,7 +650,10 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                     const Hit gh = intersect(sc, eye, gd);
                     if (gh.t < 1e29) {
                         gMask[p] = 1; gNrm[p] = gh.n; gDep[p] = gh.t;
-                        gAlb[p] = gh.tex ? apply_tex(gh.albedo, gh.tex, gh.tex_scale, gh.tex2, eye + gd * gh.t) : gh.albedo;
+                        const V3 gwp = eye + gd * gh.t;
+                        gAlb[p] = gh.alb_tex >= 0 ? triplanar(sc.textures[gh.alb_tex], gwp, gh.n, gh.uv_scale)
+                                : gh.tex          ? apply_tex(gh.albedo, gh.tex, gh.tex_scale, gh.tex2, gwp)
+                                                  : gh.albedo;
                     }
                 }
                 V3 acc{0, 0, 0};
