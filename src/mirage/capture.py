@@ -264,8 +264,11 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
     if NP == 0:
         raise ValueError("record_build: need at least one stage")
 
+    # a fully path-traced pass (renderer="raytrace") never launches the viewer, so it can
+    # run headless (e.g. on a build/render box with -DMIRAGE_BUILD_VIEWER=OFF).
+    want_viewer = renderer != "raytrace"
     viewer = Path(viewer) if viewer else default_viewer()
-    if not viewer.exists():
+    if want_viewer and not viewer.exists():
         raise FileNotFoundError(
             f"mirage_viewer not built (-DMIRAGE_BUILD_VIEWER=ON): {viewer}")
     # the path tracer is only needed if some frame is rendered with it
