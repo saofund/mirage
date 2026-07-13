@@ -48,6 +48,19 @@ struct RenderSettings {
     // primary hit's albedo / normal / depth) applied to the HDR image before tonemap.
     // 0 = off. Lets a low-spp render (or a path-traced animation) come out clean.
     int denoise = 0;
+
+    // Depth of field: a thin-lens camera. aperture = lens radius in world units (0 = a
+    // pinhole, everything sharp); focus_dist = distance to the sharp plane (0 = auto, the
+    // distance from the eye to the camera target). Larger aperture -> shallower focus, more
+    // background blur — converges with spp like any other camera jitter.
+    double aperture = 0.0;
+    double focus_dist = 0.0;
+
+    // Bloom: bright regions (luminance above bloom_threshold) bleed a soft glow, added in
+    // linear HDR before tonemapping — the photographic look of highlights and light sources.
+    // 0 = off; typical strength 0.05–0.3.
+    double bloom = 0.0;
+    double bloom_threshold = 1.0;
 };
 
 struct Image {

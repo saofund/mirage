@@ -352,7 +352,8 @@ def film():
         (1.00, 0.85, 0.18, 5.6, -0.52, 0.98, 0.92),   # hold (flat -> the path-traced money shot)
     ]
     tmp = Path(os.environ["ANIM_TMP"]) if os.environ.get("ANIM_TMP") else None
-    knobs = {"sun": 0.66, "env": 0.15, "exposure": 1.08, "sun-dir": (0.42, 0.62, 0.33)}  # golden-hour hero light
+    knobs = {"sun": 0.66, "env": 0.15, "exposure": 1.08, "sun-dir": (0.42, 0.62, 0.33),
+             "bloom": 0.15, "aperture": 0.08}  # golden-hour hero light + photographic post
     if os.environ.get("ANIM_RAYTRACE") == "1":
         # a fully PATH-TRACED promo reel -> its own asset (grand_interior_raytrace.*): every
         # frame via mirage_render (GI, soft shadows, emissive lamps), low spp + denoise = clean.
@@ -381,6 +382,7 @@ def trace(prog, png, w=1400, h=900, spp=240, denoise=5, threads=16):
     subprocess.run([str(RENDER), "--oplog", str(jp), "--out", str(ppm), "--w", str(w), "--h", str(h),
                     "--spp", str(spp), "--bounce", "8", "--threads", str(threads), "--denoise", str(denoise),
                     "--sun", "0.66", "--env", "0.15", "--exposure", "1.08", "--sun-dir", "0.42", "0.62", "0.33",
+                    "--bloom", "0.15", "--aperture", "0.08",   # photographic glow + a gentle depth of field
                     "--cam-eye", "4.6", "-3.7", "2.05", "--cam-target", "-0.6", "1.02", "0.9", "--cam-fov", "0.82"],
                    check=True)
     from PIL import Image

@@ -107,9 +107,10 @@ seams), so the floor reads as planked hardwood with grain that catches the light
 console as figured walnut, and the upholstery as woven fabric. The starter map library is
 generated procedurally (`mirage.textures`), but any CC0 PBR set drops in as three image files.
 Shot at golden hour under a low, art-directed sun that rakes the window-mullion shadows across
-the boards (`examples/cases/24_grand_interior.py`):
+the boards, with a **thin-lens depth of field** and a **bloom** glow so the window and lamps
+read as real light sources rather than flat white (`examples/cases/24_grand_interior.py`):
 
-![A hand-composed living room at golden hour, textured surfaces and emissive lamps](docs/gallery/grand_interior.png)
+![A hand-composed living room at golden hour — textured surfaces, emissive lamps, bloom and depth of field](docs/gallery/grand_interior.png)
 
 And here is that room **being built in Mirage's own viewport**, in the editor's **AUTO mode** — a
 moving camera through the open corner while the op-log assembles group by group: the `boolean`

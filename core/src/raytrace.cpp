@@ -489,6 +489,40 @@ V3 aces(const V3& x) {
     return {f(x[0]), f(x[1]), f(x[2])};
 }
 
+// Bloom: isolate bright pixels (soft knee above `threshold`), blur them wide with a few
+// separable-Gaussian passes at widening tap spacing, and add the glow back into the linear
+// HDR image before tonemapping — the photographic bleed of light sources and hot highlights.
+void bloom_hdr(std::vector<V3>& hdr, int w, int h, double threshold, double strength) {
+    const std::size_t N = std::size_t(w) * h;
+    std::vector<V3> bright(N), tmp(N);
+    for (std::size_t i = 0; i < N; ++i) {
+        const double l = luminance(hdr[i]);
+        const double k = l > threshold ? (l - threshold) / std::max(l, 1e-6) : 0.0;  // soft knee
+        bright[i] = hdr[i] * k;
+    }
+    const double g[3] = {0.375, 0.25, 0.0625};   // energy-preserving 5-tap row (sums to 1)
+    for (int it = 0; it < 4; ++it) {
+        const int step = 1 << it;                // 1,2,4,8 -> a broad glow in O(passes) taps
+        for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {   // horizontal
+            V3 s = bright[std::size_t(y) * w + x] * g[0];
+            for (int t = 1; t <= 2; ++t) {
+                const int xl = std::max(0, x - t * step), xr = std::min(w - 1, x + t * step);
+                s = s + (bright[std::size_t(y) * w + xl] + bright[std::size_t(y) * w + xr]) * g[t];
+            }
+            tmp[std::size_t(y) * w + x] = s;
+        }
+        for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {   // vertical
+            V3 s = tmp[std::size_t(y) * w + x] * g[0];
+            for (int t = 1; t <= 2; ++t) {
+                const int yl = std::max(0, y - t * step), yr = std::min(h - 1, y + t * step);
+                s = s + (tmp[std::size_t(yl) * w + x] + tmp[std::size_t(yr) * w + x]) * g[t];
+            }
+            bright[std::size_t(y) * w + x] = s;
+        }
+    }
+    for (std::size_t i = 0; i < N; ++i) hdr[i] = hdr[i] + bright[i] * strength;
+}
+
 // Edge-avoiding a-trous wavelet denoise (Dammertz et al. 2010): blur the HDR
 // illumination to kill Monte-Carlo grain, but weight each tap by how well the
 // neighbour matches the pixel's primary normal / depth / brightness, so real edges
@@ -620,6 +654,10 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     const V3 eye{cam.eye[0], cam.eye[1], cam.eye[2]};
     const double th = std::tan(cam.fov_y * 0.5);
     const double aspect = double(settings.width) / double(settings.height);
+    // thin-lens focus distance: explicit, or auto = eye->target distance
+    const double focus_dist = settings.focus_dist > 0.0
+        ? settings.focus_dist
+        : len(V3{cam.target[0], cam.target[1], cam.target[2]} - eye);
 
     Image img;
     img.w = settings.width;
@@ -662,8 +700,14 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                     const double jx = rng.next(), jy = rng.next();
                     const double u = (2.0 * (x + jx) / img.w - 1.0) * aspect * th;
                     const double v = (1.0 - 2.0 * (y + jy) / img.h) * th;
-                    const V3 d = norm(fwd + right * u + up2 * v);
-                    acc = acc + radiance(sc, eye, d, settings.max_bounce, rng);
+                    V3 ro = eye, rd = norm(fwd + right * u + up2 * v);
+                    if (settings.aperture > 0.0) {   // thin lens: sample the aperture, aim at the focal plane
+                        const V3 focal = eye + rd * (focus_dist / std::max(dot(rd, fwd), 1e-6));
+                        const double lr = settings.aperture * std::sqrt(rng.next()), la = 2 * PI * rng.next();
+                        ro = eye + right * (lr * std::cos(la)) + up2 * (lr * std::sin(la));
+                        rd = norm(focal - ro);
+                    }
+                    acc = acc + radiance(sc, ro, rd, settings.max_bounce, rng);
                 }
                 hdr[p] = acc * (1.0 / settings.spp);
             }
@@ -680,6 +724,9 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
 
     if (settings.denoise > 0)  // edge-avoiding a-trous wavelet, guided by the G-buffer
         denoise_atrous(hdr, gAlb, gNrm, gDep, gMask, img.w, img.h, settings.denoise, scene_diag);
+
+    if (settings.bloom > 0.0)  // photographic glow on bright regions (in linear HDR, pre-tonemap)
+        bloom_hdr(hdr, img.w, img.h, settings.bloom_threshold, settings.bloom);
 
     for (std::size_t p = 0; p < NP; ++p) {  // exposure -> ACES -> gamma -> 8-bit sRGB
         const V3 c = aces(hdr[p] * settings.exposure);

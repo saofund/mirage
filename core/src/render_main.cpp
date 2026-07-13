@@ -67,6 +67,13 @@ int main(int argc, char** argv) {
         else if (a == "--cam-target") cam.target = next3(cam.target);
         else if (a == "--cam-up") cam.up = next3(cam.up);
         else if (a == "--cam-fov") cam.fov_y = next(cam.fov_y);
+        else if (a == "--aperture") s.aperture = next(s.aperture);        // thin-lens DOF radius
+        else if (a == "--focus-dist") s.focus_dist = next(s.focus_dist);  // sharp-plane distance (0 = auto)
+        else if (a == "--bloom") {   // photographic glow; optional strength (default 0.12)
+            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') s.bloom = std::atof(argv[++i]);
+            else s.bloom = 0.12;
+        }
+        else if (a == "--bloom-threshold") s.bloom_threshold = next(s.bloom_threshold);
     }
 
     Program prog;
