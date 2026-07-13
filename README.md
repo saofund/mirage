@@ -79,6 +79,16 @@ path-traced and denoised (`examples/cases/19_parametric_tower.py --grid`):
 
 ![A parametric tower morphing as its parameters sweep](docs/gallery/parametric_morph.gif)
 
+And it scales all the way up: the *same* machinery — `params`, expressions, nested `repeat` —
+builds a whole **classical temple** (a stepped stylobate, a peristyle of columns on all four
+sides, an entablature, a gabled roof with pediments) from 16 legible ops
+(`examples/cases/22_parametric_temple.py`). Path-traced under a low, art-directed sun
+(`--sun-dir`) so the colonnade rakes long shadows across the stone:
+
+![A parametric temple, path-traced under a raking sun](docs/gallery/parametric_temple.png)
+
+![the same temple — a cinematic path-traced 360° orbit](docs/gallery/parametric_temple.gif)
+
 ## Diff & merge — the model is version-controllable
 
 Because the op-log is legible, two versions can be **diffed** and **3-way merged** like source
