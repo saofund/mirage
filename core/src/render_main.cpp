@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
         else if (a == "--rough") s.roughness = next(s.roughness);
         else if (a == "--env") s.env_intensity = next(s.env_intensity);
         else if (a == "--sun") s.sun_intensity = next(s.sun_intensity);
+        else if (a == "--sun-dir") s.sun_dir = next3(s.sun_dir);
         else if (a == "--exposure") s.exposure = next(s.exposure);
         else if (a == "--clamp") s.clamp_indirect = next(s.clamp_indirect);
         else if (a == "--threads") s.threads = unsigned(next(double(s.threads)));

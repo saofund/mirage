@@ -78,11 +78,11 @@ struct Hit {
     bool is_ground = false;
 };
 
-// The sun — a warm directional key light, sampled explicitly (next-event
-// estimation) for crisp shadows. Direction matches the viewport's key light, so
-// the realtime preview and this render agree.
-const V3 SUN_DIR = norm({0.4, 0.5, 0.8});
-const V3 SUN_E{6.5, 6.0, 5.0};      // irradiance (warm white)
+// The sun — a warm directional key light, sampled explicitly (next-event estimation)
+// for crisp shadows. Its DIRECTION is art-directable (RenderSettings::sun_dir, carried on
+// the Scene); a low sun rakes long shadows across the ground, which the tracer resolves
+// beautifully. The default matches the viewport's key light so preview and render agree.
+const V3 SUN_E{6.5, 6.0, 5.0};      // sun irradiance (warm white)
 constexpr double SUN_SOFT = 0.025;  // angular jitter -> soft penumbra
 
 // Sky-only environment (the sun is added via NEE, never via the sky, so it can't
@@ -149,6 +149,7 @@ struct Scene {
     double metallic = 0.0, roughness = 0.5;
     double env_intensity = 1.0;     // scales the sky image-based fill
     double sun_intensity = 1.0;     // scales the NEE directional key
+    V3 sun_dir{0.4, 0.5, 0.8};      // the sun's direction (normalized in path_trace)
     double clamp_indirect = 12.0;   // firefly cap on indirect contributions (0 = off)
 };
 
@@ -240,11 +241,11 @@ bool occluded(const Scene& sc, const V3& o, const V3& d) {
 }
 
 // A sun direction jittered within its small cone (soft shadows).
-V3 jittered_sun(Rng& rng) {
-    V3 a = std::fabs(SUN_DIR[0]) > 0.9 ? V3{0, 1, 0} : V3{1, 0, 0};
-    const V3 u = norm(cross(a, SUN_DIR)), v = cross(SUN_DIR, u);
+V3 jittered_sun(const V3& sun, Rng& rng) {
+    V3 a = std::fabs(sun[0]) > 0.9 ? V3{0, 1, 0} : V3{1, 0, 0};
+    const V3 u = norm(cross(a, sun)), v = cross(sun, u);
     const double r = SUN_SOFT * std::sqrt(rng.next()), phi = 2 * PI * rng.next();
-    return norm(SUN_DIR + u * (r * std::cos(phi)) + v * (r * std::sin(phi)));
+    return norm(sun + u * (r * std::cos(phi)) + v * (r * std::sin(phi)));
 }
 
 // One path: a Cook-Torrance microfacet surface (diffuse + GGX specular) gathered
@@ -272,7 +273,7 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
         const V3 p = o + d * h.t + N * 1e-4;
 
         // NEE: direct sun (diffuse + specular through the microfacet BRDF)
-        const V3 sdir = jittered_sun(rng);
+        const V3 sdir = jittered_sun(sc.sun_dir, rng);
         const double NoL = dot(N, sdir);
         if (NoL > 0 && !occluded(sc, p, sdir)) {
             const V3 H = norm(V + sdir);
@@ -376,6 +377,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     sc.ground = settings.ground;
     sc.env_intensity = settings.env_intensity;
     sc.sun_intensity = settings.sun_intensity;
+    sc.sun_dir = norm({settings.sun_dir[0], settings.sun_dir[1], settings.sun_dir[2]});
     sc.clamp_indirect = settings.clamp_indirect;
     V3 lo{1e30, 1e30, 1e30}, hi{-1e30, -1e30, -1e30};
     for (const auto& f : mesh.faces()) {

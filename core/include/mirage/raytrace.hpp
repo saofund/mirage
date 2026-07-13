@@ -38,6 +38,7 @@ struct RenderSettings {
     // that ambient fill; sun_intensity scales the directional key.
     double env_intensity = 1.0;
     double sun_intensity = 1.0;
+    std::array<double, 3> sun_dir{0.4, 0.5, 0.8};  // sun direction (art-directable; low = long raking shadows)
     double exposure = 1.0;    // linear stops applied before the ACES tonemap
     // Firefly clamp: cap the luminance of INDIRECT (bounce>=1) contributions so a
     // rare high-variance specular bounce can't leave a white speckle. 0 = off. The
