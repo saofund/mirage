@@ -53,6 +53,9 @@ struct Material {
     double metallic = 0.0;
     double roughness = 0.5;
     std::array<double, 3> emission{0.0, 0.0, 0.0};   // radiance emitted (0 = not a light)
+    int tex = 0;                                     // procedural texture: 0 none, 1 wood, 2 fabric, 3 stone
+    double tex_scale = 4.0;
+    std::array<double, 3> tex_color2{0.0, 0.0, 0.0}; // pattern's second tint (mixed with color)
     bool set = false;
 };
 

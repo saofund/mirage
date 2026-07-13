@@ -27,7 +27,8 @@ V3 norm(const V3& a) { double l = len(a); return l > 0 ? a * (1.0 / l) : a; }
 // Triangle soup with per-triangle geometric normal (the mesh is triangulated by
 // fanning each face; flat normals match the hard-surface kernel) and the face's
 // PBR material baked in (the `material` op assigns it; default = scene material).
-struct Tri { V3 a, b, c, n; V3 albedo; double metallic; double rough; V3 emission{0, 0, 0}; };
+struct Tri { V3 a, b, c, n; V3 albedo; double metallic; double rough; V3 emission{0, 0, 0};
+             int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0}; };
 
 // Axis-aligned bounding box + a binary BVH so intersection is O(log n), not O(n)
 // per ray — the difference between seconds and minutes on a subdivided mesh.
@@ -76,6 +77,7 @@ struct Hit {
     V3 albedo{0, 0, 0};
     double metallic = 0.0, rough = 0.5;
     V3 emission{0, 0, 0};
+    int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
     bool is_ground = false;
 };
 
@@ -209,7 +211,8 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
                     h.t = tt;
                     V3 nn = t.n; if (dot(nn, d) > 0) nn = nn * -1.0;  // two-sided
                     h.n = nn; h.albedo = t.albedo; h.metallic = t.metallic; h.rough = t.rough;
-                    h.emission = t.emission; h.is_ground = false;
+                    h.emission = t.emission; h.tex = t.tex; h.tex_scale = t.tex_scale; h.tex2 = t.tex2;
+                    h.is_ground = false;
                 }
             }
         } else { stack[sp++] = n.left; stack[sp++] = n.right; }
@@ -271,6 +274,45 @@ LightSample sample_emitter(const Scene& sc, Rng& rng) {
     return ls;
 }
 
+// --- procedural object-space textures (no UVs): modulate albedo by a pattern of the world
+// hit position, so wood grain / fabric weave / stone break up flat colour. Value-noise fBm. ---
+double thash(int i, int j, int k) {
+    unsigned n = (unsigned)(i * 374761393 + j * 668265263 + k * 1442695040);
+    n = (n ^ (n >> 13)) * 1274126177u;
+    return (n & 0xffff) / 65535.0;
+}
+double vnoise3(const V3& p) {
+    const int xi = int(std::floor(p[0])), yi = int(std::floor(p[1])), zi = int(std::floor(p[2]));
+    const double xf = p[0] - xi, yf = p[1] - yi, zf = p[2] - zi;
+    auto sm = [](double t) { return t * t * (3 - 2 * t); };
+    const double u = sm(xf), v = sm(yf), w = sm(zf);
+    auto layer = [&](int dz) {
+        const double a = thash(xi, yi, zi + dz), b = thash(xi + 1, yi, zi + dz);
+        const double c = thash(xi, yi + 1, zi + dz), d = thash(xi + 1, yi + 1, zi + dz);
+        return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+    };
+    return layer(0) * (1 - w) + layer(1) * w;
+}
+double tfbm(const V3& p, int oct) {
+    double s = 0, amp = 0.5, f = 1.0;
+    for (int o = 0; o < oct; ++o) { s += amp * vnoise3(p * f); amp *= 0.5; f *= 2.0; }
+    return s;
+}
+V3 apply_tex(const V3& base, int tex, double scale, const V3& c2, const V3& pos) {
+    const V3 q = pos * scale;
+    double t = 0.0;
+    if (tex == 1) {            // wood: grain lines along y, gently warped by noise
+        const double grain = std::sin((q[1] + tfbm(q * 0.6, 3) * 1.3) * 6.28318);
+        t = 0.12 + 0.42 * (0.5 + 0.5 * grain) * (0.5 + 0.5 * grain);
+    } else if (tex == 2) {     // fabric: a fine weave plus a soft mottle
+        const double weave = std::sin(q[0] * 12.0) * std::sin(q[1] * 12.0);
+        t = std::clamp(0.5 + 0.26 * weave + 0.24 * (tfbm(q * 1.5, 2) - 0.5), 0.0, 1.0) * 0.5;
+    } else if (tex == 3) {     // stone / plaster: low-frequency veined mottle
+        t = std::clamp(tfbm(q * 0.6, 4), 0.0, 1.0) * 0.5;
+    }
+    return base * (1.0 - t) + c2 * t;
+}
+
 // One path: a Cook-Torrance microfacet surface (diffuse + GGX specular) gathered
 // by lobe-importance-sampled BSDF bounces (sky on miss), with the sun added by
 // next-event estimation at each hit (crisp shadows + sharp speculars, low noise).
@@ -295,8 +337,9 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
         const V3 N = h.n, V = d * -1.0;
         const double NoV = std::max(dot(N, V), 1e-4);
         const double a = std::max(h.rough * h.rough, 1e-3);
-        const V3 f0 = V3{0.04, 0.04, 0.04} * (1.0 - h.metallic) + h.albedo * h.metallic;
-        const V3 diff_alb = h.albedo * (1.0 - h.metallic);
+        const V3 alb = h.tex ? apply_tex(h.albedo, h.tex, h.tex_scale, h.tex2, o + d * h.t) : h.albedo;
+        const V3 f0 = V3{0.04, 0.04, 0.04} * (1.0 - h.metallic) + alb * h.metallic;
+        const V3 diff_alb = alb * (1.0 - h.metallic);
         const V3 p = o + d * h.t + N * 1e-4;
 
         // NEE: direct sun (diffuse + specular through the microfacet BRDF)
@@ -436,6 +479,8 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         const double met = fm.set ? fm.metallic : sc.metallic;
         const double rgh = fm.set ? fm.roughness : sc.roughness;
         const V3 emis = fm.set ? V3{fm.emission[0], fm.emission[1], fm.emission[2]} : V3{0, 0, 0};
+        const int tex = fm.set ? fm.tex : 0;
+        const V3 tc2{fm.tex_color2[0], fm.tex_color2[1], fm.tex_color2[2]};
         for (std::size_t i = 1; i + 1 < vs.size(); ++i) {
             Tri t;
             t.a = {vs[0]->co[0], vs[0]->co[1], vs[0]->co[2]};
@@ -443,6 +488,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
             t.c = {vs[i + 1]->co[0], vs[i + 1]->co[1], vs[i + 1]->co[2]};
             t.n = n;
             t.albedo = alb; t.metallic = met; t.rough = rgh; t.emission = emis;
+            t.tex = tex; t.tex_scale = fm.tex_scale; t.tex2 = tc2;
             sc.tris.push_back(t);
         }
     }
@@ -504,8 +550,12 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                 if (want_gbuf) {  // centre-ray primary hit: albedo/normal/depth (noise-free)
                     const double uc = (2.0 * (x + 0.5) / img.w - 1.0) * aspect * th;
                     const double vc = (1.0 - 2.0 * (y + 0.5) / img.h) * th;
-                    const Hit gh = intersect(sc, eye, norm(fwd + right * uc + up2 * vc));
-                    if (gh.t < 1e29) { gMask[p] = 1; gAlb[p] = gh.albedo; gNrm[p] = gh.n; gDep[p] = gh.t; }
+                    const V3 gd = norm(fwd + right * uc + up2 * vc);
+                    const Hit gh = intersect(sc, eye, gd);
+                    if (gh.t < 1e29) {
+                        gMask[p] = 1; gNrm[p] = gh.n; gDep[p] = gh.t;
+                        gAlb[p] = gh.tex ? apply_tex(gh.albedo, gh.tex, gh.tex_scale, gh.tex2, eye + gd * gh.t) : gh.albedo;
+                    }
                 }
                 V3 acc{0, 0, 0};
                 for (int s = 0; s < settings.spp; ++s) {

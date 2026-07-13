@@ -564,6 +564,12 @@ Mesh Program::build(std::string* last_tag_out) const {
                             mtl.metallic = fm.value("metallic", 0.0);
                             mtl.roughness = fm.value("roughness", 0.5);
                             if (fm.contains("emission")) { auto e = fm.at("emission"); mtl.emission = {e[0], e[1], e[2]}; }
+                            if (fm.contains("tex")) {
+                                const std::string ts = fm.at("tex").get<std::string>();
+                                mtl.tex = ts == "wood" ? 1 : ts == "fabric" ? 2 : ts == "stone" ? 3 : 0;
+                                mtl.tex_scale = fm.value("tex_scale", 4.0);
+                                if (fm.contains("tex2")) { auto e = fm.at("tex2"); mtl.tex_color2 = {e[0], e[1], e[2]}; }
+                            }
                             mtl.set = true;
                             const_cast<Face*>(f.get())->material = mtl;
                         }
@@ -632,6 +638,12 @@ Mesh Program::build(std::string* last_tag_out) const {
                     pm.metallic = mj.value("metallic", 0.0);
                     pm.roughness = mj.value("roughness", 0.5);
                     if (mj.contains("emission")) { auto e = mj.at("emission"); pm.emission = {e[0], e[1], e[2]}; }
+                    if (mj.contains("tex")) {
+                        const std::string ts = mj.at("tex").get<std::string>();
+                        pm.tex = ts == "wood" ? 1 : ts == "fabric" ? 2 : ts == "stone" ? 3 : 0;
+                        pm.tex_scale = mj.value("tex_scale", 4.0);
+                        if (mj.contains("tex2")) { auto e = mj.at("tex2"); pm.tex_color2 = {e[0], e[1], e[2]}; }
+                    }
                     pm.set = true;
                 }
                 std::vector<Material> mats = std::move(A.mats);
@@ -738,6 +750,12 @@ Mesh Program::build(std::string* last_tag_out) const {
                 m.metallic = cmd.value("metallic", 0.0);
                 m.roughness = cmd.value("roughness", 0.5);
                 if (cmd.contains("emission")) { auto e = cmd.at("emission"); m.emission = {e[0], e[1], e[2]}; }
+                if (cmd.contains("tex")) {
+                    const std::string ts = cmd.at("tex").get<std::string>();
+                    m.tex = ts == "wood" ? 1 : ts == "fabric" ? 2 : ts == "stone" ? 3 : 0;
+                    m.tex_scale = cmd.value("tex_scale", 4.0);
+                    if (cmd.contains("tex2")) { auto e = cmd.at("tex2"); m.tex_color2 = {e[0], e[1], e[2]}; }
+                }
                 m.set = true;
                 for (const Face* f : seln) const_cast<Face*>(f)->material = m;
                 outs = seln;
