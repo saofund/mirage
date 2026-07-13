@@ -89,6 +89,14 @@ sides, an entablature, a gabled roof with pediments) from 16 legible ops
 
 ![the same temple — a cinematic path-traced 360° orbit](docs/gallery/parametric_temple.gif)
 
+**How big can it get?** Two ceilings, far apart. Composing *separate objects* through the
+legible `place` op is O(N²) — a wall around 1–2k objects. But a single `mesh` op sidesteps
+that, and the tracer's BVH eats **millions of triangles**: this displaced-noise mountain range
+is **1.28M triangles in one op**, path-traced at 220 spp (measured on a 152-core box, 7.2M tris
+render in ~42 s / ~8 GB). Numbers in [docs/scene-scaling.md](docs/scene-scaling.md).
+
+![A 1.28-million-triangle terrain, one mesh op, path-traced](docs/gallery/terrain.png)
+
 ## Diff & merge — the model is version-controllable
 
 Because the op-log is legible, two versions can be **diffed** and **3-way merged** like source

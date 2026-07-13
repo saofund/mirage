@@ -27,6 +27,28 @@ uv run python examples/cases/17_city_scene.py --hero    # the image above
 > reference one mesh) and **incremental Scene compilation**. The city (one merged `mesh`
 > op) remains here as the pure **scale** stress test.
 
+> **Update (2026-07): the ceilings, measured.** Two different limits, far apart:
+>
+> * **Objects (legible `place` composition) — O(N²).** Each `place` disjoint-unions onto the
+>   running mesh by rebuilding it, so composing *many separate objects* tops out around 1–2k.
+>   Benchmark (Python kernel, cubes via nested `repeat`): 64 objs 0.2s · 256 3.0s · 400 8.5s ·
+>   576 18s · 784 **41s** — time quadruples as objects double. The fix is incremental
+>   composition (append, not rebuild), O(N²)→O(N); still open.
+> * **Faces (one `mesh` op → the tracer) — millions.** The O(N²) seam is in *composition*, not
+>   the renderer. Emit geometry as a single `mesh` op: build is O(faces) once, and the
+>   median-split BVH is O(log n) per ray. Measured on the 152-core box (640×400, 24 spp):
+>
+>   | triangles | render | RAM |
+>   |---|---|---|
+>   | 0.50 M | 3.5 s | 0.6 GB |
+>   | 1.62 M | 9.4 s | 1.8 GB |
+>   | 3.91 M | 22 s | 4.3 GB |
+>   | **7.21 M** | **42 s** | **8.0 GB** |
+>
+>   ~linear in triangles, ~1 GB per million — so 10 M+ is a RAM question, not an algorithm one.
+>   `examples/cases/23_terrain.py` is the showpiece: a **1.28 M-triangle** displaced-noise
+>   mountain range as one mesh op, path-traced at 220 spp in 30 s ([terrain](gallery/terrain.png)).
+
 ## The three layers
 
 | Layer | Builds | Renders through | Reaches the path tracer? |
