@@ -349,8 +349,8 @@ def film():
         # frame via mirage_render (GI, soft shadows, emissive lamps), low spp + denoise = clean.
         record_build(
             stages, "grand_interior_raytrace", captions=captions, automode=False, keyframes=moves,
-            renderer="raytrace", trace_spp=110, trace_threads=16, trace_denoise=5,
-            trace_knobs=knobs, cam_fov=0.82,
+            renderer="raytrace", trace_spp=128, trace_threads=int(os.environ.get("ANIM_THREADS", "128")),
+            trace_denoise=5, trace_knobs=knobs, cam_fov=0.82,
             size=(960, 540), fps=24, per=6, hold=16, gif_w=520, gif_fps=10, tmp=tmp,
         )
     else:

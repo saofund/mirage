@@ -119,6 +119,13 @@ fully path-traced pass).
 
 ![Building the hand-composed interior in Mirage's viewport, group by group](docs/gallery/grand_interior_build.gif)
 
+And the same build **rendered entirely by the path tracer** — every frame global illumination,
+the warm sun streaming through the window and raking the mullion shadows across the grain,
+the lamps glowing as real area lights — kept clean at low sample counts by the à-trous denoiser
+(a fully path-traced promo pass, `ANIM_RAYTRACE=1 … --film`, rendered headless on a 152-core box):
+
+![The hand-composed interior making-of, every frame path-traced and denoised](docs/gallery/grand_interior_raytrace.gif)
+
 ## Diff & merge — the model is version-controllable
 
 Because the op-log is legible, two versions can be **diffed** and **3-way merged** like source
