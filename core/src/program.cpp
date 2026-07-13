@@ -563,6 +563,7 @@ Mesh Program::build(std::string* last_tag_out) const {
                             mtl.color = {col[0], col[1], col[2]};
                             mtl.metallic = fm.value("metallic", 0.0);
                             mtl.roughness = fm.value("roughness", 0.5);
+                            if (fm.contains("emission")) { auto e = fm.at("emission"); mtl.emission = {e[0], e[1], e[2]}; }
                             mtl.set = true;
                             const_cast<Face*>(f.get())->material = mtl;
                         }
@@ -630,6 +631,7 @@ Mesh Program::build(std::string* last_tag_out) const {
                     }
                     pm.metallic = mj.value("metallic", 0.0);
                     pm.roughness = mj.value("roughness", 0.5);
+                    if (mj.contains("emission")) { auto e = mj.at("emission"); pm.emission = {e[0], e[1], e[2]}; }
                     pm.set = true;
                 }
                 std::vector<Material> mats = std::move(A.mats);
@@ -735,6 +737,7 @@ Mesh Program::build(std::string* last_tag_out) const {
                 }
                 m.metallic = cmd.value("metallic", 0.0);
                 m.roughness = cmd.value("roughness", 0.5);
+                if (cmd.contains("emission")) { auto e = cmd.at("emission"); m.emission = {e[0], e[1], e[2]}; }
                 m.set = true;
                 for (const Face* f : seln) const_cast<Face*>(f)->material = m;
                 outs = seln;

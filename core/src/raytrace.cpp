@@ -27,7 +27,7 @@ V3 norm(const V3& a) { double l = len(a); return l > 0 ? a * (1.0 / l) : a; }
 // Triangle soup with per-triangle geometric normal (the mesh is triangulated by
 // fanning each face; flat normals match the hard-surface kernel) and the face's
 // PBR material baked in (the `material` op assigns it; default = scene material).
-struct Tri { V3 a, b, c, n; V3 albedo; double metallic; double rough; };
+struct Tri { V3 a, b, c, n; V3 albedo; double metallic; double rough; V3 emission{0, 0, 0}; };
 
 // Axis-aligned bounding box + a binary BVH so intersection is O(log n), not O(n)
 // per ray — the difference between seconds and minutes on a subdivided mesh.
@@ -75,6 +75,7 @@ struct Hit {
     V3 n{0, 0, 1};
     V3 albedo{0, 0, 0};
     double metallic = 0.0, rough = 0.5;
+    V3 emission{0, 0, 0};
     bool is_ground = false;
 };
 
@@ -151,6 +152,7 @@ struct Scene {
     double sun_intensity = 1.0;     // scales the NEE directional key
     V3 sun_dir{0.4, 0.5, 0.8};      // the sun's direction (normalized in path_trace)
     double clamp_indirect = 12.0;   // firefly cap on indirect contributions (0 = off)
+    std::vector<int> emitter_idx;   // triangle indices that emit (area lights, for NEE)
 };
 
 // Recursive median-split BVH build. Returns the node index of the built subtree.
@@ -207,7 +209,7 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
                     h.t = tt;
                     V3 nn = t.n; if (dot(nn, d) > 0) nn = nn * -1.0;  // two-sided
                     h.n = nn; h.albedo = t.albedo; h.metallic = t.metallic; h.rough = t.rough;
-                    h.is_ground = false;
+                    h.emission = t.emission; h.is_ground = false;
                 }
             }
         } else { stack[sp++] = n.left; stack[sp++] = n.right; }
@@ -216,22 +218,25 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
     return h;
 }
 
-// Any-hit shadow test (the sun is at infinity, so any intersection occludes it).
-bool occluded(const Scene& sc, const V3& o, const V3& d) {
+// Any-hit shadow test up to tmax (infinite for the sun; the distance to an area light
+// otherwise, so geometry BEHIND the light doesn't cast a false shadow).
+bool occluded(const Scene& sc, const V3& o, const V3& d, double tmax = 1e30) {
     const V3 invd{1.0 / d[0], 1.0 / d[1], 1.0 / d[2]};
     int stack[64], sp = 0;
     if (!sc.nodes.empty()) stack[sp++] = 0;
     while (sp) {
         const BVHNode& n = sc.nodes[stack[--sp]];
-        if (!hit_aabb(n.box, o, invd, 1e30)) continue;
+        if (!hit_aabb(n.box, o, invd, tmax)) continue;
         if (n.count > 0) {
-            for (int i = n.start; i < n.start + n.count; ++i)
-                if (ray_tri(o, d, sc.tris[sc.order[i]]) > 0) return true;
+            for (int i = n.start; i < n.start + n.count; ++i) {
+                double tt = ray_tri(o, d, sc.tris[sc.order[i]]);
+                if (tt > 0 && tt < tmax) return true;
+            }
         } else { stack[sp++] = n.left; stack[sp++] = n.right; }
     }
     if (sc.ground && std::fabs(d[2]) > 1e-9) {
         double tt = (sc.ground_z - o[2]) / d[2];
-        if (tt > 1e-5) {
+        if (tt > 1e-5 && tt < tmax) {
             V3 p = o + d * tt;
             double dx = p[0] - sc.ground_center[0], dy = p[1] - sc.ground_center[1];
             if (dx * dx + dy * dy < sc.ground_r2) return true;
@@ -248,6 +253,24 @@ V3 jittered_sun(const V3& sun, Rng& rng) {
     return norm(sun + u * (r * std::cos(phi)) + v * (r * std::sin(phi)));
 }
 
+// Area-light next-event estimation: sample a point on a uniformly-chosen emitter triangle,
+// so lamps / windows actually ILLUMINATE the scene (not just be visible). Two-sided.
+struct LightSample { V3 pos, n, Le; double pdf_area = 0.0; };
+LightSample sample_emitter(const Scene& sc, Rng& rng) {
+    LightSample ls;
+    if (sc.emitter_idx.empty()) return ls;
+    const int m = int(sc.emitter_idx.size());
+    const Tri& t = sc.tris[sc.emitter_idx[std::min(int(rng.next() * m), m - 1)]];
+    double u = rng.next(), v = rng.next();
+    if (u + v > 1.0) { u = 1.0 - u; v = 1.0 - v; }
+    const V3 e1 = t.b - t.a, e2 = t.c - t.a;
+    ls.pos = t.a + e1 * u + e2 * v;
+    ls.n = t.n; ls.Le = t.emission;
+    const double area = 0.5 * len(cross(e1, e2));
+    ls.pdf_area = area > 1e-12 ? 1.0 / (area * m) : 0.0;   // pick a triangle then a point on it
+    return ls;
+}
+
 // One path: a Cook-Torrance microfacet surface (diffuse + GGX specular) gathered
 // by lobe-importance-sampled BSDF bounces (sky on miss), with the sun added by
 // next-event estimation at each hit (crisp shadows + sharp speculars, low noise).
@@ -262,9 +285,13 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
         }
         L = L + c;
     };
+    bool spec_bounce = true;   // camera ray + specular bounces may see an emitter directly;
+                               // after a diffuse bounce the emitter is covered by NEE (no double-count)
     for (int bounce = 0; bounce < max_bounce; ++bounce) {
         Hit h = intersect(sc, o, d);
         if (h.t > 1e29) { add(mulv(beta, sky(d) * sc.env_intensity), bounce); break; }  // escaped -> sky fill
+        if (luminance(h.emission) > 0.0 && (bounce == 0 || spec_bounce))
+            add(mulv(beta, h.emission), bounce);                                          // a lamp seen directly
         const V3 N = h.n, V = d * -1.0;
         const double NoV = std::max(dot(N, V), 1e-4);
         const double a = std::max(h.rough * h.rough, 1e-3);
@@ -284,6 +311,26 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
             add(mulv(mulv(beta, fr), SUN_E * sc.sun_intensity) * NoL, bounce);
         }
 
+        // NEE: area lights (lamps / emissive surfaces) actually lighting the room
+        if (!sc.emitter_idx.empty()) {
+            const LightSample ls = sample_emitter(sc, rng);
+            if (ls.pdf_area > 0.0) {
+                const V3 to = ls.pos - p;
+                const double dist2 = std::max(dot(to, to), 1e-8), dist = std::sqrt(dist2);
+                const V3 wl = to * (1.0 / dist);
+                const double lNoL = dot(N, wl), cosl = std::fabs(dot(ls.n, wl));   // two-sided emitter
+                if (lNoL > 0 && cosl > 1e-4 && !occluded(sc, p, wl, dist - 1e-3)) {
+                    const V3 H = norm(V + wl);
+                    const double NoH = std::max(dot(N, H), 0.0), VoH = std::max(dot(V, H), 0.0);
+                    const V3 F = fresnel(VoH, f0);
+                    const V3 spec = F * (D_ggx(NoH, a) * G_smith(NoV, lNoL, a) / (4 * NoV * lNoL + 1e-6));
+                    const V3 fr = diff_alb * (1.0 / PI) + spec;
+                    const double G = lNoL * cosl / dist2;                          // geometry term
+                    add(mulv(mulv(beta, fr), ls.Le) * (G / ls.pdf_area), bounce);
+                }
+            }
+        }
+
         // indirect: stochastically pick the diffuse or specular lobe
         const double lf = luminance(f0), ld = luminance(diff_alb);
         const double pSpec = std::clamp(lf / (lf + ld + 1e-4), 0.1, 0.9);
@@ -296,10 +343,11 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
             const double VoH = std::max(dot(V, Hh), 1e-4), NoH = std::max(dot(N, Hh), 1e-4);
             const V3 F = fresnel(VoH, f0);
             beta = mulv(beta, F) * (G_smith(NoV, nl, a) * VoH / (NoV * NoH) / pSpec);
-            d = Ld;
+            d = Ld; spec_bounce = true;
         } else {                                     // Lambertian diffuse bounce
             d = cosine_sample(N, rng);
             beta = mulv(beta, diff_alb) * (1.0 / (1.0 - pSpec));
+            spec_bounce = false;
         }
         if (bounce >= 3) {                           // Russian roulette
             double q = std::max({beta[0], beta[1], beta[2]});
@@ -387,16 +435,19 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         const V3 alb = fm.set ? V3{fm.color[0], fm.color[1], fm.color[2]} : sc.albedo;
         const double met = fm.set ? fm.metallic : sc.metallic;
         const double rgh = fm.set ? fm.roughness : sc.roughness;
+        const V3 emis = fm.set ? V3{fm.emission[0], fm.emission[1], fm.emission[2]} : V3{0, 0, 0};
         for (std::size_t i = 1; i + 1 < vs.size(); ++i) {
             Tri t;
             t.a = {vs[0]->co[0], vs[0]->co[1], vs[0]->co[2]};
             t.b = {vs[i]->co[0], vs[i]->co[1], vs[i]->co[2]};
             t.c = {vs[i + 1]->co[0], vs[i + 1]->co[1], vs[i + 1]->co[2]};
             t.n = n;
-            t.albedo = alb; t.metallic = met; t.rough = rgh;
+            t.albedo = alb; t.metallic = met; t.rough = rgh; t.emission = emis;
             sc.tris.push_back(t);
         }
     }
+    for (int i = 0; i < int(sc.tris.size()); ++i)                     // collect the area lights
+        if (luminance(sc.tris[i].emission) > 0.0) sc.emitter_idx.push_back(i);
     for (const auto& v : mesh.verts())
         for (int k = 0; k < 3; ++k) { lo[k] = std::min(lo[k], v->co[k]); hi[k] = std::max(hi[k], v->co[k]); }
     if (mesh.num_verts()) {

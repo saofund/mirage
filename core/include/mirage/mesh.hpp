@@ -52,6 +52,7 @@ struct Material {
     std::array<double, 3> color{0.8, 0.8, 0.8};
     double metallic = 0.0;
     double roughness = 0.5;
+    std::array<double, 3> emission{0.0, 0.0, 0.0};   // radiance emitted (0 = not a light)
     bool set = false;
 };
 
