@@ -145,6 +145,8 @@ def main():
     GALLERY.mkdir(parents=True, exist_ok=True)
     sheet.save(GALLERY / "diff_merge.png")
     print(f"\nwrote {GALLERY / 'diff_merge.png'}")
+    from mirage.capture import crossfade_clip                 # base -> human -> AI -> merged, as a clip
+    crossfade_clip(imgs, "diff_merge", hold=26, fade=16, gif_w=W, tmp=OUT / "_clip")
 
 
 if __name__ == "__main__":

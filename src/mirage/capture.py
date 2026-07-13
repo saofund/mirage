@@ -418,3 +418,40 @@ def record_build(stages, out_base, *, out_dir=None, captions=None,
               f"({W}x{H}@{fps}fps)  ->  {mp4.name} {mp4.stat().st_size // 1024} KB, "
               f"{gif.name} {gif.stat().st_size // 1024} KB")
     return mp4, gif
+
+
+def crossfade_clip(images, out_base, *, out_dir=None, hold=22, fade=12, fps=24,
+                   gif_w=560, gif_fps=12, tmp=None, quiet=False):
+    """Turn a few key stills into a smooth clip: hold each, cross-fade between consecutive
+    ones. ``images`` are same-size PIL Images (already captioned). Cheap — no re-rendering,
+    just blends — so a diff/refinement *story* becomes an animated showcase. Writes
+    ``<out_base>.mp4`` + ``.gif`` into ``out_dir`` (default docs/gallery)."""
+    import shutil
+    from PIL import Image
+
+    out_dir = Path(out_dir) if out_dir else (_repo_root() / "docs" / "gallery")
+    tmp = Path(tmp) if tmp else (out_dir / "_clip")
+    frames_dir = tmp / "frames"
+    if frames_dir.exists():
+        shutil.rmtree(frames_dir)
+    frames_dir.mkdir(parents=True)
+    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+
+    imgs = [im.convert("RGB") for im in images]
+    n = 0
+
+    def put(im):
+        nonlocal n
+        im.save(frames_dir / f"f{n:04d}.png"); n += 1
+
+    for i, im in enumerate(imgs):
+        for _ in range(hold):
+            put(im)
+        if i + 1 < len(imgs) and fade > 0:                    # cross-fade into the next still
+            for k in range(1, fade + 1):
+                put(Image.blend(im, imgs[i + 1], k / (fade + 1)))
+    mp4, gif = _encode(ffmpeg, frames_dir, out_dir, out_base, fps, gif_w, gif_fps, tmp)
+    if not quiet:
+        print(f"[clip] {out_base}: {n} frames  ->  {mp4.name} {mp4.stat().st_size // 1024} KB, "
+              f"{gif.name} {gif.stat().st_size // 1024} KB")
+    return mp4, gif

@@ -150,6 +150,8 @@ def main():
     GALLERY.mkdir(parents=True, exist_ok=True)
     strip.save(GALLERY / "self_refine.png")
     print(f"\nwrote {GALLERY / 'self_refine.png'}")
+    from mirage.capture import crossfade_clip                 # the rounds as a cross-faded clip
+    crossfade_clip(panels, "self_refine", hold=28, fade=16, gif_w=W, tmp=OUT / "_clip")
 
 
 if __name__ == "__main__":
