@@ -27,30 +27,34 @@ GALLERY = ROOT / "docs" / "gallery"
 
 
 # ---- a cohesive, warm mid-century palette ------------------------------------ #
-def mat(c, metallic=0.0, roughness=0.5, emission=None):
+def mat(c, metallic=0.0, roughness=0.5, emission=None, tex=None, tex_scale=4.0, tex2=None):
     m = {"color": list(c), "metallic": metallic, "roughness": roughness}
     if emission:
         m["emission"] = list(emission)     # a light source (radiance)
+    if tex:                                # procedural texture: "wood" / "fabric" / "stone"
+        m["tex"] = tex; m["tex_scale"] = tex_scale
+        if tex2:
+            m["tex2"] = list(tex2)
     return m
 
-FLOOR   = mat((0.44, 0.31, 0.17), 0.0, 0.32)   # warm oak boards
-WALL    = mat((0.85, 0.81, 0.74), 0.0, 0.95)   # soft plaster
-RUG     = mat((0.50, 0.28, 0.23), 0.0, 0.92)   # terracotta
+FLOOR   = mat((0.46, 0.32, 0.17), 0.0, 0.30, tex="wood", tex_scale=1.7, tex2=(0.25, 0.15, 0.075))
+WALL    = mat((0.85, 0.81, 0.74), 0.0, 0.95, tex="stone", tex_scale=1.1, tex2=(0.73, 0.68, 0.59))
+RUG     = mat((0.50, 0.28, 0.23), 0.0, 0.92, tex="fabric", tex_scale=6.0, tex2=(0.40, 0.22, 0.18))
 RUG2    = mat((0.66, 0.58, 0.46), 0.0, 0.92)   # cream border
-SOFA    = mat((0.40, 0.48, 0.39), 0.0, 0.88)   # sage upholstery
-CHAIR   = mat((0.50, 0.27, 0.13), 0.0, 0.55)   # cognac leather
-CUSH_A  = mat((0.80, 0.60, 0.26), 0.0, 0.85)   # mustard
-CUSH_B  = mat((0.40, 0.28, 0.30), 0.0, 0.85)   # plum
-CUSH_C  = mat((0.85, 0.80, 0.70), 0.0, 0.85)   # cream
-WALNUT  = mat((0.30, 0.19, 0.12), 0.0, 0.38)   # dark wood
-OAK     = mat((0.60, 0.44, 0.26), 0.0, 0.45)   # light wood
+SOFA    = mat((0.40, 0.48, 0.39), 0.0, 0.88, tex="fabric", tex_scale=13.0, tex2=(0.33, 0.42, 0.33))
+CHAIR   = mat((0.50, 0.27, 0.13), 0.0, 0.55)   # cognac leather (smooth)
+CUSH_A  = mat((0.80, 0.60, 0.26), 0.0, 0.85, tex="fabric", tex_scale=16.0, tex2=(0.68, 0.50, 0.20))
+CUSH_B  = mat((0.40, 0.28, 0.30), 0.0, 0.85, tex="fabric", tex_scale=16.0, tex2=(0.32, 0.22, 0.24))
+CUSH_C  = mat((0.85, 0.80, 0.70), 0.0, 0.85, tex="fabric", tex_scale=16.0, tex2=(0.74, 0.69, 0.60))
+WALNUT  = mat((0.30, 0.19, 0.12), 0.0, 0.38, tex="wood", tex_scale=3.5, tex2=(0.22, 0.13, 0.08))
+OAK     = mat((0.60, 0.44, 0.26), 0.0, 0.45, tex="wood", tex_scale=4.0, tex2=(0.50, 0.35, 0.20))
 BRASS   = mat((0.82, 0.62, 0.30), 1.0, 0.28)
 BLACKM  = mat((0.10, 0.10, 0.11), 0.6, 0.4)    # black metal
 CERAMIC = mat((0.92, 0.90, 0.85), 0.0, 0.14)
 TEAL    = mat((0.24, 0.46, 0.50), 0.0, 0.12)
 TERRA   = mat((0.70, 0.40, 0.27), 0.0, 0.55)   # terracotta pot
-SHADE   = mat((0.98, 0.93, 0.80), 0.0, 0.6, emission=(5.5, 4.0, 2.3))   # a glowing warm lampshade
-WINGLOW = mat((0.7, 0.78, 0.95), 0.0, 0.9, emission=(1.4, 1.7, 2.4))    # cool dusk sky through the window
+SHADE   = mat((0.98, 0.93, 0.80), 0.0, 0.6, emission=(7.0, 4.9, 2.8))   # a glowing warm lampshade
+WINGLOW = mat((0.96, 0.90, 0.78), 0.0, 0.9, emission=(3.0, 2.5, 1.7))   # warm golden-hour sky behind the window
 LEAF    = mat((0.27, 0.43, 0.25), 0.0, 0.6)
 LEAF2   = mat((0.33, 0.49, 0.29), 0.0, 0.6)
 CANVAS  = mat((0.62, 0.55, 0.46), 0.0, 0.7)
@@ -245,8 +249,8 @@ def trace(prog, png, w=1400, h=900, spp=240, denoise=5, threads=16):
     ppm = OUT / (png.stem + ".ppm")
     subprocess.run([str(RENDER), "--oplog", str(jp), "--out", str(ppm), "--w", str(w), "--h", str(h),
                     "--spp", str(spp), "--bounce", "8", "--threads", str(threads), "--denoise", str(denoise),
-                    "--sun", "0.32", "--env", "0.30", "--exposure", "1.18", "--sun-dir", "0.2", "0.78", "0.45",
-                    "--cam-eye", "5.4", "-4.5", "2.65", "--cam-target", "-0.55", "0.8", "0.85", "--cam-fov", "0.80"],
+                    "--sun", "0.66", "--env", "0.15", "--exposure", "1.08", "--sun-dir", "0.42", "0.62", "0.33",
+                    "--cam-eye", "4.6", "-3.7", "2.05", "--cam-target", "-0.6", "1.02", "0.9", "--cam-fov", "0.82"],
                    check=True)
     from PIL import Image
     png.parent.mkdir(parents=True, exist_ok=True)
