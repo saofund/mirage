@@ -97,6 +97,14 @@ render in ~42 s / ~8 GB). Numbers in [docs/scene-scaling.md](docs/scene-scaling.
 
 ![A 1.28-million-triangle terrain, one mesh op, path-traced](docs/gallery/terrain.png)
 
+And not everything is generated. A large interior can be **composed by hand** — ~160 objects,
+each modelled from operators (the lathe turns the vases and lamp bases, `bevel` softens every
+cushion, `boolean` cuts the window) and placed into a considered layout — then **lit for mood**:
+materials carry an `emission`, so the lamps and the window are *real area lights* the tracer
+samples, and the room settles into a warm dusk (`examples/cases/24_grand_interior.py`):
+
+![A hand-composed living room at dusk, lit by emissive lamps](docs/gallery/grand_interior.png)
+
 ## Diff & merge — the model is version-controllable
 
 Because the op-log is legible, two versions can be **diffed** and **3-way merged** like source
