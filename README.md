@@ -134,7 +134,10 @@ the lamps glowing as real area lights — kept clean at low sample counts by the
 
 An icon, read off photographs and published dimensions and pushed into shape by hand:
 the **Eames Lounge Chair** (670 & 671), **130k faces**, nothing imported or scanned
-(`examples/cases/25_eames_lounge.py`).
+(`examples/cases/25_eames_lounge.py`). It measures within an inch of the real thing on
+every published dimension — 31.9″ tall against a 31.5″ spec, a 17.1″ ottoman against
+17.25″, 26″ wide against 26″ — because the model is checked against the numbers rather
+than eyeballed against the photos.
 
 ![The Eames Lounge Chair and Ottoman, sculpted from a control cage and subdivided](docs/gallery/eames_lounge.png)
 

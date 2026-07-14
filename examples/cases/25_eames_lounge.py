@@ -202,23 +202,40 @@ BACK_HW, BACK_H = 0.29, 0.30
 HEAD_HW, HEAD_H = 0.255, 0.20
 
 
+# Each shell's wrap, defined ONCE: the panel is built from it and its cushion rides it, so
+# the two cannot drift apart.
+def back_curve(x):
+    return 0.085 * (abs(x) / BACK_HW) ** 2
+
+
+def head_curve(x):
+    return 0.070 * (abs(x) / HEAD_HW) ** 2
+
+
 def back_shell():
-    return panel(BACK_HW, BACK_H, lambda x: 0.085 * (x / BACK_HW) ** 2)
+    return panel(BACK_HW, BACK_H, back_curve)
 
 
 def head_shell():
-    return panel(HEAD_HW, HEAD_H, lambda x: 0.070 * (x / HEAD_HW) ** 2)
+    return panel(HEAD_HW, HEAD_H, head_curve)
 
 
 # ---- cushions ------------------------------------------------------------------ #
-def cushion(half_w, half_d, thick, buttons=(), nx=8, ny=8, levels=3):
+def cushion(half_w, half_d, thick, buttons=(), nx=8, ny=8, levels=3, contour=None):
     """A buttoned leather cushion: a dimpled cage, given depth by solidify, welted at the
     rim by a light crease, then subdivided into a pillow. The buttons are dimples in the
-    cage — small boxes pulled down — so the tufting is real geometry, not a texture."""
+    cage — small boxes pulled down — so the tufting is real geometry, not a texture.
+
+    `contour` is the surface the cushion LIES ON, in the cushion's own frame — normally the
+    front face of its shell. A cushion has to follow its shell: the backrest wraps 85 mm
+    forward at its edges, so a flat cushion is left sticking out behind it and reads, from
+    the back, as four black wings poking through the walnut. Passing the shell's own curve
+    here nests the two exactly.
+    """
     xs, ys = cage(-half_w, half_w, nx, -half_d, half_d, ny)
 
     def z(x, y):
-        s = 0.0
+        s = contour(x, y) if contour else 0.0              # ride the shell's face
         for bx, by, depth, r in buttons:
             d = math.hypot(x - bx, y - by)
             s -= depth * smooth((r - d) / r)               # a soft dimple at each button
@@ -310,7 +327,8 @@ def chair():
     # rim tracing it, is what you actually read the shell BY from the front)
     p.place(cushion(0.243, 0.126, 0.072,
                     buttons=[(-0.105, 0.055, 0.015, 0.085), (0.105, 0.055, 0.015, 0.085),
-                             (0.0, -0.065, 0.015, 0.085)]),
+                             (0.0, -0.065, 0.015, 0.085)],
+                    contour=lambda x, y: back_curve(x)),      # ride the shell's wrap
             at=offset(back_at, facing(BACK_TILT), 0.072),
             rotate=[BACK_TILT, 0, 0], material=LEATHER)
 
@@ -318,15 +336,19 @@ def chair():
     head_at = (0.0, 0.417, 0.700)
     p.place(head_shell(), at=list(head_at), rotate=[HEAD_TILT, 0, 0])
     p.place(cushion(0.210, 0.080, 0.062,
-                    buttons=[(-0.085, 0.0, 0.013, 0.070), (0.085, 0.0, 0.013, 0.070)]),
+                    buttons=[(-0.085, 0.0, 0.013, 0.070), (0.085, 0.0, 0.013, 0.070)],
+                    contour=lambda x, y: head_curve(x)),
             at=offset(head_at, facing(HEAD_TILT), 0.062),
             rotate=[HEAD_TILT, 0, 0], material=LEATHER)
 
-    # seat cushion, filling the dished pan (whose top is PAN_Z + seat_z)
+    # Seat cushion, filling the dished pan and RIDING it — the bucket hollows 58 mm, so a
+    # flat-bottomed cushion would bridge the dish and hover over its middle.
+    cy = 0.015
     p.place(cushion(0.263, 0.248, 0.105,
                     buttons=[(-0.105, 0.105, 0.016, 0.105), (0.105, 0.105, 0.016, 0.105),
-                             (0.0, -0.065, 0.016, 0.105)]),
-            at=[0, 0.015, PAN_Z + seat_z(0.0, 0.015) + 0.098], material=LEATHER)
+                             (0.0, -0.065, 0.016, 0.105)],
+                    contour=lambda x, y: seat_z(abs(x), y + cy) - seat_z(0.0, cy)),
+            at=[0, cy, PAN_Z + seat_z(0.0, cy) + 0.105], material=LEATHER)
 
     # arm pads, sitting on top of the wings
     for sx in (-1, 1):
@@ -334,15 +356,28 @@ def chair():
                 at=[sx * 0.372, 0.06, PAN_Z + seat_z(0.372, 0.06) + 0.042],
                 material=LEATHER)
 
-    # the black steel spine that carries the back and head shells off the seat wings
-    for sx in (-1, 1):
+    # The black steel spine carrying the shells. DERIVED from the panels rather than
+    # hardcoded: these were fixed numbers until the panels moved to match the spec, and
+    # they stayed put and speared straight through the front of the backrest. `along`
+    # walks a panel's own long axis, `facing` its front, so the brackets follow whatever
+    # the panels do — and they sit BEHIND, at a negative offset.
+    def along(tilt, d):
+        a = math.radians(tilt)
+        return (0.0, math.cos(a) * d, math.sin(a) * d)
+
+    def at_panel(centre, tilt, up, back, sx, x):
+        q = offset(centre, along(tilt, 1.0), up)          # slide along the panel
+        q = offset(q, facing(tilt), -back)                # then out its back
+        return [sx * x, q[1], q[2]]
+
+    for sx in (-1, 1):   # backrest -> seat wing: a flat blade behind the shell's lower corner
         p.place(MeshProgram().cube(size=1.0),
-                at=[sx * 0.30, 0.335, 0.44], scale=[0.020, 0.075, 0.16],
-                rotate=[BACK_TILT - 90, 0, 0], material=BLACKM)
-    for sx in (-1, 1):
+                at=at_panel(back_at, BACK_TILT, -0.105, 0.022, sx, 0.255),
+                scale=[0.018, 0.070, 0.150], rotate=[BACK_TILT - 90, 0, 0], material=BLACKM)
+    for sx in (-1, 1):   # headrest -> backrest: two slim posts bridging the angle break
         p.place(MeshProgram().cube(size=1.0),
-                at=[sx * 0.115, 0.40, 0.655], scale=[0.016, 0.014, 0.10],
-                rotate=[HEAD_TILT - 90, 0, 0], material=BLACKM)
+                at=at_panel(head_at, HEAD_TILT, -0.078, 0.020, sx, 0.088),
+                scale=[0.015, 0.013, 0.085], rotate=[HEAD_TILT - 90, 0, 0], material=BLACKM)
     return p
 
 
