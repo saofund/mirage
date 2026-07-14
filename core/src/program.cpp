@@ -254,7 +254,8 @@ const std::map<std::string, std::vector<std::string>>& num_fields() {
         {"edge_bevel", {"width"}}, {"solidify", {"thickness"}},
         {"array", {"count", "offset"}}, {"bisect", {"point", "normal"}},
         {"spin", {"steps", "angle"}}, {"screw", {"steps", "turns", "height", "angle"}},
-        {"subdivide", {"levels"}}, {"material", {"color", "metallic", "roughness"}},
+        {"subdivide", {"levels"}}, {"crease", {"weight"}},
+        {"material", {"color", "metallic", "roughness"}},
         {"translate", {"by"}}, {"scale", {"by"}}, {"place", {"translate", "rotate", "scale"}},
     };
     return m;
@@ -468,6 +469,9 @@ Program& Program::screw(const std::string& axis, int steps, int turns, double he
     return add(std::move(c));
 }
 Program& Program::subdivide(int levels) { return add(json{{"op", "subdivide"}, {"levels", levels}}); }
+Program& Program::crease(const json& on, double weight) {
+    return add(json{{"op", "crease"}, {"on", on}, {"weight", weight}});
+}
 Program& Program::tag(const json& on, const std::string& name) {
     return add(json{{"op", "tag"}, {"on", on}, {"name", name}});
 }
@@ -738,9 +742,15 @@ Mesh Program::build(std::string* last_tag_out) const {
                                      cmd.value("turns", 1), cmd.value("height", 1.0),
                                      cmd.value("angle", 360.0), out_tag);
                 outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "crease") {
+                auto esel = resolve_edges(mesh, cmd.value("on", json{{"by", "all"}}), last_tag);
+                const double w = cmd.value("weight", 1.0);
+                for (Edge* e : esel) e->crease = w;
+                // Stamps sharpness for the next subdivide; no geometry changes and nothing is
+                // created, so outs stays empty (last_created still refers to the previous op).
             } else if (op == "subdivide") {
                 const int levels = cmd.value("levels", 1);
-                for (int k = 0; k < levels; ++k) mesh = catmull_clark(mesh);
+                if (levels > 0) mesh = catmull_clark(mesh, levels);  // creases decay across levels
                 // global op — last_created is undefined afterward (outs stays empty)
             } else if (op == "tag") {
                 if (!cmd.contains("name")) throw MeshLangError("tag op needs 'name'");
@@ -874,6 +884,7 @@ std::string Program::label(const json& op) {
         return "screw  " + op.value("axis", std::string("z")) + " x" +
                std::to_string(op.value("turns", 1)) + "turn h=" + num(op.value("height", 1.0));
     if (k == "subdivide") return "subdivide  x" + std::to_string(op.value("levels", 1));
+    if (k == "crease") return "crease  w=" + num(op.value("weight", 1.0)) + on_suffix(op);
     if (k == "tag") return "tag  #" + op.value("name", std::string("?")) + on_suffix(op);
     if (k == "material") return "material  m=" + num(op.value("metallic", 0.0)) + " r=" + num(op.value("roughness", 0.5)) + on_suffix(op);
     if (k == "translate") return "translate" + on_suffix(op);

@@ -31,6 +31,13 @@ struct Edge {
     Vert* v1 = nullptr;
     Vert* v2 = nullptr;
     Loop* loop = nullptr;  // one loop in this edge's radial cycle
+    // Crease sharpness, in subdivision LEVELS (0 = smooth). Catmull-Clark holds this edge
+    // sharp and hands its children `crease - 1`, so the value is exactly "how many levels
+    // stay hard" — crease 2 survives subdivide{levels:2}, and a large value is permanent.
+    // Boundary edges are always implicitly sharp and ignore this. Set by the `crease` op;
+    // like materials it is a final-mesh assignment, dropped by any op that rebuilds, so it
+    // belongs immediately before `subdivide`.
+    double crease = 0.0;
     Vert* other(const Vert* v) const { return v == v1 ? v2 : v1; }
 };
 
@@ -94,6 +101,11 @@ public:
     std::vector<Vert*> face_verts(const Face* f) const;
     std::vector<Loop*> edge_loops(const Edge* e) const;
     std::vector<Face*> edge_faces(const Edge* e) const;
+
+    // Look up the edge joining two vertex ids, or nullptr if they aren't adjacent. Unlike
+    // the internal get_edge this never creates one — it is how an operator re-finds an edge
+    // in a mesh it just emitted (e.g. to carry creases onto subdivided children).
+    Edge* find_edge(int v1_id, int v2_id);
 
     // Rebuild a mesh from positions + ngon face index lists (mirrors the Python
     // Mesh.from_pydata; the building block operators use to emit a fresh mesh).
@@ -176,7 +188,19 @@ Mesh make_grid(double size_x = 1.0, double size_y = -1.0, int x_div = 10, int y_
 // One level of Catmull-Clark subdivision — the classic test that a radial-edge
 // kernel actually works (face/edge/vertex points + the standard boundary rule,
 // found by walking the topology, then rebuilt as quads).
+//
+// Honours Edge::crease using the semi-sharp rules of DeRose/Kass/Truong 1998 (the
+// scheme Pixar shipped and Blender uses): a sharp edge's edge-point is its midpoint
+// rather than the smooth average, a vertex on exactly two creases follows the cubic
+// B-spline CURVE rule along them, and three or more creases pin it as a corner. A
+// fractional crease blends smoothly between the smooth and sharp rule, and children
+// inherit `crease - 1`, so sharpness decays a level at a time instead of being a
+// binary flag. This is what lets a subdivided surface keep a hard feature — without
+// it, Catmull-Clark rounds every rim into a pillow.
 Mesh catmull_clark(const Mesh& mesh);
+// `levels` successive subdivisions. Creases decay across them, which a caller looping
+// over the single-level version could not reproduce (each rebuild would drop them).
+Mesh catmull_clark(const Mesh& mesh, int levels);
 
 // Region operators (emit a fresh mesh; descendant faces inherit their parent's
 // tags). extrude: each region vertex moves along the average of its incident

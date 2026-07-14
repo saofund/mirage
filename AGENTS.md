@@ -25,9 +25,19 @@ cmake -S core -B core/build -DMIRAGE_BUILD_VIEWER=ON   # native engine
 cmake --build core/build --config Release         # -> core/build/Release/{mirage_render,mirage_viewer}.exe
 ```
 
-The Python kernel and the C++ core must stay **byte-identical**: `tests/` feeds
-shared op-logs through both and asserts the same topology. If you touch either
-mesh engine, run the differential tests and keep them passing.
+The Python kernel and the C++ core must stay **byte-identical**: `tests/` feeds ~100
+shared op-logs through both and asserts the same element counts, the same vertex
+POSITIONS, and the same faces — plus, for all but the five `bisect`/`bridge` logs named
+in `_NUMBERING_DIFFERS`, the same vertex order, face order and winding. Replaying one
+op-log twice in one engine must also give the same mesh, byte for byte. If you touch
+either mesh engine, run the differential tests and keep them passing.
+
+Watch for the trap those tests exist to catch: an operator that walks a container keyed
+on a pointer (C++) or `id()` (Python) and emits vertices in that order is ordering its
+output by heap address. Counts stay right, so it looks fine, but the same op-log then
+builds a differently-numbered mesh every run. Walk elements in **id order** instead —
+`region_in_id_order()` and the `sorted(..., key=lambda e: e.id)` calls in the kernel are
+there for exactly this.
 
 ## Driving Mirage (the two surfaces)
 

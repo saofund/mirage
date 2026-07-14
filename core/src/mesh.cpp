@@ -36,6 +36,14 @@ Edge* Mesh::get_edge(Vert* a, Vert* b) {
     return raw;
 }
 
+Edge* Mesh::find_edge(int v1_id, int v2_id) {
+    int lo = v1_id < v2_id ? v1_id : v2_id;
+    int hi = v1_id < v2_id ? v2_id : v1_id;
+    std::int64_t key = (static_cast<std::int64_t>(lo) << 32) | static_cast<std::int64_t>(hi);
+    auto it = edge_map_.find(key);
+    return it == edge_map_.end() ? nullptr : it->second;
+}
+
 void Mesh::radial_insert(Edge* e, Loop* lp) {
     if (e->loop == nullptr) {
         e->loop = lp;
@@ -406,6 +414,7 @@ using A3 = std::array<double, 3>;
 using Tags = std::vector<std::string>;
 A3 a3add(const A3& a, const A3& b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
 A3 a3scale(const A3& a, double s) { return {a[0] * s, a[1] * s, a[2] * s}; }
+A3 a3lerp(const A3& a, const A3& b, double t) { return a3add(a3scale(a, 1.0 - t), a3scale(b, t)); }
 
 // A face's tags, optionally extended by `mark` — the per-descendant copy that
 // carries durable handles across an operator's rebuild (Python _copy_attrs).
@@ -458,10 +467,13 @@ Mesh catmull_clark(const Mesh& mesh) {
         eadj[e.get()] = fs;
         A3 mid = a3scale(a3add(e->v1->co, e->v2->co), 0.5);
         emid[e.get()] = mid;
-        if (fs.size() == 2)
-            ept[e.get()] = a3scale(a3add(a3add(e->v1->co, e->v2->co), a3add(fp[fs[0]], fp[fs[1]])), 0.25);
-        else
-            ept[e.get()] = mid;  // boundary edge
+        if (fs.size() == 2) {
+            const A3 sm = a3scale(a3add(a3add(e->v1->co, e->v2->co), a3add(fp[fs[0]], fp[fs[1]])), 0.25);
+            const double s = std::clamp(e->crease, 0.0, 1.0);  // a sharp edge-point is the midpoint
+            ept[e.get()] = s <= 0.0 ? sm : a3lerp(sm, mid, s);
+        } else {
+            ept[e.get()] = mid;  // boundary edge — always implicitly sharp
+        }
     }
 
     // per-vertex incident edges / faces
@@ -491,7 +503,25 @@ Mesh catmull_clark(const Mesh& mesh) {
             A3 R{0, 0, 0};
             for (const Edge* e : ve[v]) R = a3add(R, emid[e]);
             R = a3scale(R, 1.0 / static_cast<double>(ve[v].size()));
-            nv[v] = a3scale(a3add(a3add(F, a3scale(R, 2.0)), a3scale(P, n - 3.0)), 1.0 / n);
+            const A3 smooth = a3scale(a3add(a3add(F, a3scale(R, 2.0)), a3scale(P, n - 3.0)), 1.0 / n);
+            // Creases meeting here decide whether this vertex stays on the smooth limit
+            // surface, rides a crease CURVE, or is pinned as a corner (DeRose et al. 1998).
+            std::vector<const Edge*> sharp;
+            for (const Edge* e : ve[v]) if (e->crease > 0.0) sharp.push_back(e);
+            if (sharp.size() < 2) {
+                nv[v] = smooth;   // a lone crease end can't define a curve — stay smooth
+            } else {
+                double sig = 0.0;
+                for (const Edge* e : sharp) sig += e->crease;
+                sig = std::min(sig / static_cast<double>(sharp.size()), 1.0);
+                A3 rule;
+                if (sharp.size() == 2)  // two creases: the cubic B-spline curve rule along them
+                    rule = a3scale(a3add(a3scale(P, 6.0),
+                                         a3add(sharp[0]->other(v)->co, sharp[1]->other(v)->co)), 1.0 / 8.0);
+                else                    // three or more: a corner, held exactly in place
+                    rule = P;
+                nv[v] = a3lerp(smooth, rule, sig);
+            }
         }
     }
 
@@ -513,7 +543,26 @@ Mesh catmull_clark(const Mesh& mesh) {
             quad_tags.push_back(f->tags);
         }
 
-    return Mesh::from_pydata(pos, quads, quad_tags);
+    Mesh out = Mesh::from_pydata(pos, quads, quad_tags);
+    // Carry creases onto the children: each parent edge splits into exactly two (endpoint
+    // vertex-point -> edge-point), and each child is one level less sharp. The edges created
+    // INSIDE a face (edge-point -> face-point) are new and always smooth. Sharpness that has
+    // decayed to zero simply stops propagating, which is what makes a fractional crease
+    // soften over successive levels rather than switch off.
+    for (const auto& e : mesh.edges()) {
+        const double cs = e->crease - 1.0;
+        if (cs <= 0.0) continue;
+        for (const Vert* endp : {static_cast<const Vert*>(e->v1), static_cast<const Vert*>(e->v2)})
+            if (Edge* ce = out.find_edge(iv[endp], ie[e.get()])) ce->crease = cs;
+    }
+    return out;
+}
+
+Mesh catmull_clark(const Mesh& mesh, int levels) {
+    if (levels <= 0) return mesh.copy();
+    Mesh m = catmull_clark(mesh);
+    for (int k = 1; k < levels; ++k) m = catmull_clark(m);
+    return m;
 }
 
 Mesh Mesh::copy() const {
@@ -769,7 +818,15 @@ static std::vector<const Face*> faces_around_vertex(const Mesh& mesh, int vid) {
             }
     }
     if (info.empty()) return {};
-    const Face* start = info.begin()->first;
+    // Start the umbrella walk at the LOWEST-ID incident face. info is keyed on Face*, so
+    // info.begin() would hand back whichever face the pointer hashed into the first bucket
+    // — an arbitrary rotation of the fan that changes with the heap layout, and with it the
+    // order this operator emits vertices. The Python twin builds its dict by walking
+    // mesh.faces and takes the first entry, which (dicts being insertion-ordered) is the
+    // lowest-id face; picking it explicitly is both deterministic and what the oracle does.
+    const Face* start = nullptr;
+    for (const auto& kv : info)
+        if (start == nullptr || kv.first->id < start->id) start = kv.first;
     std::vector<const Face*> ordered{start};
     std::set<const Face*> seen{start};
     Edge* bridge = info[start].eout;
@@ -967,7 +1024,14 @@ Mesh loop_cut(const Mesh& mesh, const std::vector<const Face*>& seed_v, const st
     std::vector<A3> pos;
     for (const auto& v : mesh.verts()) pos.push_back(v->co);
     std::map<Edge*, int> mid;
-    for (Edge* e : crossed) {
+    // In EDGE-ID order, not set order: `crossed` is a std::set<Edge*>, which orders by
+    // POINTER value. Iterating it directly numbers the new midpoint vertices by heap
+    // address, so the same op-log replays to a differently-numbered mesh every run and the
+    // two engines drift apart. Same reason region_in_id_order() exists for face regions.
+    std::vector<Edge*> crossed_ordered(crossed.begin(), crossed.end());
+    std::sort(crossed_ordered.begin(), crossed_ordered.end(),
+              [](const Edge* a, const Edge* b) { return a->id < b->id; });
+    for (Edge* e : crossed_ordered) {
         mid[e] = static_cast<int>(pos.size());
         pos.push_back(a3scale(a3add(e->v1->co, e->v2->co), 0.5));
     }

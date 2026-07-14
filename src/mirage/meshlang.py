@@ -529,7 +529,8 @@ _NUM_FIELDS = {
     "edge_bevel": ("width",), "solidify": ("thickness",),
     "array": ("count", "offset"), "bisect": ("point", "normal"),
     "spin": ("steps", "angle"), "screw": ("steps", "turns", "height", "angle"),
-    "subdivide": ("levels",), "material": ("color", "metallic", "roughness"),
+    "subdivide": ("levels",), "crease": ("weight",),
+    "material": ("color", "metallic", "roughness"),
     "translate": ("by",), "scale": ("by",),
     "place": ("translate", "rotate", "scale"),
 }
@@ -658,6 +659,10 @@ class MeshProgram:
             verts = [list(v) for v in verts]; faces = [list(f) for f in faces]
         return self.add(**_cmd("boolean", mark=mark, mode=mode, verts=verts, faces=faces))
     def subdivide(self, levels=1): return self.add(**_cmd("subdivide", levels=levels))
+    def crease(self, on, weight=1.0):
+        """Hold the selected EDGES sharp through a following subdivide. weight is in
+        subdivision levels, so weight >= levels stays hard all the way down."""
+        return self.add(**_cmd("crease", on=on, weight=weight))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
     def material(self, on, color=(0.8, 0.8, 0.8), metallic=0.0, roughness=0.5):
         return self.add(**_cmd("material", on=on, color=list(color), metallic=metallic, roughness=roughness))
@@ -862,9 +867,18 @@ class MeshProgram:
                     bfaces = [list(f) for f in cmd.get("faces", [])]
                     mesh = boolean(mesh, Mesh.from_pydata(bverts, bfaces), cmd.get("mode", "difference"))
                     outs = []   # a fresh welded mesh — last_created is undefined
+                elif op == "crease":
+                    esel = resolve_edges(mesh, cmd.get("on", {"by": "all"}), last_tag)
+                    w = cmd.get("weight", 1.0)
+                    for e in esel:
+                        e.crease = w
+                    # Stamps sharpness for the next subdivide; no geometry changes and nothing
+                    # is created, so outs stays empty (last_created still means the prior op).
+                    outs = []
                 elif op == "subdivide":
-                    for _ in range(cmd.get("levels", 1)):
-                        mesh = catmull_clark(mesh)
+                    levels = cmd.get("levels", 1)
+                    if levels > 0:
+                        mesh = catmull_clark(mesh, levels)  # creases decay across levels
                     outs = []  # global op — last_created is undefined afterward
                 elif op == "tag":
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)

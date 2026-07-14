@@ -86,6 +86,40 @@ OPLOGS = {
         {"op": "subdivide", "levels": 1},
         {"op": "inset", "on": {"by": "normal", "axis": "z", "sign": 1.0, "tol": 0.3}, "thickness": 0.2},
     ],
+    # Semi-sharp creases: every crease rule (smooth / fractional / curve / corner) and the
+    # per-level sharpness decay has to come out identical in both engines.
+    "crease_cube_full": [
+        {"op": "cube", "size": 1.0},
+        {"op": "crease", "on": {"by": "all"}, "weight": 3.0},
+        {"op": "subdivide", "levels": 3},
+    ],
+    "crease_cube_fractional": [
+        {"op": "cube", "size": 1.0},
+        {"op": "crease", "on": {"by": "all"}, "weight": 0.6},
+        {"op": "subdivide", "levels": 2},
+    ],
+    "crease_decays_below_levels": [   # weight 1 -> hard for one level, smooth after
+        {"op": "cube", "size": 1.0},
+        {"op": "crease", "on": {"by": "all"}, "weight": 1.0},
+        {"op": "subdivide", "levels": 3},
+    ],
+    "crease_axis_only": [             # only the vertical edges held: two-crease curve rule
+        {"op": "cube", "size": 1.0},
+        {"op": "crease", "on": {"by": "axis", "axis": "z"}, "weight": 4.0},
+        {"op": "subdivide", "levels": 2},
+    ],
+    "crease_cylinder_rim": [          # the money case: crisp rim, smooth barrel
+        {"op": "cylinder", "sides": 12, "radius": 0.5, "height": 1.0},
+        {"op": "crease", "on": {"by": "sharp", "angle": 40.0}, "weight": 2.0},
+        {"op": "subdivide", "levels": 2},
+    ],
+    "crease_on_face_edges": [         # crosses the edge/face selector grammars
+        {"op": "cube", "size": 1.0},
+        {"op": "crease",
+         "on": {"by": "on_face", "face": {"by": "normal", "axis": "z", "sign": 1.0, "tol": 0.5}},
+         "weight": 2.0},
+        {"op": "subdivide", "levels": 2},
+    ],
     "and_not_combo": [
         {"op": "cube", "size": 1.0},
         {"op": "extrude",
@@ -470,6 +504,28 @@ OPLOGS = {
 }
 
 
+# Op-logs whose two engines agree on the MODEL but not on how its elements are numbered.
+# All five are bisect/bridge, and all differ the same way: each face's loop cycle starts on
+# a different corner (the same cycle, wound the same way, enclosing the same points). That
+# is a representation difference with no geometric consequence — every one still has to
+# pass the point-cloud and face-set checks below, which are the invariants that matter.
+#
+# Listed by name rather than skipped wholesale, so the strict check keeps biting for the
+# other 92 op-logs and this list can only shrink. It has already: loop_cut and edge_bevel
+# lived here until the operators stopped ordering their output by heap address (see
+# test_replay_is_deterministic), which made all 13 of them byte-identical.
+_NUMBERING_DIFFERS = {
+    "bisect_cube_fill", "bisect_diagonal", "bisect_corner", "bisect_then_extrude",
+    "open_box_from_bridge",
+}
+
+
+def _q(p):
+    """Quantise a position for order-insensitive comparison (kills float-formatting noise
+    without hiding real drift — 1e-9 is ~1000x coarser than the 1e-16 the engines achieve)."""
+    return tuple(round(c, 9) + 0.0 for c in p)
+
+
 @pytest.mark.parametrize("name", list(OPLOGS))
 def test_oplog_replays_identically_in_both_engines(name):
     ops = OPLOGS[name]
@@ -480,6 +536,53 @@ def test_oplog_replays_identically_in_both_engines(name):
     cpp_mesh.validate()
 
     assert _s(cpp_mesh.stats()) == _s(py_mesh.stats()), f"op-log '{name}' diverged"
+
+    # Matching counts is a weak claim — two engines can reach the same vert/edge/face
+    # totals from different geometry, so coordinate drift would ship silently. These are
+    # the real invariants of the one-op-log-two-engines thesis:
+    #   1. the same set of vertex POSITIONS  (no geometric drift)
+    #   2. the same set of FACES, compared as world-space points rather than indices
+    #      (the same surface, however each engine chose to number it)
+    cpp_pos = [_q(p) for p in cpp_mesh.positions()]
+    py_pos = [_q(v.co) for v in py_mesh.verts]
+    assert sorted(cpp_pos) == sorted(py_pos), f"op-log '{name}': vertex positions diverged"
+
+    cpp_faces = [list(f) for f in cpp_mesh.face_indices()]
+    py_faces = [[lp.vert.id for lp in py_mesh.face_loops(f)] for f in py_mesh.faces]
+    cpp_face_pts = sorted(sorted(cpp_pos[i] for i in f) for f in cpp_faces)
+    py_face_pts = sorted(sorted(py_pos[i] for i in f) for f in py_faces)
+    assert cpp_face_pts == py_face_pts, f"op-log '{name}': faces diverged"
+
+    # 3. and, where the operators claim it, identical NUMBERING too: same vertex order,
+    #    same face order, same winding. This is what the kernels sort new vertex ids and
+    #    walk regions in id order to achieve.
+    if name not in _NUMBERING_DIFFERS:
+        assert cpp_pos == py_pos, f"op-log '{name}': vertex ORDER diverged"
+        assert cpp_faces == py_faces, f"op-log '{name}': face order/winding diverged"
+
+
+@pytest.mark.parametrize("name", list(OPLOGS))
+def test_replay_is_deterministic(name):
+    """Replaying one op-log twice must give a byte-identical mesh, in each engine.
+
+    This is the invariant the whole architecture rests on — an op-log is the source of
+    truth only if it means exactly one model. It is easy to lose without noticing: both
+    engines used to walk a set of Edge*/Edge objects (ordered by heap address in C++, by
+    id() in Python) and number new vertices in that order, so loop_cut and edge_bevel
+    replayed to a differently-numbered mesh on every run. The counts never changed, so
+    nothing caught it, and the two engines drifted apart on top. Ordering by element id
+    fixed both at once. This test is the guard.
+    """
+    ops = OPLOGS[name]
+    ops_json = json.dumps(ops)
+
+    a = [_q(p) for p in cpp.replay_json(ops_json).positions()]
+    b = [_q(p) for p in cpp.replay_json(ops_json).positions()]
+    assert a == b, f"op-log '{name}': the C++ engine replayed it two different ways"
+
+    c = [_q(v.co) for v in MeshProgram(ops).build().verts]
+    d = [_q(v.co) for v in MeshProgram(ops).build().verts]
+    assert c == d, f"op-log '{name}': the Python engine replayed it two different ways"
 
 
 def test_program_json_roundtrip_native():

@@ -45,12 +45,18 @@ class Vert:
 
 
 class Edge:
-    __slots__ = ("id", "v1", "v2", "loop")
+    __slots__ = ("id", "v1", "v2", "loop", "crease")
 
     def __init__(self, eid: int, v1: Vert, v2: Vert):
         self.id = eid
         self.v1, self.v2 = v1, v2
         self.loop: Optional["Loop"] = None  # one loop in this edge's radial cycle
+        # Crease sharpness, in subdivision LEVELS (0 = smooth). catmull_clark holds this
+        # edge sharp and hands its children `crease - 1`, so the value is exactly "how many
+        # levels stay hard". Boundary edges are always implicitly sharp and ignore it. Like
+        # materials it is a final-mesh assignment dropped by any op that rebuilds, so it
+        # belongs immediately before a subdivide.
+        self.crease: float = 0.0
 
     def other(self, v: Vert) -> Vert:
         return self.v2 if v is self.v1 else self.v1
@@ -104,6 +110,13 @@ class Mesh:
             self.edges.append(e)
             self._edge_map[key] = e
         return e
+
+    def find_edge(self, v1_id: int, v2_id: int) -> Optional[Edge]:
+        """The edge joining two vertex ids, or None if they aren't adjacent. Unlike _edge
+        this never creates one — it is how an operator re-finds an edge in a mesh it just
+        emitted (e.g. to carry creases onto subdivided children)."""
+        key = (v1_id, v2_id) if v1_id < v2_id else (v2_id, v1_id)
+        return self._edge_map.get(key)
 
     @staticmethod
     def _radial_insert(e: Edge, loop: Loop) -> None:
@@ -258,10 +271,31 @@ class Mesh:
 # --------------------------------------------------------------------------- #
 # Operators (built on the owned topology). More to come: extrude / loop-cut / ...
 # --------------------------------------------------------------------------- #
-def catmull_clark(mesh: Mesh) -> Mesh:
-    """One level of Catmull-Clark subdivision — the classic test that a half-edge/
-    loop kernel actually works: it needs face points, edge points and re-weighted
-    vertex points, all found by walking the topology, then rebuilds quad faces."""
+def catmull_clark(mesh: Mesh, levels: int = 1) -> Mesh:
+    """Catmull-Clark subdivision — the classic test that a half-edge/loop kernel actually
+    works: it needs face points, edge points and re-weighted vertex points, all found by
+    walking the topology, then rebuilds quad faces.
+
+    Honours Edge.crease with the semi-sharp rules of DeRose/Kass/Truong 1998 (the scheme
+    Pixar shipped and Blender uses): a sharp edge's edge-point is its midpoint rather than
+    the smooth average, a vertex on exactly two creases follows the cubic B-spline CURVE
+    rule along them, and three or more creases pin it as a corner. A fractional crease
+    blends between the smooth and sharp rule, and children inherit `crease - 1` so
+    sharpness decays a level at a time instead of being a binary flag. Without this,
+    subdivision rounds every rim into a pillow.
+
+    `levels` applies successive subdivisions, which a caller looping over this function
+    could not reproduce for a creased mesh (each rebuild would drop the creases).
+    """
+    if levels <= 0:
+        return mesh.copy()
+    out = _catmull_clark_once(mesh)
+    for _ in range(1, levels):
+        out = _catmull_clark_once(out)
+    return out
+
+
+def _catmull_clark_once(mesh: Mesh) -> Mesh:
     import numpy as np
     if not mesh.faces:
         return Mesh()
@@ -278,7 +312,12 @@ def catmull_clark(mesh: Mesh) -> Mesh:
         edge_adj[e] = faces
         mid = (arr(e.v1) + arr(e.v2)) / 2.0
         edge_mid[e] = mid
-        edge_pt[e] = (arr(e.v1) + arr(e.v2) + fp[faces[0]] + fp[faces[1]]) / 4.0 if len(faces) == 2 else mid
+        if len(faces) == 2:
+            sm = (arr(e.v1) + arr(e.v2) + fp[faces[0]] + fp[faces[1]]) / 4.0
+            s = min(max(e.crease, 0.0), 1.0)  # a sharp edge-point is the midpoint
+            edge_pt[e] = sm if s <= 0.0 else sm * (1.0 - s) + mid * s
+        else:
+            edge_pt[e] = mid  # boundary edge — always implicitly sharp
 
     v_edges: dict[Vert, list[Edge]] = {v: [] for v in mesh.verts}
     v_faces: dict[Vert, list[Face]] = {v: [] for v in mesh.verts}
@@ -298,7 +337,19 @@ def catmull_clark(mesh: Mesh) -> Mesh:
             n = len(inc_e)
             F = np.mean([fp[f] for f in inc_f], axis=0)
             R = np.mean([edge_mid[e] for e in inc_e], axis=0)
-            new_v[v] = (F + 2 * R + (n - 3) * P) / n
+            smooth = (F + 2 * R + (n - 3) * P) / n
+            # Creases meeting here decide whether this vertex stays on the smooth limit
+            # surface, rides a crease CURVE, or is pinned as a corner (DeRose et al. 1998).
+            sharp = [e for e in inc_e if e.crease > 0.0]
+            if len(sharp) < 2:
+                new_v[v] = smooth  # a lone crease end can't define a curve — stay smooth
+            else:
+                sig = min(sum(e.crease for e in sharp) / len(sharp), 1.0)
+                if len(sharp) == 2:  # two creases: the cubic B-spline curve rule along them
+                    rule = (6 * P + arr(sharp[0].other(v)) + arr(sharp[1].other(v))) / 8.0
+                else:                # three or more: a corner, held exactly in place
+                    rule = P
+                new_v[v] = smooth * (1.0 - sig) + rule * sig
 
     out_pos, iv, ie, jf = [], {}, {}, {}
 
@@ -318,7 +369,21 @@ def catmull_clark(mesh: Mesh) -> Mesh:
         for lp in mesh.face_loops(f):  # one quad per corner; child inherits parent face's tags
             new_faces.append([iv[lp.vert], ie[lp.edge], jf[f], ie[lp.prev.edge]])
             new_attrs.append(_copy_attrs(f.attrs))
-    return Mesh.from_pydata(out_pos, new_faces, new_attrs)
+    out = Mesh.from_pydata(out_pos, new_faces, new_attrs)
+    # Carry creases onto the children: each parent edge splits into exactly two (endpoint
+    # vertex-point -> edge-point), and each child is one level less sharp. The edges created
+    # INSIDE a face (edge-point -> face-point) are new and always smooth. Sharpness that has
+    # decayed to zero simply stops propagating, which is what makes a fractional crease
+    # soften over successive levels rather than switch off.
+    for e in mesh.edges:
+        cs = e.crease - 1.0
+        if cs <= 0.0:
+            continue
+        for endp in (e.v1, e.v2):
+            child = out.find_edge(iv[endp], ie[e])
+            if child is not None:
+                child.crease = cs
+    return out
 
 
 def face_normal(mesh: Mesh, f: Face):
@@ -524,7 +589,11 @@ def loop_cut(mesh: Mesh, seed_faces, axis: str = "z", mark: str | None = None) -
 
     new_pos = [list(v.co) for v in mesh.verts]
     mid = {}  # crossed edge -> new midpoint vertex id
-    for e in crossed:
+    # In EDGE-ID order, not set order: `crossed` is a set of Edge objects, so iterating it
+    # directly walks them in id()/hash order — i.e. by heap address. That would number the
+    # new midpoint vertices differently on every replay of the same op-log, which breaks
+    # the kernel's determinism guarantee and desynchronises the two engines.
+    for e in sorted(crossed, key=lambda e: e.id):
         p = (np.array(e.v1.co) + np.array(e.v2.co)) * 0.5
         mid[e] = len(new_pos); new_pos.append([float(p[0]), float(p[1]), float(p[2])])
 

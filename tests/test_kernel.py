@@ -268,3 +268,103 @@ def test_validate_catches_orphan_vertex():
     m.add_vert([5, 5, 5])                                  # a loose, unreferenced vertex
     with pytest.raises(AssertionError):
         m.validate()
+
+
+# --- semi-sharp creases (DeRose/Kass/Truong 1998) --------------------------- #
+
+def _reach(m):
+    """How far the mesh still reaches along the body diagonal: 1.5 for an exact unit cube,
+    dropping as Catmull-Clark rounds its corners off.
+
+    A bounding box is useless here — the middle of a flat face never moves under either
+    rule, so a cube's bbox reads 0.5 whether its edges are razor sharp or fully rounded.
+    Corner reach is what actually responds to sharpness.
+    """
+    return max(v.co[0] + v.co[1] + v.co[2] for v in m.verts)
+
+
+def _diag(m, a, b):
+    """Reach along one face-diagonal — how hard the rim between axes `a` and `b` is."""
+    return max(v.co[a] + v.co[b] for v in m.verts)
+
+
+def _crease_all(m, w):
+    for e in m.edges:
+        e.crease = w
+    return m
+
+
+def test_uncreased_subdivision_rounds_the_cube_off():
+    # The baseline the crease rules exist to defeat: plain Catmull-Clark pulls a cube's
+    # corners far inside its control cage (1.5 -> ~0.75, i.e. halfway to a sphere).
+    m = catmull_clark(make_cube(1.0), levels=3)
+    m.validate()
+    assert m.is_closed_manifold()
+    assert _reach(m) < 0.80
+
+
+def test_crease_holds_the_cube_exactly():
+    # Every edge sharp for at least as many levels as we subdivide => the limit surface IS
+    # the cage, to the last bit. This is what lets a subdivided shell keep a crisp rim.
+    m = catmull_clark(_crease_all(make_cube(1.0), 3.0), levels=3)
+    m.validate()
+    assert m.is_closed_manifold()
+    assert _reach(m) == pytest.approx(1.5, abs=1e-12)
+    assert len(m.faces) == 6 * 4 ** 3
+
+
+def test_crease_decays_one_level_at_a_time():
+    # Sharpness is measured in LEVELS, not a flag. Subdivided three times, weight 1/2/3
+    # must come out strictly ordered — each extra level of sharpness holds the corner
+    # further out — and all of them above the uncreased case.
+    soft = _reach(catmull_clark(make_cube(1.0), levels=3))
+    w1 = _reach(catmull_clark(_crease_all(make_cube(1.0), 1.0), levels=3))
+    w2 = _reach(catmull_clark(_crease_all(make_cube(1.0), 2.0), levels=3))
+    w3 = _reach(catmull_clark(_crease_all(make_cube(1.0), 3.0), levels=3))
+    assert soft < w1 < w2 < w3
+    assert w3 == pytest.approx(1.5, abs=1e-12)   # weight == levels -> still exact
+
+
+def test_fractional_crease_interpolates():
+    # A weight in (0,1) BLENDS the smooth and sharp rules rather than switching between
+    # them — the point of the semi-sharp scheme over Hoppe's integer sharpness.
+    soft = _reach(catmull_clark(make_cube(1.0), levels=2))
+    half = _reach(catmull_clark(_crease_all(make_cube(1.0), 0.5), levels=2))
+    hard = _reach(catmull_clark(_crease_all(make_cube(1.0), 2.0), levels=2))
+    assert soft < half < hard
+
+
+def test_crease_is_local_to_the_creased_edges():
+    # Crease only the four edges bounding the +z face. The rim between +x and +z is held
+    # hard, while the vertical edges — untouched — round off as if nothing were creased.
+    # On a plain subdivided cube those two rims are equal by symmetry, so any gap between
+    # them is the crease doing exactly as much as it was asked and no more.
+    plain = catmull_clark(make_cube(1.0), levels=2)
+    assert _diag(plain, 0, 2) == pytest.approx(_diag(plain, 0, 1))
+
+    m = make_cube(1.0)
+    for e in m.edges:
+        if e.v1.co[2] > 0.4 and e.v2.co[2] > 0.4:          # the four edges of the top face
+            e.crease = 4.0
+    sub = catmull_clark(m, levels=2)
+    sub.validate()
+    assert sub.is_closed_manifold()
+    assert _diag(sub, 0, 2) > _diag(plain, 0, 2) + 0.3     # the creased top rim is held
+    assert _diag(sub, 0, 1) < _diag(sub, 0, 2) - 0.2       # the vertical edges are not
+
+
+def test_crease_children_inherit_and_mesh_stays_valid():
+    # The decay has to survive the rebuild: after one level the children of a weight-3
+    # edge must carry weight 2, or multi-level subdivision would silently lose the crease.
+    one = catmull_clark(_crease_all(make_cube(1.0), 3.0), levels=1)
+    one.validate()
+    creased = [e.crease for e in one.edges if e.crease > 0]
+    assert creased and all(c == pytest.approx(2.0) for c in creased)
+    assert len(creased) == 24        # each of the cube's 12 edges split into two children
+
+
+def test_zero_crease_matches_plain_subdivision():
+    # A crease of 0 must be exactly the old code path — no drift for every existing op-log.
+    plain = catmull_clark(make_cube(1.0), levels=2)
+    zeroed = catmull_clark(_crease_all(make_cube(1.0), 0.0), levels=2)
+    assert [v.co for v in plain.verts] == [v.co for v in zeroed.verts]
