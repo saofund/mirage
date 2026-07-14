@@ -130,6 +130,39 @@ the lamps glowing as real area lights — kept clean at low sample counts by the
 
 ![The hand-composed interior making-of, every frame path-traced and denoised](docs/gallery/grand_interior_raytrace.gif)
 
+## Sculpting — a cage, creases, and a limit surface
+
+An icon, read off photographs and published dimensions and pushed into shape by hand:
+the **Eames Lounge Chair** (670 & 671), **130k faces**, nothing imported or scanned
+(`examples/cases/25_eames_lounge.py`).
+
+![The Eames Lounge Chair and Ottoman, sculpted from a control cage and subdivided](docs/gallery/eames_lounge.png)
+
+The op-log has **no vertex-addressing grammar** — there is no "move vertex 47", by design.
+So the control cage is sculpted entirely through **re-evaluable queries**. Nested `box`
+selections are strict subsets, so a chain of band `translate`s accumulates into a discrete
+integral, and choosing each step as a finite difference telescopes the cage exactly onto any
+curve. In two dimensions, quadrant boxes give a cumulative sum that the second difference
+inverts — so **any `z(x,y)` you can write down lands on the cage**, and the shape stays a
+function you can read. Three curved plywood shells, three buttoned cushions (the tufting is
+real dimpled geometry), a five-star base of tapered blades, the ottoman.
+
+Two engine features carry it. **Semi-sharp creases** (`crease{on, weight}`, the
+DeRose/Kass/Truong scheme Pixar shipped) hold the plywood rims while `subdivide` takes each
+shell to its limit surface — without them Catmull-Clark rounds every rim into a pillow. A
+crease is measured in *levels* and decays one per subdivision, so a cube creased at weight 3
+and subdivided 3× comes back **exactly a cube**, while a fractional 0.35 on the cushions is
+the difference between a stitched leather welt and a foam block.
+
+And **smooth shading**, which is what stops 130k faces from reading as facets. Each face
+*corner* takes the area-weighted average of the faces meeting there whose normals lie within
+`--smooth-angle` (default 30°) of its own; anything sharper is excluded, so the same vertex
+shades smooth on one face and hard on the next. Nothing is authored — curvature is inferred
+from the geometry. A cylinder's side goes round while its cap rim stays a crisp line, and a
+cube is unchanged to the pixel:
+
+![Flat versus smooth shading on a sphere, cylinder and cube](docs/gallery/smooth_shading.png)
+
 ## Diff & merge — the model is version-controllable
 
 Because the op-log is legible, two versions can be **diffed** and **3-way merged** like source
