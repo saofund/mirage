@@ -49,8 +49,16 @@ def mat(c, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
 # uv_scale is metres per tile: the veneer tiles once across ~1.3 m, so the grain runs the
 # length of the shell instead of repeating into stripes.
 WALNUT  = mat((0.20, 0.10, 0.05), 0.0, 0.30, maps=TEX["wood_veneer"], uv_scale=1.30)
-PLY     = mat((0.72, 0.58, 0.40), 0.0, 0.50)          # the pale laminate edge
+# The cut edge of the laminate: raw end-grain, pale and unlacquered against the dark face
+# veneer. It is the chair's loudest signature — the cream line tracing every rim.
+PLY     = mat((0.50, 0.38, 0.24), 0.0, 0.62)
 LEATHER = mat((0.045, 0.042, 0.044), 0.0, 0.36, maps=TEX["leather"], uv_scale=0.16)
+
+
+def paint(p, on, m):
+    """The `material` op with the full PBR map set — the fluent builder only carries
+    colour/metallic/roughness, and these surfaces need albedo/roughness/normal maps."""
+    return p.add(op="material", on=on, **m)
 ALU     = mat((0.62, 0.63, 0.65), 1.0, 0.25)          # polished aluminium column
 BLACKM  = mat((0.045, 0.045, 0.048), 0.5, 0.42)       # the black base / brackets
 GLIDE   = mat((0.10, 0.10, 0.10), 0.0, 0.75)
@@ -145,7 +153,9 @@ def seat_z(x, y):
     w = smooth((x - PAN_HALF) / (HALF_W - PAN_HALF)) ** 0.85  # nothing across the pan ...
     tall = 0.075 + 0.115 * smooth((y + 0.14) / 0.28)          # ... a wing, taller at the back
     crest = 1.0 - 0.22 * smooth((y - 0.18) / 0.13)            # top rounds over at the back
-    dish = -0.030 * smooth((PAN_HALF - abs(x)) / 0.24) * smooth((0.26 - abs(y + 0.01)) / 0.30)
+    # A lounge seat is a BUCKET: the pan has to hollow, or the cushion reads as a mattress
+    # dropped on a plank rather than nestled into a shell.
+    dish = -0.058 * smooth((PAN_HALF + 0.03 - abs(x)) / 0.26) * smooth((0.30 - abs(y + 0.01)) / 0.34)
     return lip + w * tall * crest + dish
 
 
@@ -156,10 +166,12 @@ def seat_shell():
     p.translate({"by": "all"}, [HALF_W / 2, 0.0, PAN_Z])       # build the +x half only
     bend_surface(p, xs, ys, seat_z)
     p.mirror(axis="x")                                         # weld the halves: exact symmetry
-    p.solidify(thickness=SHELL_T)
+    p.solidify(thickness=SHELL_T, rim_mark="ply")              # tag the cut edge while it exists
     p.crease({"by": "sharp", "angle": 30.0}, weight=3.0)       # the plywood rim stays crisp
     p.subdivide(levels=3)
-    return p                    # the caller's `place` paints it — material is a final assignment
+    paint(p, {"by": "all"}, WALNUT)
+    paint(p, {"by": "tag", "name": "ply"}, PLY)                # tags survived the subdivision
+    return p
 
 
 def panel(half_w, h, curve, nx=6, ny=6, thickness=SHELL_T, levels=3):
@@ -174,9 +186,11 @@ def panel(half_w, h, curve, nx=6, ny=6, thickness=SHELL_T, levels=3):
     p.translate({"by": "all"}, [half_w / 2, h / 2, 0.0])
     bend1(p, xs, "x", curve)
     p.mirror(axis="x")
-    p.solidify(thickness=thickness)
+    p.solidify(thickness=thickness, rim_mark="ply")
     p.crease({"by": "sharp", "angle": 30.0}, weight=3.0)
     p.subdivide(levels=levels)
+    paint(p, {"by": "all"}, WALNUT)
+    paint(p, {"by": "tag", "name": "ply"}, PLY)
     return p
 
 
@@ -278,11 +292,13 @@ def chair():
     p.place(base(5), at=[0, 0, 0])
     p.place(MeshProgram().cylinder(sides=28, radius=0.030, height=0.235),
             at=[0, 0, 0.175], material=ALU)                          # swivel column
-    p.place(seat_shell(), material=WALNUT)
+    # No `material=` on the shells: they paint themselves walnut + laminate rim, and a
+    # place material would flatten both back to one colour.
+    p.place(seat_shell())
 
     # backrest: stood up and raked back, sitting just behind the seat shell's rim
     back_at = (0.0, 0.315, 0.475)
-    p.place(back_shell(), at=list(back_at), rotate=[BACK_TILT, 0, 0], material=WALNUT)
+    p.place(back_shell(), at=list(back_at), rotate=[BACK_TILT, 0, 0])
     p.place(cushion(0.255, 0.135, 0.085,
                     buttons=[(-0.11, 0.06, 0.016, 0.09), (0.11, 0.06, 0.016, 0.09),
                              (0.0, -0.07, 0.016, 0.09)]),
@@ -291,17 +307,17 @@ def chair():
 
     # headrest: raked back further again — the angle break is the chair's signature
     head_at = (0.0, 0.408, 0.715)
-    p.place(head_shell(), at=list(head_at), rotate=[HEAD_TILT, 0, 0], material=WALNUT)
+    p.place(head_shell(), at=list(head_at), rotate=[HEAD_TILT, 0, 0])
     p.place(cushion(0.222, 0.088, 0.075,
                     buttons=[(-0.09, 0.0, 0.013, 0.075), (0.09, 0.0, 0.013, 0.075)]),
             at=offset(head_at, facing(HEAD_TILT), 0.075),
             rotate=[HEAD_TILT, 0, 0], material=LEATHER)
 
-    # seat cushion, sitting down in the dished pan (whose top is PAN_Z + seat_z)
-    p.place(cushion(0.245, 0.225, 0.10,
-                    buttons=[(-0.10, 0.10, 0.015, 0.10), (0.10, 0.10, 0.015, 0.10),
-                             (0.0, -0.06, 0.015, 0.10)]),
-            at=[0, 0.02, PAN_Z + seat_z(0.0, 0.02) + 0.10], material=LEATHER)
+    # seat cushion, filling the dished pan (whose top is PAN_Z + seat_z)
+    p.place(cushion(0.263, 0.248, 0.105,
+                    buttons=[(-0.105, 0.105, 0.016, 0.105), (0.105, 0.105, 0.016, 0.105),
+                             (0.0, -0.065, 0.016, 0.105)]),
+            at=[0, 0.015, PAN_Z + seat_z(0.0, 0.015) + 0.098], material=LEATHER)
 
     # arm pads, sitting on top of the wings
     for sx in (-1, 1):
@@ -333,10 +349,12 @@ def ottoman():
     bend_surface(s, xs, ys, lambda x, y: 0.075 * smooth((x - 0.13) / 0.20)
                  - 0.030 * smooth((abs(y) - 0.15) / 0.13))
     s.mirror(axis="x")
-    s.solidify(thickness=SHELL_T)
+    s.solidify(thickness=SHELL_T, rim_mark="ply")
     s.crease({"by": "sharp", "angle": 30.0}, weight=3.0)
     s.subdivide(levels=3)
-    p.place(s, material=WALNUT)
+    paint(s, {"by": "all"}, WALNUT)
+    paint(s, {"by": "tag", "name": "ply"}, PLY)
+    p.place(s)
     p.place(cushion(0.235, 0.20, 0.09,
                     buttons=[(-0.09, 0.0, 0.014, 0.09), (0.09, 0.0, 0.014, 0.09)]),
             at=[0, 0, 0.245 + 0.09], material=LEATHER)

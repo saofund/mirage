@@ -5,9 +5,9 @@ import pytest
 import numpy as np
 
 from mirage.kernel import (
-    make_cube, make_cylinder_ngon, make_plane, catmull_clark, extrude_faces, inset_faces,
-    bevel_faces, loop_cut, edge_bevel, delete_faces, bridge_faces, fill_holes,
-    face_normal, faces_by_normal,
+    make_cube, make_cylinder_ngon, make_plane, make_grid, catmull_clark, extrude_faces,
+    inset_faces, bevel_faces, loop_cut, edge_bevel, delete_faces, bridge_faces, fill_holes,
+    solidify, face_normal, faces_by_normal,
 )
 from mirage.meshlang import resolve_edges, ESel
 
@@ -268,6 +268,55 @@ def test_validate_catches_orphan_vertex():
     m.add_vert([5, 5, 5])                                  # a loose, unreferenced vertex
     with pytest.raises(AssertionError):
         m.validate()
+
+
+# --- solidify's rim band ---------------------------------------------------- #
+
+def _tags(f):
+    return f.attrs.get("tags", [])
+
+
+def test_solidify_rim_mark_tags_only_the_walls():
+    # A 3x3 grid shells into 9 outer + 9 inner faces and 12 wall quads (one per boundary
+    # edge). Only the walls may carry the rim mark — if it leaked onto the inner shell the
+    # whole underside would paint as laminate.
+    m = solidify(make_grid(1.0, x_div=3, y_div=3), 0.05, mark="new", rim_mark="edge")
+    m.validate()
+    assert m.is_closed_manifold()
+    rim = [f for f in m.faces if "edge" in _tags(f)]
+    assert len(rim) == 12                                   # the grid's 12 boundary edges
+    assert all("new" in _tags(f) for f in rim)              # the rim is still part of `mark`
+    assert len([f for f in m.faces if "new" in _tags(f)]) == 9 + 12   # inner shell + walls
+
+
+def test_solidify_rim_is_thin_and_vertical():
+    # The rim band is the CUT EDGE: it should be `thickness` tall and stand across the
+    # sheet, not lie in it. This is what makes it read as the laminate stripe.
+    m = solidify(make_grid(1.0, x_div=2, y_div=2), 0.04, rim_mark="edge")
+    rim = [f for f in m.faces if "edge" in _tags(f)]
+    assert rim
+    for f in rim:
+        assert abs(face_normal(m, f)[2]) < 1e-6            # normal is horizontal: a wall
+        zs = [v.co[2] for v in m.face_verts(f)]
+        assert max(zs) - min(zs) == pytest.approx(0.04, abs=1e-9)
+
+
+def test_solidify_rim_mark_survives_subdivision():
+    # The point of marking rather than selecting: tags are inherited by child faces, so the
+    # band is still addressable at the limit surface, where no query could find it.
+    p = solidify(make_grid(1.0, x_div=3, y_div=3), 0.05, rim_mark="edge")
+    sub = catmull_clark(p, levels=2)
+    sub.validate()
+    rim = [f for f in sub.faces if "edge" in _tags(f)]
+    assert len(rim) == 12 * 4 ** 2                          # each wall quad -> 16 children
+    assert 0 < len(rim) < len(sub.faces)
+
+
+def test_solidify_without_rim_mark_is_unchanged():
+    a = solidify(make_grid(1.0, x_div=3, y_div=3), 0.05, mark="new")
+    b = solidify(make_grid(1.0, x_div=3, y_div=3), 0.05, mark="new", rim_mark=None)
+    assert [v.co for v in a.verts] == [v.co for v in b.verts]
+    assert [_tags(f) for f in a.faces] == [_tags(f) for f in b.faces]
 
 
 # --- semi-sharp creases (DeRose/Kass/Truong 1998) --------------------------- #

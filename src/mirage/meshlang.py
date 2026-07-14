@@ -636,7 +636,13 @@ class MeshProgram:
     def bevel(self, on, width=0.2, depth=0.1, mark=None): return self.add(**_cmd("bevel", on=on, mark=mark, width=width, depth=depth))
     def loop_cut(self, on, axis="z", mark=None): return self.add(**_cmd("loop_cut", on=on, mark=mark, axis=axis))
     def edge_bevel(self, on, width=0.15, mark=None): return self.add(**_cmd("edge_bevel", on=on, mark=mark, width=width))
-    def solidify(self, thickness=0.1, mark=None): return self.add(**_cmd("solidify", mark=mark, thickness=thickness))
+    def solidify(self, thickness=0.1, mark=None, rim_mark=None):
+        """Shell an open surface. rim_mark additionally tags only the wall band — the cut
+        edge of the material, which no selector can reach once it has been subdivided."""
+        c = _cmd("solidify", mark=mark, thickness=thickness)
+        if rim_mark is not None:
+            c["rim_mark"] = rim_mark
+        return self.add(**c)
     def mirror(self, axis="x", mark=None): return self.add(**_cmd("mirror", mark=mark, axis=axis))
     def array(self, count=3, offset=(1.1, 0.0, 0.0), mark=None):
         return self.add(**_cmd("array", mark=mark, count=count, offset=list(offset)))
@@ -841,7 +847,8 @@ class MeshProgram:
                     mesh = fill_holes(mesh, mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "solidify":
-                    mesh = solidify(mesh, cmd.get("thickness", 0.1), mark=out_tag)
+                    mesh = solidify(mesh, cmd.get("thickness", 0.1), mark=out_tag,
+                                    rim_mark=cmd.get("rim_mark"))
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "mirror":
                     mesh = mirror(mesh, cmd.get("axis", "x"), mark=out_tag)

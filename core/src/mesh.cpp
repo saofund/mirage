@@ -1060,7 +1060,8 @@ Mesh loop_cut(const Mesh& mesh, const std::vector<const Face*>& seed_v, const st
     return Mesh::from_pydata(pos, faces, tags);
 }
 
-Mesh solidify(const Mesh& mesh, double thickness, const std::string& mark) {
+Mesh solidify(const Mesh& mesh, double thickness, const std::string& mark,
+              const std::string& rim_mark) {
     const int n = static_cast<int>(mesh.num_verts());
     if (n == 0 || std::fabs(thickness) < 1e-9) return mesh.copy();
     std::vector<A3> acc(n, A3{0, 0, 0});
@@ -1100,7 +1101,9 @@ Mesh solidify(const Mesh& mesh, double thickness, const std::string& mark) {
             for (Loop* l : mesh.face_loops(fs[0])) if (l->edge == e.get()) { lp = l; break; }
             int a = lp->vert->id, b = lp->next->vert->id;
             faces.push_back({b, a, inner(a), inner(b)});
-            tags.push_back(copy_tags(fs[0], mark));
+            Tags t = copy_tags(fs[0], mark);
+            if (!rim_mark.empty()) t.push_back(rim_mark);   // the cut edge of the material
+            tags.push_back(std::move(t));
         }
     }
     return build_compact(np, faces, tags);

@@ -244,7 +244,17 @@ Mesh bridge_faces(const Mesh& mesh, const std::vector<const Face*>& faces, const
 // solidify: give a surface thickness — an inner shell offset along the inverted
 // vertex normals (reversed winding) + a wall quad per boundary edge, so an open
 // surface (plane/grid/open box) becomes watertight. Verts: outer then inner.
-Mesh solidify(const Mesh& mesh, double thickness = 0.1, const std::string& mark = "");
+//
+// `mark` tags everything the op created (inner shell + walls), as every operator's mark
+// does. `rim_mark`, when given, additionally tags ONLY the walls — the band of faces that
+// close the boundary. That band is the cut edge of the material: the pale laminate stripe
+// on a moulded plywood shell, the raw edge of sheet metal. It is not reachable any other
+// way — no selector can ask for "perpendicular to the local surface", and by the time the
+// shell has been subdivided the walls are geometrically indistinguishable from the faces
+// around them. Tags survive subdivision, so a rim marked here is still selectable at the
+// limit surface. (Blender's Solidify exposes the same idea as Material Offset Rim.)
+Mesh solidify(const Mesh& mesh, double thickness = 0.1, const std::string& mark = "",
+              const std::string& rim_mark = "");
 // mirror: reflect across the axis=0 plane and weld the seam (verts on the plane are
 // shared; off-plane verts get a reflected, reversed-winding copy).
 Mesh mirror(const Mesh& mesh, const std::string& axis = "x", const std::string& mark = "");

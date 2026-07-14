@@ -68,7 +68,9 @@ public:
     Program& bevel(const json& on, double width = 0.2, double depth = 0.1, const std::string& mark = "");
     Program& loop_cut(const json& on, const std::string& axis = "z", const std::string& mark = "");
     Program& edge_bevel(const json& on, double width = 0.15, const std::string& mark = "");
-    Program& solidify(double thickness = 0.1, const std::string& mark = "");
+    // rim_mark additionally tags only the wall band — the cut edge of the material.
+    Program& solidify(double thickness = 0.1, const std::string& mark = "",
+                      const std::string& rim_mark = "");
     Program& mirror(const std::string& axis = "x", const std::string& mark = "");
     Program& array(int count = 3, const std::array<double, 3>& offset = {1.1, 0.0, 0.0},
                    const std::string& mark = "");

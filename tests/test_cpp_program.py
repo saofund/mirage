@@ -113,6 +113,12 @@ OPLOGS = {
         {"op": "crease", "on": {"by": "sharp", "angle": 40.0}, "weight": 2.0},
         {"op": "subdivide", "levels": 2},
     ],
+    "solidify_rim_mark": [            # the rim band stays selectable after subdivision
+        {"op": "grid", "size_x": 1.0, "x_div": 3, "y_div": 3},
+        {"op": "solidify", "thickness": 0.06, "rim_mark": "edge"},
+        {"op": "subdivide", "levels": 2},
+        {"op": "material", "on": {"by": "tag", "name": "edge"}, "color": [0.9, 0.8, 0.6]},
+    ],
     "crease_on_face_edges": [         # crosses the edge/face selector grammars
         {"op": "cube", "size": 1.0},
         {"op": "crease",
@@ -521,9 +527,20 @@ _NUMBERING_DIFFERS = {
 
 
 def _q(p):
-    """Quantise a position for order-insensitive comparison (kills float-formatting noise
-    without hiding real drift — 1e-9 is ~1000x coarser than the 1e-16 the engines achieve)."""
+    """Quantise a position, for comparisons that must be order-insensitive.
+
+    Only safe when both sides come from the SAME engine (a value quantises identically to
+    itself). Across engines it is not: subdivision emits dyadic rationals, so a coordinate
+    like -0.0100390625 is EXACT in binary and lands exactly on the 9th-decimal rounding
+    boundary. One ULP of difference then sends the two engines to opposite sides of the tie
+    and a 1e-17 disagreement reads as 1e-9. Cross-engine comparisons use a tolerance
+    instead — see below.
+    """
     return tuple(round(c, 9) + 0.0 for c in p)
+
+
+def _close(a, b, tol=1e-9):
+    return all(abs(x - y) <= tol for x, y in zip(a, b))
 
 
 @pytest.mark.parametrize("name", list(OPLOGS))
@@ -538,27 +555,35 @@ def test_oplog_replays_identically_in_both_engines(name):
     assert _s(cpp_mesh.stats()) == _s(py_mesh.stats()), f"op-log '{name}' diverged"
 
     # Matching counts is a weak claim — two engines can reach the same vert/edge/face
-    # totals from different geometry, so coordinate drift would ship silently. These are
-    # the real invariants of the one-op-log-two-engines thesis:
-    #   1. the same set of vertex POSITIONS  (no geometric drift)
-    #   2. the same set of FACES, compared as world-space points rather than indices
-    #      (the same surface, however each engine chose to number it)
-    cpp_pos = [_q(p) for p in cpp_mesh.positions()]
-    py_pos = [_q(v.co) for v in py_mesh.verts]
-    assert sorted(cpp_pos) == sorted(py_pos), f"op-log '{name}': vertex positions diverged"
-
+    # totals from different geometry, so coordinate drift would ship silently. The real
+    # invariant of the one-op-log-two-engines thesis is that the GEOMETRY matches.
+    cpp_pos = [tuple(p) for p in cpp_mesh.positions()]
+    py_pos = [tuple(v.co) for v in py_mesh.verts]
     cpp_faces = [list(f) for f in cpp_mesh.face_indices()]
     py_faces = [[lp.vert.id for lp in py_mesh.face_loops(f)] for f in py_mesh.faces]
-    cpp_face_pts = sorted(sorted(cpp_pos[i] for i in f) for f in cpp_faces)
-    py_face_pts = sorted(sorted(py_pos[i] for i in f) for f in py_faces)
-    assert cpp_face_pts == py_face_pts, f"op-log '{name}': faces diverged"
+    assert len(cpp_pos) == len(py_pos)
 
-    # 3. and, where the operators claim it, identical NUMBERING too: same vertex order,
-    #    same face order, same winding. This is what the kernels sort new vertex ids and
-    #    walk regions in id order to achieve.
     if name not in _NUMBERING_DIFFERS:
-        assert cpp_pos == py_pos, f"op-log '{name}': vertex ORDER diverged"
+        # The strong claim, and the one nearly every operator earns: the same vertex in the
+        # same slot. Compared elementwise with a tolerance rather than by quantising —
+        # quantising two engines onto a decimal grid is unsound for a subdivision kernel
+        # (see _q). The engines are bit-exact or one ULP apart; 1e-9 on a metre-scale model
+        # is a nanometre, so real drift still fails loudly.
+        for i, (a, b) in enumerate(zip(cpp_pos, py_pos)):
+            assert _close(a, b), f"op-log '{name}': vertex {i} diverged ({a} vs {b})"
         assert cpp_faces == py_faces, f"op-log '{name}': face order/winding diverged"
+    else:
+        # These number their elements differently, so compare the MODEL instead: the same
+        # multiset of positions, and the same faces as sets of world-space points rather
+        # than indices. Both sides are quantised here only to make the multiset comparable;
+        # these five are bisect/bridge, which do no subdivision and so hit no dyadic ties.
+        assert sorted(_q(p) for p in cpp_pos) == sorted(_q(p) for p in py_pos), \
+            f"op-log '{name}': vertex positions diverged"
+        cq = [_q(p) for p in cpp_pos]
+        pq = [_q(p) for p in py_pos]
+        assert (sorted(sorted(cq[i] for i in f) for f in cpp_faces)
+                == sorted(sorted(pq[i] for i in f) for f in py_faces)), \
+            f"op-log '{name}': faces diverged"
 
 
 @pytest.mark.parametrize("name", list(OPLOGS))

@@ -872,11 +872,21 @@ def edge_bevel(mesh: Mesh, edges, width: float = 0.15, mark: str | None = None) 
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
-def solidify(mesh: Mesh, thickness: float = 0.1, mark: str | None = None) -> Mesh:
+def solidify(mesh: Mesh, thickness: float = 0.1, mark: str | None = None,
+             rim_mark: str | None = None) -> Mesh:
     """Give a surface thickness — a shell. Builds an inner copy offset along the
     inverted vertex normals (reversed winding) and bridges every boundary edge with
     a wall quad, so an OPEN surface (a plane, a grid, an open box) becomes a watertight
-    solid. Vertex order: all outer verts, then the matching inner verts."""
+    solid. Vertex order: all outer verts, then the matching inner verts.
+
+    ``mark`` tags everything the op created (inner shell + walls). ``rim_mark``, when
+    given, additionally tags ONLY the walls — the band that closes the boundary. That band
+    is the cut edge of the material: the pale laminate stripe on a moulded plywood shell,
+    the raw edge of sheet metal. It is reachable no other way — no selector can ask for
+    "perpendicular to the local surface", and once the shell is subdivided the walls are
+    geometrically indistinguishable from their neighbours. Tags survive subdivision, so a
+    rim marked here is still selectable at the limit surface.
+    """
     import numpy as np
     n = len(mesh.verts)
     if n == 0 or abs(thickness) < 1e-9:
@@ -908,7 +918,10 @@ def solidify(mesh: Mesh, thickness: float = 0.1, mark: str | None = None) -> Mes
             lp = next(l for l in mesh.face_loops(fs[0]) if l.edge is e)
             a, b = lp.vert.id, lp.next.vert.id
             new_faces.append([b, a, inner(a), inner(b)])  # opposite to the outer edge -> manifold
-            new_attrs.append(_copy_attrs(fs[0].attrs, add_tag=mark))
+            at = _copy_attrs(fs[0].attrs, add_tag=mark)
+            if rim_mark is not None:                      # the cut edge of the material
+                at.setdefault("tags", []).append(rim_mark)
+            new_attrs.append(at)
     new_pos, new_faces = _compact(new_pos, new_faces)
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 

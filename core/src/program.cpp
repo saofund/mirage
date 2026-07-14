@@ -434,9 +434,10 @@ Program& Program::edge_bevel(const json& on, double width, const std::string& ma
     if (!mark.empty()) c["mark"] = mark;
     return add(std::move(c));
 }
-Program& Program::solidify(double thickness, const std::string& mark) {
+Program& Program::solidify(double thickness, const std::string& mark, const std::string& rim_mark) {
     json c{{"op", "solidify"}, {"thickness", thickness}};
     if (!mark.empty()) c["mark"] = mark;
+    if (!rim_mark.empty()) c["rim_mark"] = rim_mark;
     return add(std::move(c));
 }
 Program& Program::mirror(const std::string& axis, const std::string& mark) {
@@ -713,7 +714,8 @@ Mesh Program::build(std::string* last_tag_out) const {
                 mesh = mirage::fill_holes(mesh, out_tag);
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "solidify") {
-                mesh = mirage::solidify(mesh, cmd.value("thickness", 0.1), out_tag);
+                mesh = mirage::solidify(mesh, cmd.value("thickness", 0.1), out_tag,
+                                        cmd.value("rim_mark", std::string("")));
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "mirror") {
                 mesh = mirage::mirror(mesh, cmd.value("axis", std::string("x")), out_tag);
@@ -873,7 +875,11 @@ std::string Program::label(const json& op) {
     if (k == "delete") return "delete" + on_suffix(op);
     if (k == "bridge") return "bridge" + on_suffix(op);
     if (k == "fill") return "fill  (cap holes)";
-    if (k == "solidify") return "solidify  t=" + num(op.value("thickness", 0.1));
+    if (k == "solidify") {
+        std::string s = "solidify  t=" + num(op.value("thickness", 0.1));
+        const std::string rm = op.value("rim_mark", std::string(""));
+        return rm.empty() ? s : s + "  rim:" + rm;
+    }
     if (k == "mirror") return "mirror  " + op.value("axis", std::string("x"));
     if (k == "array") return "array  x" + std::to_string(op.value("count", 3));
     if (k == "bisect") return std::string("bisect") + (op.value("fill", false) ? " +fill" : "");
