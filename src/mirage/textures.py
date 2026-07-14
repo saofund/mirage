@@ -17,6 +17,7 @@ Needs numpy + Pillow.
 """
 from __future__ import annotations
 
+import hashlib
 import struct
 from pathlib import Path
 
@@ -252,13 +253,40 @@ def generate(name: str, tex_dir: Path = TEX_DIR) -> dict:
     return p
 
 
+def _recipe_id(name: str) -> str:
+    """A short digest of the recipe that produced a map set — the generator's own bytecode
+    plus this entry's constants. Changes iff the recipe changes."""
+    fn = _LIBRARY[name]
+    parts = [name, str(RES)]
+    # the thunk's captured constants (colours, seeds, plank counts...)
+    parts += [repr(c) for c in (fn.__code__.co_consts or ()) if c is not None]
+    # and the generator it calls, so editing _leather() alone still invalidates
+    for gen in (_wood, _veneer, _fabric, _plaster, _leather, _marble, _normal_from_height, _fbm):
+        parts.append(gen.__name__)
+        parts.append(hashlib.sha1(gen.__code__.co_code).hexdigest()[:8])
+    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
+
+
 def ensure_textures(names, tex_dir: Path = TEX_DIR) -> dict:
-    """Generate any of `names` whose maps are missing; return {name: {map: path}}."""
+    """Generate any of `names` whose maps are missing OR STALE; return {name: {map: path}}.
+
+    Staleness matters more than it sounds. These maps are gitignored and regenerated on
+    demand, so "the file exists" was the only cache key — and editing a recipe then left the
+    OLD map on disk, silently. Changing the leather from 0.16 to 0.045 albedo and seeing no
+    difference in the render is a genuinely baffling half hour: the code is right, the
+    picture is wrong, and nothing anywhere says why. The recipe's digest is stored beside
+    the maps, so a recipe edit regenerates them.
+    """
     out = {}
     for name in names:
         p = _paths(name, tex_dir)
-        if not all(f.exists() for f in p.values()):
+        stamp = tex_dir / f"{name}.recipe"
+        want = _recipe_id(name)
+        fresh = (all(f.exists() for f in p.values())
+                 and stamp.exists() and stamp.read_text().strip() == want)
+        if not fresh:
             p = generate(name, tex_dir)
+            stamp.write_text(want)
         out[name] = p
     return out
 

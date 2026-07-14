@@ -512,9 +512,12 @@ def film():
     out = record_build(
         stages, "eames_lounge_build", out_dir=OUT, captions=captions,
         size=(1280, 720), fps=24, per=16, hold=40,
-        # a slow dolly around the front quarter, settling on the hero angle
-        keyframes=[(0.0, 2.05, 0.30, 2.45), (0.55, 2.55, 0.34, 2.20),
-                   (0.82, 2.30, 0.30, 1.95), (1.0, 2.30, 0.30, 1.95)],
+        # A slow dolly across the OPEN FRONT, settling on the hero angle. The orbit puts the
+        # eye at (cx + d*cos(p)*sin(yaw), cy - d*cos(p)*cos(yaw), ...) — note the MINUS on y.
+        # So yaw 0 faces the chair head-on and the front quarter is yaw in (0, pi/2);
+        # yaw ~2.3 shoots its back. Solving that for the hero eye gives yaw 0.81.
+        keyframes=[(0.0, 1.40, 0.36, 2.60), (0.5, 0.42, 0.28, 2.25),
+                   (0.82, 0.82, 0.22, 2.05), (1.0, 0.82, 0.22, 2.05)],
         smooth=True,            # the viewport shades smooth too — no facets during the build
         automode=True,          # AI-driving-the-editor framing: panel hidden, HUD names the op
         trace_hold=True,        # the clip ENDS on a path-traced beauty frame
