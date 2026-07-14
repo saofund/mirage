@@ -163,6 +163,17 @@ cube is unchanged to the pixel:
 
 ![Flat versus smooth shading on a sphere, cylinder and cube](docs/gallery/smooth_shading.png)
 
+And here is the chair **being sculpted in Mirage's own viewport**, in the editor's **AUTO
+mode** — a slow dolly around the front quarter while the HUD names each operator as it
+lands. A flat 10×10 grid bends under a chain of `translate{on: box}` queries, mirrors to
+exact symmetry, gains its 14 mm of ply — and only then does `subdivide` take it to the
+limit surface, the crease holding the rim crisp while everything else goes round. The rest
+is assembly. It settles onto the **path-traced beauty frame** (real-time viewport for the
+build, the first-party tracer + denoiser for the money shot, both off one op-log).
+Regenerate with `uv run python examples/cases/25_eames_lounge.py --film`.
+
+![Sculpting the Eames chair in Mirage's viewport: a flat grid bends, mirrors, thickens and subdivides](docs/gallery/eames_lounge_build.gif)
+
 ## Diff & merge — the model is version-controllable
 
 Because the op-log is legible, two versions can be **diffed** and **3-way merged** like source

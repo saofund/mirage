@@ -14,7 +14,7 @@ any z(x,y) you can write down. The shape is a function, and the op-log stays leg
 
     uv run python examples/cases/25_eames_lounge.py            # hero -> docs/gallery
     uv run python examples/cases/25_eames_lounge.py --preview  # fast low-spp look
-    uv run python examples/cases/25_eames_lounge.py --parts    # each part, exploded
+    uv run python examples/cases/25_eames_lounge.py --film     # the making-of (mp4 + gif)
 
 Needs mirage_render + Pillow.
 """
@@ -179,11 +179,15 @@ def panel(half_w, h, curve, nx=6, ny=6, thickness=SHELL_T, levels=3):
 
     Built lying down and stood up by the caller's `place` rotation, so the same helper
     makes the backrest and the headrest. +z becomes 'toward the sitter' once rotated.
+
+    CENTRED on its origin — only the x half is offset (to sit on +x for the mirror). An
+    origin at the panel's bottom edge instead would silently place every caller half a
+    panel out: it put the headrest's top at 35.8" against a 31.5" spec.
     """
-    xs, ys = cage(0.0, half_w, nx, 0.0, h, ny)
+    xs, ys = cage(0.0, half_w, nx, -h / 2, h / 2, ny)
     p = MeshProgram()
     p.grid(size_x=half_w, size_y=h, x_div=nx, y_div=ny)
-    p.translate({"by": "all"}, [half_w / 2, h / 2, 0.0])
+    p.translate({"by": "all"}, [half_w / 2, 0.0, 0.0])
     bend1(p, xs, "x", curve)
     p.mirror(axis="x")
     p.solidify(thickness=thickness, rim_mark="ply")
@@ -296,21 +300,26 @@ def chair():
     # place material would flatten both back to one colour.
     p.place(seat_shell())
 
-    # backrest: stood up and raked back, sitting just behind the seat shell's rim
-    back_at = (0.0, 0.315, 0.475)
+    # Backrest and headrest are CENTRED on their placement, so each centre is derived from
+    # where its ends must land rather than guessed: the backrest runs z 0.34 -> 0.62 along
+    # its 71-degree rake (0.30 * sin 71 = 0.284 of rise), and the headrest picks up at 0.63
+    # and tops out at the published 31.5" = 0.80.
+    back_at = (0.0, 0.309, 0.482)
     p.place(back_shell(), at=list(back_at), rotate=[BACK_TILT, 0, 0])
-    p.place(cushion(0.255, 0.135, 0.085,
-                    buttons=[(-0.11, 0.06, 0.016, 0.09), (0.11, 0.06, 0.016, 0.09),
-                             (0.0, -0.07, 0.016, 0.09)]),
-            at=offset(back_at, facing(BACK_TILT), 0.085),
+    # inset within the shell, so a margin of walnut frames it (that border, and the pale
+    # rim tracing it, is what you actually read the shell BY from the front)
+    p.place(cushion(0.243, 0.126, 0.072,
+                    buttons=[(-0.105, 0.055, 0.015, 0.085), (0.105, 0.055, 0.015, 0.085),
+                             (0.0, -0.065, 0.015, 0.085)]),
+            at=offset(back_at, facing(BACK_TILT), 0.072),
             rotate=[BACK_TILT, 0, 0], material=LEATHER)
 
     # headrest: raked back further again — the angle break is the chair's signature
-    head_at = (0.0, 0.408, 0.715)
+    head_at = (0.0, 0.417, 0.700)
     p.place(head_shell(), at=list(head_at), rotate=[HEAD_TILT, 0, 0])
-    p.place(cushion(0.222, 0.088, 0.075,
-                    buttons=[(-0.09, 0.0, 0.013, 0.075), (0.09, 0.0, 0.013, 0.075)]),
-            at=offset(head_at, facing(HEAD_TILT), 0.075),
+    p.place(cushion(0.210, 0.080, 0.062,
+                    buttons=[(-0.085, 0.0, 0.013, 0.070), (0.085, 0.0, 0.013, 0.070)]),
+            at=offset(head_at, facing(HEAD_TILT), 0.062),
             rotate=[HEAD_TILT, 0, 0], material=LEATHER)
 
     # seat cushion, filling the dished pan (whose top is PAN_Z + seat_z)
@@ -338,14 +347,17 @@ def chair():
 
 
 def ottoman():
+    # 17.25" (0.438) tall — the ottoman stands HIGHER than the 15" seat, which is what lets
+    # it carry your legs. Shell top 0.315 + a 0.09 cushion + its crown lands there.
+    OTT_Z = 0.315
     p = MeshProgram()
     p.place(base(4, length=0.255), at=[0, 0, 0])
-    p.place(MeshProgram().cylinder(sides=28, radius=0.026, height=0.16),
-            at=[0, 0, 0.135], material=ALU)
+    p.place(MeshProgram().cylinder(sides=28, radius=0.026, height=0.225),
+            at=[0, 0, 0.168], material=ALU)
     xs, ys = cage(0.0, 0.33, 6, -0.275, 0.275, 8)
     s = MeshProgram()
     s.grid(size_x=0.33, size_y=0.55, x_div=6, y_div=8)
-    s.translate({"by": "all"}, [0.165, 0, 0.245])
+    s.translate({"by": "all"}, [0.165, 0, OTT_Z])
     bend_surface(s, xs, ys, lambda x, y: 0.075 * smooth((x - 0.13) / 0.20)
                  - 0.030 * smooth((abs(y) - 0.15) / 0.13))
     s.mirror(axis="x")
@@ -357,7 +369,7 @@ def ottoman():
     p.place(s)
     p.place(cushion(0.235, 0.20, 0.09,
                     buttons=[(-0.09, 0.0, 0.014, 0.09), (0.09, 0.0, 0.014, 0.09)]),
-            at=[0, 0, 0.245 + 0.09], material=LEATHER)
+            at=[0, 0, OTT_Z + 0.09], material=LEATHER)
     return p
 
 
@@ -385,7 +397,111 @@ def render(prog, out, spp, w, h, eye, target, fov=0.62, extra=()):
     return png
 
 
+# ---- the making-of ------------------------------------------------------------- #
+def film_stages():
+    """The build, stage by stage. The story is the SCULPT — a flat grid becomes a shell:
+    the cage bends under a chain of box queries, mirrors to exact symmetry, gains its 14 mm
+    of ply, and only then subdivides to the limit surface. Everything after that is
+    assembly. Returns (stages, captions)."""
+    xs, ys = cage(0.0, HALF_W, 10, -S_DEPTH / 2, S_DEPTH / 2, 10)
+
+    flat = MeshProgram()
+    flat.grid(size_x=HALF_W, size_y=S_DEPTH, x_div=10, y_div=10)
+    flat.translate({"by": "all"}, [HALF_W / 2, 0.0, PAN_Z])
+
+    bent = MeshProgram(flat.ops)
+    bend_surface(bent, xs, ys, seat_z)
+
+    mirrored = MeshProgram(bent.ops)
+    mirrored.mirror(axis="x")
+
+    thick = MeshProgram(mirrored.ops)
+    thick.solidify(thickness=SHELL_T, rim_mark="ply")
+
+    shell = seat_shell()
+
+    def upto(*builders):
+        """A chair with only some parts placed — the assembly, in order."""
+        p = MeshProgram()
+        for b in builders:
+            b(p)
+        return p
+
+    def _shell(p):
+        p.place(seat_shell())
+
+    def _back(p):
+        p.place(back_shell(), at=[0, 0.315, 0.475], rotate=[BACK_TILT, 0, 0])
+
+    def _head(p):
+        p.place(head_shell(), at=[0, 0.408, 0.715], rotate=[HEAD_TILT, 0, 0])
+
+    def _base(p):
+        p.place(base(5), at=[0, 0, 0])
+        p.place(MeshProgram().cylinder(sides=28, radius=0.030, height=0.235),
+                at=[0, 0, 0.175], material=ALU)
+
+    stages = [
+        flat,                                   # the control cage: 100 flat quads
+        bent,                                   # sculpted by box queries alone
+        mirrored,                               # welded down the centreline
+        thick,                                  # 14 mm of ply
+        shell,                                  # subdivide -> the limit surface
+        upto(_shell, _back),
+        upto(_shell, _back, _head),
+        upto(_base, _shell, _back, _head),
+        chair(),
+        scene(),
+    ]
+    captions = [
+        "grid  10x10 — the control cage",
+        "translate{on: box} x66 — sculpted by query",
+        "mirror  x — welded, exactly symmetric",
+        "solidify  t=0.014  rim:ply",
+        "crease w=3 + subdivide x3 — the limit surface",
+        "place  backrest shell",
+        "place  headrest shell",
+        "place  5-star base + column",
+        "place  leather cushions + arm pads",
+        "place  ottoman 671",
+    ]
+    return stages, captions
+
+
+def film():
+    from mirage.capture import record_build
+    stages, captions = film_stages()
+    for s, c in zip(stages, captions):
+        m = s.build()
+        print(f"  {c:48s} {len(m.faces):7,d} faces")
+    out = record_build(
+        stages, "eames_lounge_build", out_dir=OUT, captions=captions,
+        size=(1280, 720), fps=24, per=16, hold=40,
+        # a slow dolly around the front quarter, settling on the hero angle
+        keyframes=[(0.0, 2.05, 0.30, 2.45), (0.55, 2.55, 0.34, 2.20),
+                   (0.82, 2.30, 0.30, 1.95), (1.0, 2.30, 0.30, 1.95)],
+        smooth=True,            # the viewport shades smooth too — no facets during the build
+        automode=True,          # AI-driving-the-editor framing: panel hidden, HUD names the op
+        trace_hold=True,        # the clip ENDS on a path-traced beauty frame
+        trace_spp=260, trace_denoise=4, cam_fov=0.62,
+        trace_knobs={"sun": 0.45, "env": 0.34, "exposure": 0.95,
+                     "sun-dir": [0.45, 0.55, 0.70]},
+        gif_w=760, gif_fps=16,
+    )
+    print("wrote", out)
+    GALLERY.mkdir(parents=True, exist_ok=True)
+    import shutil
+    for p in out if isinstance(out, (list, tuple)) else [out]:
+        p = Path(p)
+        if p.suffix in (".mp4", ".gif"):
+            shutil.copy(p, GALLERY / p.name)
+            print("wrote", GALLERY / p.name)
+
+
 def main():
+    if "--film" in sys.argv:
+        film()
+        return
     preview = "--preview" in sys.argv
     p = scene()
     m = p.build()
