@@ -122,6 +122,31 @@ def _wood(res: int, seed: int, col_a, col_b, plank=6, warp_amt=2.2, grain_freq=2
     return albedo, rough, normal
 
 
+def _veneer(res: int, seed: int, col_a, col_b, grain_freq=16, warp_amt=1.5, figure=0.6):
+    """Sliced wood veneer: continuous figured grain with NO plank seams — what a piece of
+    moulded plywood is actually faced with. `_wood` lays down planks and seam grooves,
+    which is right for a floor and wrong for a shell (it reads as tiger stripes).
+
+    A low-frequency 'figure' term drifts the grain spacing, giving the cathedral flare
+    that makes walnut read as walnut rather than as a sine wave.
+    """
+    x = np.ones((res, 1)) * np.linspace(0, 1, res)[None, :]
+    warp = _fbm(res, 3, 5, seed) - 0.5
+    fig = _fbm(res, 2, 3, seed + 13) - 0.5
+    grain = np.sin((x * grain_freq + warp * warp_amt + fig * figure * 3.0) * np.pi * 2)
+    grain = (0.5 + 0.5 * grain) ** 1.9
+    fine = _fbm(res, 90, 3, seed + 7)
+    t = np.clip(grain * 0.85 + 0.15 * fine, 0, 1)
+    base = (np.stack(col_a, -1)[None, None] * (1 - t[..., None])
+            + np.stack(col_b, -1)[None, None] * t[..., None])
+    base = base * (0.93 + 0.14 * fine[..., None])
+    albedo = np.clip(base, 0, 1)
+    rough = np.clip(0.26 + 0.16 * t + 0.05 * (fine - 0.5), 0.14, 0.55)   # satin lacquer
+    height = t * 0.25 + fine * 0.08
+    normal = _normal_from_height(height, strength=0.9)
+    return albedo, rough, normal
+
+
 def _fabric(res: int, seed: int, col, weave=180):
     """Woven fabric: over/under thread pattern (bumpy normal) + fuzz mottle, matte."""
     x = np.ones((res, 1)) * np.linspace(0, 1, res)[None, :]
@@ -154,6 +179,28 @@ def _plaster(res: int, seed: int, col):
     return albedo, rough, normal
 
 
+def _leather(res: int, seed: int, col, grain=88):
+    """Aniline leather: a pebbled grain of soft cells divided by darker creases, over a
+    broad sag. The creases are what sell it — they sit lower, take a rougher sheen and
+    catch less light, which is the whole difference between leather and dark plastic.
+
+    The cell divisions come from RIDGED noise (1 - |2n-1|), whose valleys form the
+    connected crease network a Voronoi would give, without needing one.
+    """
+    cell = _fbm(res, grain, 3, seed)                                       # the pebbles
+    ridged = 1.0 - np.abs(2.0 * _fbm(res, max(grain // 2, 2), 2, seed + 7) - 1.0)
+    crease = np.clip(ridged, 0, 1) ** 2.4                                  # crease network
+    wrinkle = _fbm(res, 7, 4, seed + 3)                                    # broad sag
+    micro = _fbm(res, 300, 2, seed + 11)
+    height = 0.60 * cell + 0.24 * wrinkle + 0.16 * micro - 0.55 * crease
+    height = (height - height.min()) / (height.max() - height.min() + 1e-9)
+    base = np.stack(col, -1)[None, None] * (0.78 + 0.46 * height[..., None])
+    albedo = np.clip(base, 0, 1)
+    rough = np.clip(0.32 + 0.28 * crease + 0.12 * (1.0 - height), 0.20, 0.74)
+    normal = _normal_from_height(height, strength=1.5)
+    return albedo, rough, normal
+
+
 def _marble(res: int, seed: int, col_a, col_b):
     """Polished marble: turbulent veins, low roughness."""
     turb = _fbm(res, 6, 6, seed)
@@ -177,6 +224,12 @@ _LIBRARY = {
     "fabric_sofa": lambda: _fabric(RES, 41, (0.32, 0.40, 0.32)),
     "fabric_cush": lambda: _fabric(RES, 47, (0.72, 0.54, 0.24)),
     "fabric_rug":  lambda: _fabric(RES, 53, (0.46, 0.24, 0.20), weave=120),
+    # Real black leather sits around 0.04 albedo — its grain reads through the SPECULAR,
+    # not the base colour. Anything lighter tonemaps to a flat mid-grey under a bright sky.
+    "leather":     lambda: _leather(RES, 59, (0.045, 0.040, 0.043)),
+    # Walnut veneer wants a NARROW tonal range — the grain is a whisper, not a zebra. A wide
+    # col_a..col_b spread reads as painted stripes however good the normal map is.
+    "wood_veneer": lambda: _veneer(RES, 83, (0.105, 0.052, 0.028), (0.175, 0.093, 0.050)),
     "plaster":     lambda: _plaster(RES, 61, (0.84, 0.80, 0.73)),
     "marble":      lambda: _marble(RES, 71, (0.86, 0.85, 0.82), (0.42, 0.44, 0.48)),
 }
