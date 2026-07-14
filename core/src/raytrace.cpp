@@ -26,10 +26,14 @@ V3 cross(const V3& a, const V3& b) {
 double len(const V3& a) { return std::sqrt(dot(a, a)); }
 V3 norm(const V3& a) { double l = len(a); return l > 0 ? a * (1.0 / l) : a; }
 
-// Triangle soup with per-triangle geometric normal (the mesh is triangulated by
-// fanning each face; flat normals match the hard-surface kernel) and the face's
-// PBR material baked in (the `material` op assigns it; default = scene material).
-struct Tri { V3 a, b, c, n; V3 albedo; double metallic; double rough; V3 emission{0, 0, 0};
+// Triangle soup with the face's PBR material baked in (the `material` op assigns it;
+// default = scene material). The mesh is triangulated by fanning each face.
+//   n        — the geometric normal (one per triangle): ray offsets, the ground, backface
+//              flipping, and anything that must follow the real surface.
+//   na/nb/nc — the SHADING normals at the three corners, interpolated per hit. Equal to n
+//              when the corner is flat-shaded, so flat shading is the zero-cost default
+//              path through the same code (see RenderSettings::smooth_angle).
+struct Tri { V3 a, b, c, n; V3 na, nb, nc; V3 albedo; double metallic; double rough; V3 emission{0, 0, 0};
              int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
              int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; double uv_scale = 1.0; };  // image-map indices
 
@@ -58,8 +62,9 @@ bool hit_aabb(const AABB& b, const V3& o, const V3& invd, double tmax) {
     return true;
 }
 
-// Möller-Trumbore; returns t (>eps) on hit, else -1.
-double ray_tri(const V3& o, const V3& d, const Tri& t) {
+// Möller-Trumbore; returns t (>eps) on hit, else -1. On a hit, out_u/out_v (when given)
+// receive the barycentric coordinates of b and c — what the shading normal interpolates on.
+double ray_tri(const V3& o, const V3& d, const Tri& t, double* out_u = nullptr, double* out_v = nullptr) {
     V3 e1 = t.b - t.a, e2 = t.c - t.a, p = cross(d, e2);
     double det = dot(e1, p);
     if (std::fabs(det) < 1e-12) return -1;
@@ -71,12 +76,16 @@ double ray_tri(const V3& o, const V3& d, const Tri& t) {
     double v = dot(d, q) * inv;
     if (v < 0 || u + v > 1) return -1;
     double tt = dot(e2, q) * inv;
-    return tt > 1e-5 ? tt : -1;
+    if (tt <= 1e-5) return -1;
+    if (out_u) *out_u = u;
+    if (out_v) *out_v = v;
+    return tt;
 }
 
 struct Hit {
     double t = 1e30;
-    V3 n{0, 0, 1};
+    V3 n{0, 0, 1};    // geometric normal (ray offsets, ground, backface side)
+    V3 ns{0, 0, 1};   // shading normal (interpolated; == n when flat-shaded)
     V3 albedo{0, 0, 0};
     double metallic = 0.0, rough = 0.5;
     V3 emission{0, 0, 0};
@@ -256,7 +265,7 @@ void hit_ground(const Scene& sc, const V3& o, const V3& d, Hit& h) {
         V3 p = o + d * tt;
         double dx = p[0] - sc.ground_center[0], dy = p[1] - sc.ground_center[1];
         if (dx * dx + dy * dy < sc.ground_r2) {
-            h.t = tt; h.n = {0, 0, 1}; h.albedo = sc.ground_albedo;
+            h.t = tt; h.n = {0, 0, 1}; h.ns = {0, 0, 1}; h.albedo = sc.ground_albedo;
             h.metallic = 0.0; h.rough = 0.92; h.is_ground = true;  // matte floor
         }
     }
@@ -273,11 +282,18 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
         if (n.count > 0) {
             for (int i = n.start; i < n.start + n.count; ++i) {
                 const Tri& t = sc.tris[sc.order[i]];
-                double tt = ray_tri(o, d, t);
+                double bu = 0, bv = 0;
+                double tt = ray_tri(o, d, t, &bu, &bv);
                 if (tt > 0 && tt < h.t) {
                     h.t = tt;
-                    V3 nn = t.n; if (dot(nn, d) > 0) nn = nn * -1.0;  // two-sided
-                    h.n = nn; h.albedo = t.albedo; h.metallic = t.metallic; h.rough = t.rough;
+                    V3 nn = t.n;
+                    // Shading normal: barycentric blend of the corner normals. Both normals are
+                    // built from the same outward winding, so a backface hit flips them together
+                    // and they stay on the same side of the surface.
+                    V3 sn = norm(t.na * (1.0 - bu - bv) + t.nb * bu + t.nc * bv);
+                    if (dot(nn, d) > 0) { nn = nn * -1.0; sn = sn * -1.0; }  // two-sided
+                    h.n = nn; h.ns = sn;
+                    h.albedo = t.albedo; h.metallic = t.metallic; h.rough = t.rough;
                     h.emission = t.emission; h.tex = t.tex; h.tex_scale = t.tex_scale; h.tex2 = t.tex2;
                     h.alb_tex = t.alb_tex; h.rgh_tex = t.rgh_tex; h.nrm_tex = t.nrm_tex; h.uv_scale = t.uv_scale;
                     h.is_ground = false;
@@ -404,18 +420,20 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
             add(mulv(beta, h.emission), bounce);                                          // a lamp seen directly
         const V3 wp = o + d * h.t;   // world hit position (texture lookups + offsets)
         // Resolve the surface: image maps (albedo / roughness / normal) win over the procedural
-        // tex, which wins over the flat colour. Triplanar-projected off the geometric normal.
-        V3 N = h.n;
+        // tex, which wins over the flat colour. Triplanar-projected off the SHADING normal, so
+        // the three projections blend smoothly across a curved surface instead of stepping at
+        // every facet boundary.
+        V3 N = h.ns;
         if (h.nrm_tex >= 0) {
-            const V3 tn = triplanar(sc.textures[h.nrm_tex], wp, h.n, h.uv_scale) * 2.0 - V3{1, 1, 1};
-            N = perturb_normal(h.n, tn, 1.0);
+            const V3 tn = triplanar(sc.textures[h.nrm_tex], wp, h.ns, h.uv_scale) * 2.0 - V3{1, 1, 1};
+            N = perturb_normal(h.ns, tn, 1.0);
         }
         V3 alb;
-        if (h.alb_tex >= 0)  alb = triplanar(sc.textures[h.alb_tex], wp, h.n, h.uv_scale);
+        if (h.alb_tex >= 0)  alb = triplanar(sc.textures[h.alb_tex], wp, h.ns, h.uv_scale);
         else if (h.tex)      alb = apply_tex(h.albedo, h.tex, h.tex_scale, h.tex2, wp);
         else                 alb = h.albedo;
         double rough = h.rough;
-        if (h.rgh_tex >= 0)  rough = std::clamp(triplanar(sc.textures[h.rgh_tex], wp, h.n, h.uv_scale)[0], 0.03, 1.0);
+        if (h.rgh_tex >= 0)  rough = std::clamp(triplanar(sc.textures[h.rgh_tex], wp, h.ns, h.uv_scale)[0], 0.03, 1.0);
         const V3 V = d * -1.0;
         const double NoV = std::max(dot(N, V), 1e-4);
         const double a = std::max(rough * rough, 1e-3);
@@ -595,10 +613,62 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         sc.tex_cache[path] = idx;
         return idx;
     };
+    // --- Smooth shading, by angle (RenderSettings::smooth_angle) ---
+    // A face corner's shading normal is the area-weighted average of the normals of the faces
+    // meeting at that vertex whose own normal is within `smooth_angle` of this face's. Faces
+    // across a sharper edge are excluded, so the SAME vertex can be smooth on one face and hard
+    // on the next (a cylinder's side is round while its cap rim stays crisp) — no authoring, no
+    // per-face flags. Adjacency is stored CSR (one contiguous array rather than a vector per
+    // vertex), so this costs one extra pass over the faces and stays cheap at millions of them.
+    const double smooth_deg = std::clamp(settings.smooth_angle, 0.0, 180.0);
+    const bool want_smooth = smooth_deg > 0.0;
+    const double cos_smooth = std::cos(smooth_deg * PI / 180.0);
+    std::vector<V3> fnorm;
+    std::vector<double> farea;
+    std::vector<int> voff, vadj;   // faces around vertex v = vadj[voff[v] .. voff[v+1])
+    if (want_smooth) {
+        const std::size_t NF = mesh.num_faces(), NV = mesh.num_verts();
+        fnorm.resize(NF);
+        farea.resize(NF);
+        voff.assign(NV + 1, 0);
+        std::size_t fi = 0;
+        for (const auto& f : mesh.faces()) {
+            const auto a = face_normal(mesh, f.get());
+            fnorm[fi] = {a[0], a[1], a[2]};
+            farea[fi] = face_area(mesh, f.get());
+            for (Loop* lp : mesh.face_loops(f.get())) ++voff[lp->vert->id + 1];
+            ++fi;
+        }
+        for (std::size_t i = 1; i <= NV; ++i) voff[i] += voff[i - 1];
+        vadj.resize(std::size_t(voff[NV]));
+        std::vector<int> cur(voff.begin(), voff.end() - 1);
+        fi = 0;
+        for (const auto& f : mesh.faces()) {
+            for (Loop* lp : mesh.face_loops(f.get())) vadj[std::size_t(cur[lp->vert->id]++)] = int(fi);
+            ++fi;
+        }
+    }
+    // The shading normal at face `fi`'s corner on vertex `v` (fn = that face's normal).
+    auto corner_normal = [&](const Vert* v, const V3& fn) -> V3 {
+        if (!want_smooth) return fn;
+        V3 s{0, 0, 0};
+        for (int k = voff[v->id]; k < voff[v->id + 1]; ++k) {
+            const int g = vadj[std::size_t(k)];
+            if (dot(fnorm[std::size_t(g)], fn) >= cos_smooth) s = s + fnorm[std::size_t(g)] * farea[std::size_t(g)];
+        }
+        const double l = len(s);
+        return l > 1e-12 ? s * (1.0 / l) : fn;   // degenerate fan -> stay flat
+    };
+
     V3 lo{1e30, 1e30, 1e30}, hi{-1e30, -1e30, -1e30};
+    std::vector<V3> cn;   // per-corner shading normals, buffer reused across faces
+    std::size_t fidx = 0;
     for (const auto& f : mesh.faces()) {
         std::vector<Vert*> vs = mesh.face_verts(f.get());
-        V3 n = [&] { auto a = face_normal(mesh, f.get()); return V3{a[0], a[1], a[2]}; }();
+        V3 n = want_smooth ? fnorm[fidx]
+                           : [&] { auto a = face_normal(mesh, f.get()); return V3{a[0], a[1], a[2]}; }();
+        cn.resize(vs.size());
+        for (std::size_t k = 0; k < vs.size(); ++k) cn[k] = corner_normal(vs[k], n);
         const Material& fm = f->material;  // per-face material, or the scene default
         const V3 alb = fm.set ? V3{fm.color[0], fm.color[1], fm.color[2]} : sc.albedo;
         const double met = fm.set ? fm.metallic : sc.metallic;
@@ -616,11 +686,13 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
             t.b = {vs[i]->co[0], vs[i]->co[1], vs[i]->co[2]};
             t.c = {vs[i + 1]->co[0], vs[i + 1]->co[1], vs[i + 1]->co[2]};
             t.n = n;
+            t.na = cn[0]; t.nb = cn[i]; t.nc = cn[i + 1];   // fan: corner 0 is shared by every tri
             t.albedo = alb; t.metallic = met; t.rough = rgh; t.emission = emis;
             t.tex = tex; t.tex_scale = fm.tex_scale; t.tex2 = tc2;
             t.alb_tex = at; t.rgh_tex = rt; t.nrm_tex = nt; t.uv_scale = uvs;
             sc.tris.push_back(t);
         }
+        ++fidx;
     }
     for (int i = 0; i < int(sc.tris.size()); ++i)                     // collect the area lights
         if (luminance(sc.tris[i].emission) > 0.0) sc.emitter_idx.push_back(i);
@@ -687,9 +759,13 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                     const V3 gd = norm(fwd + right * uc + up2 * vc);
                     const Hit gh = intersect(sc, eye, gd);
                     if (gh.t < 1e29) {
-                        gMask[p] = 1; gNrm[p] = gh.n; gDep[p] = gh.t;
+                        // Guide the denoiser with the SHADING normal: the flat normal breaks at every
+                        // facet, which makes the edge-avoiding weight reject taps across a smooth
+                        // surface and leaves the grain it was meant to remove. Albedo is sampled the
+                        // same way radiance() does it, so demodulate/remodulate stays exact.
+                        gMask[p] = 1; gNrm[p] = gh.ns; gDep[p] = gh.t;
                         const V3 gwp = eye + gd * gh.t;
-                        gAlb[p] = gh.alb_tex >= 0 ? triplanar(sc.textures[gh.alb_tex], gwp, gh.n, gh.uv_scale)
+                        gAlb[p] = gh.alb_tex >= 0 ? triplanar(sc.textures[gh.alb_tex], gwp, gh.ns, gh.uv_scale)
                                 : gh.tex          ? apply_tex(gh.albedo, gh.tex, gh.tex_scale, gh.tex2, gwp)
                                                   : gh.albedo;
                     }

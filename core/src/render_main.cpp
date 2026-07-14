@@ -2,11 +2,15 @@
 //
 //   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N] [--threads N]
 //                 [--cam-eye X Y Z] [--cam-target X Y Z] [--cam-up X Y Z] [--cam-fov RAD]
-//                 [--denoise [N]]
+//                 [--denoise [N]] [--smooth-angle DEG | --flat]
 //
 // --denoise runs an edge-avoiding a-trous wavelet filter (N passes, default 5) so a
 // low-spp render comes out clean — the difference between a grainy path-traced clip
 // and a usable one.
+//
+// --smooth-angle shades a face corner smooth when the faces meeting there are within DEG
+// of each other (default 30), so a subdivided surface renders as the curved surface it
+// approximates while real creases stay hard. --flat restores faceted geometric normals.
 //
 // --threads caps the worker count (default 0 = every logical core, which pins the
 // CPU for the duration of a high-spp render); set it below your core count to
@@ -74,6 +78,8 @@ int main(int argc, char** argv) {
             else s.bloom = 0.12;
         }
         else if (a == "--bloom-threshold") s.bloom_threshold = next(s.bloom_threshold);
+        else if (a == "--smooth-angle") s.smooth_angle = next(s.smooth_angle);  // shade smooth below DEG
+        else if (a == "--flat") s.smooth_angle = 0.0;                           // faceted (geometric normals)
     }
 
     Program prog;

@@ -61,6 +61,19 @@ struct RenderSettings {
     // 0 = off; typical strength 0.05–0.3.
     double bloom = 0.0;
     double bloom_threshold = 1.0;
+
+    // Smooth shading, by angle. Each face CORNER gets a shading normal averaged from the
+    // faces around that vertex whose normal is within `smooth_angle` degrees of its own,
+    // and the tracer interpolates that across the triangle. So a subdivided surface shades
+    // as the smooth surface it approximates, while a crisp feature (a 90-degree rim, a
+    // chamfer) keeps its hard edge — with nothing to author. This is Blender's "smooth by
+    // angle"; below the threshold the geometry is treated as a sampling of a curved
+    // surface, above it as a real crease.
+    //
+    // Without this, subdivision only buys silhouette smoothness — the shading stays
+    // faceted, which is most of what reads as "CAD" instead of "organic".
+    // 0 = off (flat/geometric normals, the pre-smooth-shading behaviour).
+    double smooth_angle = 30.0;
 };
 
 struct Image {
