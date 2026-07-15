@@ -17,6 +17,19 @@ otherwise be guessing at:
                                     same place, and it degrades smoothly with misalignment
                                     rather than falling off a cliff like a hard IoU.
 
+KNOW WHAT `edges` IS NOT. Between two renders it measures alignment honestly. Between a
+PHOTOGRAPH and an untextured render it mostly measures the appearance gap: a real frame
+carries wet tarmac, cracks, stains, lettering and a timestamp overlay, so its edge map has
+orders of magnitude more content than a render of flat painted boxes, and the correlation
+sits near zero however good the camera is. Measured on the forecourt: -0.011, with a diff
+plate that is almost solid magenta ("the photo has edges here and you don't") — true, and
+useless as a geometry signal.
+
+For geometry against a photograph, the honest instrument is `mirage.solve.solve_camera`'s
+**rms_px**: reprojection residual on real correspondences, in pixels, with no appearance
+term in it at all. Use `edges` to compare two renders, or once the render carries projected
+photo texture. Reach for residuals otherwise.
+
 `compare` also writes a diff plate — reference, render, and where the edges disagree — since
 a number tells you THAT you are wrong and the picture tells you WHERE.
 

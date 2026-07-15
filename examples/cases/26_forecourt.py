@@ -397,11 +397,15 @@ def main():
     m = p.build()
     print(f"forecourt: {len(m.verts):,} verts  {len(m.faces):,} faces  ({len(p.ops)} top-level ops)")
     spp = 44 if preview else 300
-    # An overcast wet morning: soft high sun, sky fill, no hard key. Matched to the
-    # reference rather than to taste — its concrete sits at ~0.48 sRGB, so anything that
-    # renders the slab near-white is simply wrong, however pleasant it looks.
+    # An overcast wet morning: soft high sun, sky fill, no hard key.
+    #
+    # The exposure is SOLVED, not chosen: mirage.photomatch reports the render's median
+    # luma against the reference's in stops, and a secant on that converges in two steps
+    # (0.38 -> -2.36 stops, 1.406 -> +0.13, 1.353 -> +0.07). By eye I had swung from a stop
+    # too bright to two and a third too dark across half a dozen renders and called each of
+    # them about right. Do not hand-tune what you can measure.
     png = render(p, "hero", spp, 1600, 900,
-                 extra=["--sun", "0.18", "--env", "0.42", "--exposure", "0.38",
+                 extra=["--sun", "0.18", "--env", "0.42", "--exposure", "1.353",
                         "--sun-dir", "0.30", "0.62", "0.72", "--denoise", "4"])
     print("wrote", png)
     have_ref = REF.exists()
