@@ -12,6 +12,10 @@
 // of each other (default 30), so a subdivided surface renders as the curved surface it
 // approximates while real creases stay hard. --flat restores faceted geometric normals.
 //
+// --lens-k1/--lens-k2 give the camera a real radial lens (+k1 = barrel), which is what it
+// takes to line a render up with a photograph from an actual camera. mirage.solve fits them
+// from image<->world correspondences and reports the residual in pixels.
+//
 // --threads caps the worker count (default 0 = every logical core, which pins the
 // CPU for the duration of a high-spp render); set it below your core count to
 // leave the machine responsive.
@@ -80,6 +84,8 @@ int main(int argc, char** argv) {
         else if (a == "--bloom-threshold") s.bloom_threshold = next(s.bloom_threshold);
         else if (a == "--smooth-angle") s.smooth_angle = next(s.smooth_angle);  // shade smooth below DEG
         else if (a == "--flat") s.smooth_angle = 0.0;                           // faceted (geometric normals)
+        else if (a == "--lens-k1") s.lens_k1 = next(s.lens_k1);   // radial distortion (+ = barrel)
+        else if (a == "--lens-k2") s.lens_k2 = next(s.lens_k2);
     }
 
     Program prog;

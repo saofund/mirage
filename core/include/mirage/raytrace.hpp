@@ -62,6 +62,26 @@ struct RenderSettings {
     double bloom = 0.0;
     double bloom_threshold = 1.0;
 
+    // Radial lens distortion — a real lens, not a pinhole. Applied to the normalised image
+    // coordinates (a, b) before the primary ray is formed, where b spans [-1,1] top to
+    // bottom and a spans [-aspect, aspect], so r = 1 on the top and bottom edges:
+    //
+    //     s = 1 + k1*r^2 + k2*r^4        a *= s;  b *= s
+    //
+    // Positive k1 = barrel (straight lines bow outward), negative = pincushion. 0 = pinhole,
+    // bit-for-bit the old path.
+    //
+    // This exists because matching a real photograph is otherwise impossible, not as a
+    // stylistic knob: a security camera, a phone, a dashcam are all noticeably distorted, and
+    // no camera POSE can absorb that — get the pose perfect and the frame edges still refuse
+    // to line up. It is a missing term in the model. `mirage.solve.solve_camera` fits k1
+    // alongside the pose and reports the residual in pixels.
+    //
+    // The renderer runs the cheap direction (pixel -> ray, no inversion); mirage.solve owns
+    // the inverse, where iterating costs nothing.
+    double lens_k1 = 0.0;
+    double lens_k2 = 0.0;
+
     // Smooth shading, by angle. Each face CORNER gets a shading normal averaged from the
     // faces around that vertex whose normal is within `smooth_angle` degrees of its own,
     // and the tracer interpolates that across the triangle. So a subdivided surface shades

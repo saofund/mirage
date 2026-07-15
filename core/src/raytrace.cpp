@@ -749,14 +749,30 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     unsigned nthreads = settings.threads ? settings.threads : std::thread::hardware_concurrency();
     if (nthreads == 0) nthreads = 4;
 
+    // Pixel -> primary ray direction, through the lens. The normalised coords (a, b) have
+    // b in [-1,1] and a in [-aspect, aspect], so r = 1 on the top and bottom edges; the
+    // radial term bends the ray a real lens would bend. k1 = k2 = 0 short-circuits to the
+    // exact pinhole path. This is the CHEAP direction — no inversion — which is why
+    // mirage.solve owns the inverse instead.
+    const double lk1 = settings.lens_k1, lk2 = settings.lens_k2;
+    const bool has_lens = (lk1 != 0.0 || lk2 != 0.0);
+    auto primary = [&](double px, double py) {
+        double a = (2.0 * px / img.w - 1.0) * aspect;
+        double b = (1.0 - 2.0 * py / img.h);
+        if (has_lens) {
+            const double r2 = a * a + b * b;
+            const double s = 1.0 + lk1 * r2 + lk2 * r2 * r2;
+            a *= s; b *= s;
+        }
+        return norm(fwd + right * (a * th) + up2 * (b * th));
+    };
+
     auto render_rows = [&](int y0, int y1) {
         for (int y = y0; y < y1; ++y) {
             for (int x = 0; x < img.w; ++x) {
                 const std::size_t p = std::size_t(y) * img.w + x;
                 if (want_gbuf) {  // centre-ray primary hit: albedo/normal/depth (noise-free)
-                    const double uc = (2.0 * (x + 0.5) / img.w - 1.0) * aspect * th;
-                    const double vc = (1.0 - 2.0 * (y + 0.5) / img.h) * th;
-                    const V3 gd = norm(fwd + right * uc + up2 * vc);
+                    const V3 gd = primary(x + 0.5, y + 0.5);
                     const Hit gh = intersect(sc, eye, gd);
                     if (gh.t < 1e29) {
                         // Guide the denoiser with the SHADING normal: the flat normal breaks at every
@@ -774,9 +790,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                 for (int s = 0; s < settings.spp; ++s) {
                     Rng rng(std::uint32_t((x * 1973u) ^ (y * 9277u) ^ (s * 26699u)) | 1u);
                     const double jx = rng.next(), jy = rng.next();
-                    const double u = (2.0 * (x + jx) / img.w - 1.0) * aspect * th;
-                    const double v = (1.0 - 2.0 * (y + jy) / img.h) * th;
-                    V3 ro = eye, rd = norm(fwd + right * u + up2 * v);
+                    V3 ro = eye, rd = primary(x + jx, y + jy);
                     if (settings.aperture > 0.0) {   // thin lens: sample the aperture, aim at the focal plane
                         const V3 focal = eye + rd * (focus_dist / std::max(dot(rd, fwd), 1e-6));
                         const double lr = settings.aperture * std::sqrt(rng.next()), la = 2 * PI * rng.next();
