@@ -8,8 +8,8 @@ the tests check that a rough seed still lands on the true line.
 import numpy as np
 import pytest
 
-from mirage.solve import (fit_line, fit_quad, homography, line_intersection, paint_mask,
-                          apply_h)
+from mirage.solve import (apply_h, fit_line, fit_quad, homography, line_intersection,
+                          paint_mask, trace_line)
 
 
 def _canvas(h=400, w=600, bg=(0.10, 0.11, 0.13)):
@@ -114,6 +114,61 @@ def test_fit_line_complains_when_seeded_at_nothing():
     m = paint_mask(img)
     with pytest.raises(ValueError):
         fit_line(m, (30, 30), (120, 45), halfwidth=6)      # empty corner of the frame
+
+
+# --- tracing: the widest run wins ------------------------------------------- #
+def test_trace_line_ignores_clutter_beside_the_line():
+    """The reason trace_line exists. `fit_line` takes every mask pixel in its band, and a
+    band wide enough for a rough seed also swallows whatever is lying next to the line —
+    on the forecourt, the island's bright concrete apron. The marking is the WIDEST bright
+    thing on its scanline; the clutter is not."""
+    img = _canvas()
+    _stroke(img, (200, 40), (200, 360), width=16)             # the real line
+    for y in range(50, 350, 14):                              # persistent junk 30 px away
+        _stroke(img, (230, y), (238, y + 5), width=5)
+    m = paint_mask(img)
+    f = fit_line(m, (200, 60), (200, 340), halfwidth=45)
+    t = trace_line(m, (200, 60), (200, 340), search=45, min_width=8)
+    # the junk drags the band fit off the true x = 200; the trace ignores it
+    fx = -f["line"][2] / f["line"][0]
+    tx = -t["line"][2] / t["line"][0]
+    assert abs(tx - 200) < 1.5, f"trace landed at {tx}"
+    assert abs(fx - 200) > abs(tx - 200), "fit_line should be the one that got dragged"
+
+
+def test_trace_line_reports_the_width_profile():
+    """`widths` is what lets a caller check the fit against physics the fit never saw: a
+    constant-width line must thicken smoothly toward the camera."""
+    img = _canvas(h=400, w=400)
+    # a wedge: genuinely wider at the bottom, like a line receding in perspective
+    for i, y in enumerate(range(40, 360)):
+        half = 4 + i * 0.02
+        img[y, int(200 - half):int(200 + half) + 1] = (0.92, 0.92, 0.90)
+    t = trace_line(paint_mask(img), (200, 60), (200, 340), search=40, min_width=5)
+    assert t["widths"][0] < t["widths"][-1]
+    assert t["width_px"] > 8
+
+
+def test_trace_line_rejects_outlier_scanlines():
+    """Even taking the widest run, a scanline can grab the wrong thing where the paint is
+    scuffed. Two bad centres out of fourteen quietly tilt the whole line, so drop them."""
+    img = _canvas()
+    _stroke(img, (100, 60), (500, 300), width=12)
+    # a big bright blob squarely across the line -> those scanlines pick it instead
+    img[150:200, 250:340] = (0.93, 0.93, 0.91)
+    t = trace_line(paint_mask(img), (100, 60), (500, 300), search=60, min_width=6)
+    assert t["rejected"] > 0, "the blob's scanlines should have been rejected"
+    assert t["rms"] < 3.0
+    a, b, c = t["line"]
+    for p in ((100, 60), (300, 180), (500, 300)):
+        assert abs(a * p[0] + b * p[1] + c) < 4.0
+
+
+def test_trace_line_complains_when_it_finds_nothing():
+    img = _canvas()
+    _stroke(img, (100, 60), (500, 300), width=12)
+    with pytest.raises(ValueError):
+        trace_line(paint_mask(img), (60, 330), (120, 370), search=8, min_width=6)
 
 
 # --- corners ---------------------------------------------------------------- #

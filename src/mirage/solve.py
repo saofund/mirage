@@ -33,7 +33,7 @@ import numpy as np
 __all__ = ["homography", "apply_h", "rectify", "project", "solve_camera",
            "distort", "undistort", "Camera",
            "place_from_footprint", "solve_sun", "estimate_sun_env_ratio",
-           "paint_mask", "fit_line", "line_intersection", "fit_quad"]
+           "paint_mask", "fit_line", "trace_line", "line_intersection", "fit_quad"]
 
 
 def _n(v):
@@ -293,6 +293,96 @@ def fit_line(mask, seed_p0, seed_p1, halfwidth=14, iters=5):
             "p0": (c - d * L).tolist(), "p1": (c + d * L).tolist(),
             "n": int(len(sel)), "rms": rms,
             "width_px": float(rms * math.sqrt(12.0))}   # a uniform band of width w has sd w/sqrt(12)
+
+
+def trace_line(mask, seed_p0, seed_p1, samples=30, search=70, min_width=6):
+    """Follow a painted line by scanning ACROSS it and keeping the WIDEST run per scanline.
+
+    Use this instead of `fit_line` whenever anything bright sits near the line. `fit_line`
+    takes every mask pixel inside its band, and a band wide enough to tolerate a rough seed
+    is also wide enough to swallow a kerb, a concrete apron or a scuff — which then drag the
+    fit silently. A road marking is the WIDEST bright thing on its scanline; clutter is not.
+    Taking only the widest run throws the clutter away rather than averaging it in.
+
+    It caught a real one. On the forecourt, `fit_line` reported the left bay edge at 45 px
+    wide against the right edge's 31 for the same paint, and its thickness WOBBLED down the
+    frame (48,44,46,49,47,36,32) where a constant-width line in perspective must grow
+    smoothly. The right edge (nothing beside it) was already clean. Tracing fixes the left.
+
+    Returns the fit plus `widths` and `pts`, so the physics check — does the image thickness
+    grow toward the camera? — is available to the caller. That check is worth more than any
+    residual, because the fit has never seen it.
+    """
+    mask = np.asarray(mask)
+    H, W = mask.shape[:2]
+    p0 = np.asarray(seed_p0, float)
+    p1 = np.asarray(seed_p1, float)
+    d = _n(p1 - p0)
+    nrm = np.array([-d[1], d[0]])
+
+    ts = np.arange(-search, search + 1.0)
+    pts, widths = [], []
+    for s in np.linspace(0, 1, samples):
+        c = p0 + (p1 - p0) * s
+        q = c[None, :] + ts[:, None] * nrm[None, :]
+        xi = np.rint(q[:, 0]).astype(int)
+        yi = np.rint(q[:, 1]).astype(int)
+        ok = (xi >= 0) & (xi < W) & (yi >= 0) & (yi < H)
+        v = np.zeros(len(ts), bool)
+        v[ok] = mask[yi[ok], xi[ok]]
+        # widest run of True along the scan
+        best, bw, i = None, 0, 0
+        while i < len(v):
+            if v[i]:
+                j = i
+                while j < len(v) and v[j]:
+                    j += 1
+                if j - i > bw:
+                    bw, best = j - i, (i + j - 1) / 2.0
+                i = j
+            else:
+                i += 1
+        if best is None or bw < min_width:
+            continue
+        pts.append(c + ts[int(round(best))] * nrm)
+        widths.append(bw)
+
+    if len(pts) < 5:
+        raise ValueError(f"only {len(pts)} scanlines found a run >= {min_width} px — "
+                         f"wrong seed, or min_width too high")
+    P = np.asarray(pts)
+    Wd = np.asarray(widths, float)
+
+    # Robust refit. Even taking the widest run, a scanline can pick the WRONG thing where
+    # the line is scuffed or something crosses it, and that centre is then metres out in
+    # world terms while looking like a normal point. Fit, drop whatever sits > 2.5 sigma off,
+    # refit. Without this, two bad scanlines out of fourteen quietly tilt the whole line.
+    keep = np.ones(len(P), bool)
+    for _ in range(3):
+        ctr = P[keep].mean(0)
+        _, _, vt = np.linalg.svd(P[keep] - ctr)
+        dd = vt[0]
+        n2 = np.array([-dd[1], dd[0]])
+        off = np.abs((P - ctr) @ n2)
+        sd = float(np.sqrt((off[keep] ** 2).mean()))
+        nk = off < max(2.5 * sd, 1.5)
+        if nk.sum() < 5 or (nk == keep).all():
+            break
+        keep = nk
+
+    ctr = P[keep].mean(0)
+    _, _, vt = np.linalg.svd(P[keep] - ctr)
+    dd = vt[0]
+    n2 = np.array([-dd[1], dd[0]])
+    rms = float(np.sqrt((((P[keep] - ctr) @ n2) ** 2).mean()))
+    a, b = n2
+    return {"line": (float(a), float(b), float(-(a * ctr[0] + b * ctr[1]))),
+            "p0": (ctr - dd * np.linalg.norm(p1 - p0) / 2).tolist(),
+            "p1": (ctr + dd * np.linalg.norm(p1 - p0) / 2).tolist(),
+            "n": int(keep.sum()), "rejected": int((~keep).sum()),
+            "rms": rms, "pts": P[keep].tolist(),
+            "widths": [int(x) for x in Wd[keep]],
+            "width_px": float(np.median(Wd[keep]))}
 
 
 def line_intersection(l1, l2):
