@@ -33,7 +33,8 @@ import numpy as np
 __all__ = ["homography", "apply_h", "rectify", "project", "solve_camera",
            "distort", "undistort", "Camera",
            "place_from_footprint", "solve_sun", "estimate_sun_env_ratio",
-           "paint_mask", "fit_line", "trace_line", "line_intersection", "fit_quad"]
+           "paint_mask", "fit_line", "trace_line", "line_intersection", "vanishing_point",
+           "fit_quad"]
 
 
 def _n(v):
@@ -309,6 +310,15 @@ def trace_line(mask, seed_p0, seed_p1, samples=30, search=70, min_width=6):
     frame (48,44,46,49,47,36,32) where a constant-width line in perspective must grow
     smoothly. The right edge (nothing beside it) was already clean. Tracing fixes the left.
 
+    Do not seed all the way into a corner. Where two edges meet, the scan runs into the OTHER
+    edge and, if that one is wider, the widest-run rule hands back the wrong line entirely. The
+    forecourt's near bay divider is 16 px wide and its long edges are 28 and 43, so the end
+    scanlines reported widths of [63, 18, 17, ..., 16, 50] — the 63 and the 50 are junctions,
+    not the line. Two of them out of sixteen survived the 2.5-sigma cut (they inflate sigma
+    enough to shelter each other) and dragged the fit hard enough to move a downstream focal
+    length by 36%. Trimming the seed to the middle 80% took that line's rms from 4.67 to 0.60.
+    A `widths` list that spikes at both ends is the signature.
+
     Returns the fit plus `widths` and `pts`, so the physics check — does the image thickness
     grow toward the camera? — is available to the caller. That check is worth more than any
     residual, because the fit has never seen it.
@@ -386,13 +396,85 @@ def trace_line(mask, seed_p0, seed_p1, samples=30, search=70, min_width=6):
 
 
 def line_intersection(l1, l2):
-    """Where two image lines cross — a corner, to sub-pixel."""
+    """Where two image lines cross — a corner, to sub-pixel.
+
+    For a CORNER this is well posed: the lines were traced either side of the crossing, so the
+    answer sits in the middle of the evidence. For a VANISHING POINT it is not — the answer is
+    an extrapolation far outside the frame. Use `vanishing_point` there; it computes the same
+    number and then tells you whether to believe it.
+    """
     a1, b1, c1 = l1["line"] if isinstance(l1, dict) else l1
     a2, b2, c2 = l2["line"] if isinstance(l2, dict) else l2
     det = a1 * b2 - a2 * b1
     if abs(det) < 1e-12:
         raise ValueError("those lines are parallel — they have no corner")
     return np.array([(b1 * c2 - b2 * c1) / det, (c1 * a2 - c2 * a1) / det])
+
+
+def vanishing_point(l1, l2, min_angle_deg=5.0):
+    """Where two lines PARALLEL IN THE WORLD meet — and whether the answer means anything.
+
+    The forecourt taught this one the expensive way. Its bay strip gives two pairs of parallel
+    world lines, all four traced clean (rms 0.5–1.9 px, every one landing on its paint). The
+    pair along the strip meets 17.7 deg apart, 1.7 kpx away: solid, and it reproduced to ~20 px
+    under a bootstrap. The pair across the strip meets 2.5 deg apart, 16 kpx away — six frame
+    widths outside the image — and it is worthless. Both came back as a tidy pair of floats.
+
+    What separates them is not residual. Both pairs fit beautifully; the cross pair fits
+    beautifully and is still worthless, because the camera looks nearly ALONG the strip, so
+    those two lines are nearly parallel in the image and a 0.1 deg wobble in either sweeps the
+    intersection by kilopixels. `angle_deg` and `reach` see that. An rms cannot.
+
+    Returns `p`, plus:
+      angle_deg  the angle between the two image lines. Below ~5 deg, stop.
+      reach      |p - centroid of the evidence| / (extent of the evidence). How many times the
+                 length of the lines you actually traced you are extrapolating. reach 1 is
+                 interpolation; the forecourt's bad VP had reach 22.
+      sigma_px   first-order propagation of each line's own rms into the position of `p`.
+
+    sigma_px IS A LOWER BOUND and it will lie to you if you let it. It only knows the scatter
+    of the traced centres about their own fit, so it sees random error and is blind to any bias
+    that moves the whole line together — lens curvature, a trace that grabbed a kerb, a scan
+    that ran into a corner. On the forecourt it reported the bad VP's focal length as
+    3714 +- 270 px, while trimming the seeds by 10% moved that same number from 2722 to 3714.
+    A shift several times sigma under a change that should not have mattered IS the detection
+    of a systematic. So do not read sigma and stop: perturb the seed and re-run. If the answer
+    moves by more than sigma, sigma is decoration and the real error is whatever you just saw.
+    """
+    a1, b1, c1 = l1["line"] if isinstance(l1, dict) else l1
+    a2, b2, c2 = l2["line"] if isinstance(l2, dict) else l2
+    d1 = _n([-b1, a1])
+    d2 = _n([-b2, a2])
+    ang = float(np.degrees(np.arccos(np.clip(abs(d1 @ d2), -1.0, 1.0))))
+    if ang < min_angle_deg:
+        raise ValueError(
+            f"those lines are {ang:.2f} deg apart — too near parallel for a vanishing point. "
+            f"Their intersection is a number, but a {ang:.2f} deg wedge places it wherever "
+            f"the last tenth of a degree says, so it carries no information about the scene. "
+            f"Find a pair that converges harder, or accept that this direction is not "
+            f"measurable from this photograph.")
+    p = line_intersection(l1, l2)
+
+    ev, sig = [], 0.0
+    for l in (l1, l2):
+        if not isinstance(l, dict) or "pts" not in l:
+            continue
+        P = np.asarray(l["pts"], float)
+        ev.append(P)
+        span = float(np.linalg.norm(P[-1] - P[0]))
+        if span > 1e-9 and len(P) > 2:
+            # sd of the fitted direction: rms scatter / (lever arm) / sqrt(n)
+            sig += (l["rms"] * np.sqrt(12.0) / (span * np.sqrt(len(P)))) ** 2
+    if ev:
+        A = np.vstack(ev)
+        ctr = A.mean(0)
+        extent = float(np.linalg.norm(A.max(0) - A.min(0)))
+        reach = float(np.linalg.norm(p - ctr) / extent) if extent > 1e-9 else float("inf")
+        sigma = (float(np.linalg.norm(p - ctr)) * np.sqrt(sig)
+                 / max(np.sin(np.radians(ang)), 1e-9)) if sig > 0 else float("nan")
+    else:
+        reach, sigma = float("nan"), float("nan")
+    return {"p": p, "angle_deg": ang, "reach": reach, "sigma_px": sigma}
 
 
 def fit_quad(mask, seeds, halfwidth=14):

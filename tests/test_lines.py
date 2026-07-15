@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from mirage.solve import (apply_h, fit_line, fit_quad, homography, line_intersection,
-                          paint_mask, trace_line)
+                          paint_mask, trace_line, vanishing_point)
 
 
 def _canvas(h=400, w=600, bg=(0.10, 0.11, 0.13)):
@@ -181,6 +181,98 @@ def test_line_intersection():
 def test_parallel_lines_have_no_corner():
     with pytest.raises(ValueError):
         line_intersection({"line": (0, 1, -10)}, {"line": (0, 1, -50)})
+
+
+# --- vanishing points: the answer, and whether it means anything ------------- #
+def _traced(p0, p1, n=16, jitter=0.0, seed=0):
+    """A trace_line-shaped result, so vanishing_point can propagate its scatter."""
+    rng = np.random.default_rng(seed)
+    p0, p1 = np.asarray(p0, float), np.asarray(p1, float)
+    t = np.linspace(0, 1, n)[:, None]
+    P = p0 + (p1 - p0) * t
+    d = (p1 - p0) / np.linalg.norm(p1 - p0)
+    P = P + np.array([-d[1], d[0]]) * rng.normal(0, jitter, (n, 1))
+    ctr = P.mean(0)
+    _, _, vt = np.linalg.svd(P - ctr)
+    nn = np.array([-vt[0][1], vt[0][0]])
+    return {"line": (nn[0], nn[1], -nn @ ctr), "pts": P.tolist(),
+            "rms": float(np.sqrt((((P - ctr) @ nn) ** 2).mean()))}
+
+
+def test_vanishing_point_agrees_with_the_plain_intersection():
+    a, b = _traced((100, 900), (400, 100)), _traced((900, 900), (600, 100))
+    r = vanishing_point(a, b)
+    assert r["p"] == pytest.approx(line_intersection(a, b))
+    assert r["angle_deg"] == pytest.approx(41.1, abs=1.0)
+
+
+def test_vanishing_point_refuses_a_near_parallel_pair():
+    """The forecourt's cross edges: 2.5 deg apart, meeting 16 kpx away. Both lines fit to well
+    under a pixel and the intersection is a perfectly ordinary pair of floats. It is worthless,
+    and no residual says so — only the angle does. So the tool must be the one to refuse."""
+    far = _traced((879, 551), (1353, 499))
+    near = _traced((1107, 913), (1742, 828))
+    assert abs(np.degrees(np.arctan2(52, 474)) - np.degrees(np.arctan2(85, 635))) < 3.0
+    with pytest.raises(ValueError, match="too near parallel"):
+        vanishing_point(far, near)
+    p = line_intersection(far, near)          # the raw number is still there, and still fine
+    assert p[0] > 10000, "the intersection exists; that was never the problem"
+
+
+def test_vanishing_point_accepts_the_forecourt_pair_that_is_real():
+    """The same photo's edges ALONG the strip: 17.7 deg apart, and they hold up."""
+    left = _traced((1023, 780), (1326, 1260))
+    right = _traced((1584, 700), (2250, 1260))
+    r = vanishing_point(left, right)
+    assert r["angle_deg"] == pytest.approx(17.7, abs=1.5)
+    assert r["p"][1] < 0, "the strip recedes upward — its VP is above the frame"
+    assert r["p"] == pytest.approx([272, -412], abs=25)
+
+
+def test_reach_counts_how_far_past_the_evidence_you_are():
+    """rms cannot tell interpolation from extrapolation. reach can: it is the distance to the
+    answer in units of the evidence that produced it."""
+    near = vanishing_point(_traced((100, 900), (400, 100)), _traced((900, 900), (600, 100)))
+    far = vanishing_point(_traced((100, 900), (400, 100)), _traced((900, 900), (1000, 100)))
+    assert near["angle_deg"] > far["angle_deg"]        # 41 deg vs 13: a shallower wedge...
+    assert near["reach"] < 1.5
+    assert far["reach"] > near["reach"] * 2            # ...puts the answer 4x further out
+
+
+def test_sigma_blows_up_as_the_lines_close_up():
+    """Same scatter on the traced centres, shallower wedge -> the answer knows less. This is
+    the part rms refuses to report."""
+    wide = vanishing_point(_traced((100, 900), (400, 100), jitter=0.8, seed=1),
+                           _traced((900, 900), (600, 100), jitter=0.8, seed=2))
+    tight = vanishing_point(_traced((100, 900), (400, 100), jitter=0.8, seed=1),
+                            _traced((900, 900), (1000, 100), jitter=0.8, seed=2))
+    assert tight["sigma_px"] > wide["sigma_px"] * 3
+    assert wide["sigma_px"] < 40
+
+
+def test_sigma_is_a_lower_bound_and_says_so():
+    """The trap this whole function exists for. Bias every centre on one line the SAME way —
+    a lens bending it, a scan grabbing a kerb. The scatter about the fit is untouched, so rms
+    and sigma do not move at all, and the vanishing point walks away. sigma sees random error
+    only; a systematic is invisible to it and must be found by perturbing the input."""
+    a = _traced((100, 900), (400, 100), jitter=0.8, seed=1)
+    b = _traced((900, 900), (600, 100), jitter=0.8, seed=2)
+    clean = vanishing_point(a, b)
+
+    P = np.asarray(b["pts"], float)
+    P[:, 0] += np.linspace(0, 6, len(P))       # a 6 px systematic tilt, no added scatter
+    ctr = P.mean(0)
+    _, _, vt = np.linalg.svd(P - ctr)
+    nn = np.array([-vt[0][1], vt[0][0]])
+    bent = {"line": (nn[0], nn[1], -nn @ ctr), "pts": P.tolist(),
+            "rms": float(np.sqrt((((P - ctr) @ nn) ** 2).mean()))}
+    r = vanishing_point(a, bent)
+
+    assert bent["rms"] == pytest.approx(b["rms"], abs=0.15), "the bias left the residual alone"
+    assert r["sigma_px"] == pytest.approx(clean["sigma_px"], rel=0.35), "...and sigma too"
+    moved = np.linalg.norm(r["p"] - clean["p"])
+    assert moved > clean["sigma_px"], \
+        f"the VP moved {moved:.1f} px, sigma claimed {clean['sigma_px']:.1f} — that gap IS the"
 
 
 def test_fit_quad_recovers_corners_through_a_gap():
