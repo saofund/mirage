@@ -31,7 +31,8 @@ import math
 import numpy as np
 
 __all__ = ["homography", "apply_h", "rectify", "project", "solve_camera",
-           "distort", "undistort", "Camera"]
+           "distort", "undistort", "Camera",
+           "place_from_footprint", "solve_sun", "estimate_sun_env_ratio"]
 
 
 def _n(v):
@@ -225,6 +226,103 @@ def rectify(img, H_img_to_world, extent, px_per_m=100.0):
 # --------------------------------------------------------------------------- #
 # camera resection
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# placing things, and lighting them, by measurement
+# --------------------------------------------------------------------------- #
+def place_from_footprint(img_quad, H, height=None):
+    """An object's ground footprint, traced in the photo -> where it actually stands.
+
+    Returns {'at', 'rotate', 'size'} ready for a ``place`` op. `img_quad` is its four
+    footprint corners in image pixels, wound consistently; the first edge (p0->p1) defines
+    the object's local +x, so the yaw comes out of the photo rather than out of a guess.
+
+    This replaces the single biggest waste of time in matching a scene by hand: nudging an
+    object's x / y / rotate and re-rendering to see if it landed. The ground plane already
+    knows where it is. Trace it once and read the answer.
+    """
+    w = apply_h(H, img_quad)
+    if len(w) != 4:
+        raise ValueError(f"a footprint is four corners, got {len(w)}")
+    e0 = w[1] - w[0]
+    e1 = w[3] - w[0]
+    centre = w.mean(0)
+    yaw = math.degrees(math.atan2(e0[1], e0[0]))
+    out = {"at": [float(centre[0]), float(centre[1]), 0.0],
+           "rotate": [0.0, 0.0, float(yaw)],
+           "size": [float(np.linalg.norm(e0)), float(np.linalg.norm(e1))],
+           # how far from a true rectangle the traced quad is — a sanity check on the trace,
+           # not on the maths: opposite edges of a rectangle stay equal through a homography
+           "squareness": float(abs(np.linalg.norm(w[2] - w[3]) - np.linalg.norm(e0))
+                               / max(np.linalg.norm(e0), 1e-6))}
+    if height is not None:
+        out["size"].append(float(height))
+        out["at"][2] = float(height) / 2.0
+    return out
+
+
+def solve_sun(base_px, shadow_tip_px, height, H):
+    """The sun direction, from one shadow. Two clicks and a height.
+
+    A vertical of height `h` standing at ground point B casts its tip's shadow at ground
+    point S. The top of the object is (B.x, B.y, h), so the sun lies along
+    (top - S), normalised — and that is the whole solve. Both B and S are ON THE GROUND, so
+    the homography already knows where they are; nothing here needs the camera pose.
+
+    Note the split: the AZIMUTH comes from the ground vector S->B alone and needs no height
+    at all. Only the ELEVATION needs `h`, through tan(elev) = h / |S-B|. So a rough height
+    tilts the sun but cannot swing it around the compass — which is the good failure mode.
+
+    Returns a dict with the direction (pointing TOWARD the sun, matching
+    RenderSettings::sun_dir) plus the azimuth/elevation it implies, in degrees.
+    """
+    b = apply_h(H, np.atleast_2d(base_px))[0]
+    s = apply_h(H, np.atleast_2d(shadow_tip_px))[0]
+    ground = b - s
+    L = float(np.linalg.norm(ground))
+    if L < 1e-9:
+        raise ValueError("the base and the shadow tip are the same point — no shadow to solve")
+    d = _n(np.array([ground[0], ground[1], float(height)]))
+    return {"sun_dir": [float(v) for v in d],
+            "azimuth_deg": float(math.degrees(math.atan2(ground[1], ground[0]))),
+            "elevation_deg": float(math.degrees(math.atan2(height, L))),
+            "shadow_len_m": L}
+
+
+# The tracer's sun is SUN_E = (6.5, 6.0, 5.0) scaled by sun_intensity, and its sky averages
+# ~0.45 over the hemisphere scaled by env_intensity. Kept here so the estimate below speaks
+# the renderer's units rather than some abstract ratio.
+_SUN_E_LUM = 0.2126 * 6.5 + 0.7152 * 6.0 + 0.0722 * 5.0     # 6.034
+_SKY_MEAN = 0.45
+
+
+def estimate_sun_env_ratio(lit_luma, shadow_luma, n_dot_l):
+    """sun_intensity / env_intensity, from one lit patch and one shadowed patch.
+
+    Same material, both flat: the lit one gets sun + sky, the shadowed one only sky, so
+
+        lit / shadow = 1 + (SUN_E/pi * sun * NoL) / (SKY_MEAN * env)
+
+    and the contrast between them IS the ratio. This is what makes a scene's key readable
+    off the photograph rather than dialled in by feel.
+
+    ESTIMATE, and honestly so: it assumes the shadow sees the whole sky (it does not — the
+    thing casting the shadow occludes part of it, which biases the ratio DOWN), ignores
+    bounce from nearby surfaces, and takes the tracer's sky as uniform. Treat it as the
+    starting point for the exposure loop, not as an answer. It gets the order of magnitude
+    and the character (hard key vs overcast) right, which is what actually matters.
+    """
+    if shadow_luma <= 1e-6 or n_dot_l <= 1e-6:
+        raise ValueError("need a lit patch, a shadowed patch, and a positive N.L")
+    ratio = lit_luma / shadow_luma
+    if ratio <= 1.0:
+        return {"sun_over_env": 0.0, "contrast": float(ratio),
+                "note": "no measurable shadow contrast — overcast; the key is the sky"}
+    k = (_SUN_E_LUM / math.pi) / _SKY_MEAN
+    return {"sun_over_env": float((ratio - 1.0) / (k * n_dot_l)),
+            "contrast": float(ratio),
+            "note": "estimate: assumes the shadow sees the full sky (biases low)"}
+
+
 def _pack(eye, yaw, pitch, roll, fov, k1):
     return np.array([*eye, yaw, pitch, roll, fov, k1], float)
 
