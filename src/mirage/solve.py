@@ -32,7 +32,8 @@ import numpy as np
 
 __all__ = ["homography", "apply_h", "rectify", "project", "solve_camera",
            "distort", "undistort", "Camera",
-           "place_from_footprint", "solve_sun", "estimate_sun_env_ratio"]
+           "place_from_footprint", "solve_sun", "estimate_sun_env_ratio",
+           "paint_mask", "fit_line", "line_intersection", "fit_quad"]
 
 
 def _n(v):
@@ -226,6 +227,97 @@ def rectify(img, H_img_to_world, extent, px_per_m=100.0):
 # --------------------------------------------------------------------------- #
 # camera resection
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# reading a line off a photograph, instead of squinting at it
+# --------------------------------------------------------------------------- #
+def paint_mask(img, min_value=0.52, max_sat=0.16):
+    """Road/floor MARKINGS, as a boolean mask: bright and unsaturated.
+
+    Brightness alone does not work on a wet surface — standing water is bright too, because
+    it is mirroring the sky. But it is bright and BLUE, while paint is bright and colourless,
+    so saturation is what separates a line from a puddle. On the forecourt this is the whole
+    difference between a clean mask and a green smear.
+    """
+    a = np.asarray(img, float)
+    if a.max() > 1.5:
+        a = a / 255.0
+    mx = a.max(2)
+    mn = a.min(2)
+    sat = (mx - mn) / (mx + 1e-6)
+    return (mx > min_value) & (sat < max_sat)
+
+
+def fit_line(mask, seed_p0, seed_p1, halfwidth=14, iters=5):
+    """Fit a painted line precisely, given a rough two-point seed through it.
+
+    This is the right division of labour. A human is good at "there is a line roughly here"
+    and hopeless at its sub-pixel position — reading a bay corner off a photo by eye is what
+    produced a quad that missed the paint entirely. The machine is the exact opposite. So
+    seed it by hand and let it measure: collect the mask pixels within `halfwidth` of the
+    current estimate, refit by total least squares (PCA, so it handles vertical lines that
+    y = mx + c cannot), and iterate — the band re-centres onto the true line each pass.
+
+    Returns {'line': (a,b,c) normalised so a^2+b^2 = 1, 'p0', 'p1', 'n', 'rms', 'width_px'}.
+
+    Read `rms` correctly: it is the inliers' spread about the fit, which for a clean painted
+    stroke is NOT the fit error — it is the stroke's own half-width. A uniform band of width
+    w has standard deviation w/sqrt(12), so a crisp 9 px line reports rms 2.6 and is perfect.
+    `width_px` reports that back as a thickness (rms * sqrt(12)) so the number means
+    something. What a bad fit looks like is rms far larger than any plausible line: fitting a
+    smear of wet tarmac gives tens of pixels. Compare it to the width you expect, not to zero.
+    """
+    ys, xs = np.nonzero(mask)
+    pts = np.stack([xs, ys], 1).astype(float)
+    p0 = np.asarray(seed_p0, float)
+    p1 = np.asarray(seed_p1, float)
+    d = _n(p1 - p0)
+    c = (p0 + p1) / 2
+
+    for _ in range(iters):
+        nrm = np.array([-d[1], d[0]])
+        off = (pts - c) @ nrm
+        along = (pts - c) @ d
+        L = np.linalg.norm(p1 - p0) / 2
+        keep = (np.abs(off) < halfwidth) & (np.abs(along) < L * 1.15)
+        sel = pts[keep]
+        if len(sel) < 12:
+            raise ValueError(f"only {len(sel)} paint pixels near the seed — wrong place, or "
+                             f"halfwidth too small")
+        c = sel.mean(0)
+        u, s, vt = np.linalg.svd(sel - c)
+        d = vt[0]                       # principal direction = the line
+    nrm = np.array([-d[1], d[0]])
+    rms = float(np.sqrt((((sel - c) @ nrm) ** 2).mean()))
+    a, b = nrm
+    return {"line": (float(a), float(b), float(-(a * c[0] + b * c[1]))),
+            "p0": (c - d * L).tolist(), "p1": (c + d * L).tolist(),
+            "n": int(len(sel)), "rms": rms,
+            "width_px": float(rms * math.sqrt(12.0))}   # a uniform band of width w has sd w/sqrt(12)
+
+
+def line_intersection(l1, l2):
+    """Where two image lines cross — a corner, to sub-pixel."""
+    a1, b1, c1 = l1["line"] if isinstance(l1, dict) else l1
+    a2, b2, c2 = l2["line"] if isinstance(l2, dict) else l2
+    det = a1 * b2 - a2 * b1
+    if abs(det) < 1e-12:
+        raise ValueError("those lines are parallel — they have no corner")
+    return np.array([(b1 * c2 - b2 * c1) / det, (c1 * a2 - c2 * a1) / det])
+
+
+def fit_quad(mask, seeds, halfwidth=14):
+    """Four seeded edges -> the quad's four corners, measured.
+
+    `seeds` is four (p0, p1) pairs in order, each roughly along one edge. Corners come from
+    intersecting consecutive fitted edges, so they are recovered even where the paint is
+    scuffed away or hidden — which is usually exactly where the corner is.
+    """
+    lines = [fit_line(mask, a, b, halfwidth=halfwidth) for a, b in seeds]
+    corners = [line_intersection(lines[i - 1], lines[i]) for i in range(len(lines))]
+    return {"corners": np.array(corners), "lines": lines,
+            "rms": [round(l["rms"], 3) for l in lines]}
+
+
 # --------------------------------------------------------------------------- #
 # placing things, and lighting them, by measurement
 # --------------------------------------------------------------------------- #
