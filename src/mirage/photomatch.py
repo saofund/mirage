@@ -17,6 +17,10 @@ otherwise be guessing at:
                                     same place, and it degrades smoothly with misalignment
                                     rather than falling off a cliff like a hard IoU.
 
+  ``chamfer``   is my geometry right? For each RENDER edge, the distance in pixels to the
+                                    nearest strong REFERENCE edge. Never the reverse — and
+                                    that asymmetry is the whole thing. See below.
+
 KNOW WHAT `edges` IS NOT. Between two renders it measures alignment honestly. Between a
 PHOTOGRAPH and an untextured render it mostly measures the appearance gap: a real frame
 carries wet tarmac, cracks, stains, lettering and a timestamp overlay, so its edge map has
@@ -25,15 +29,25 @@ sits near zero however good the camera is. Measured on the forecourt: -0.011, wi
 plate that is almost solid magenta ("the photo has edges here and you don't") — true, and
 useless as a geometry signal.
 
-For geometry against a photograph, the honest instrument is `mirage.solve.solve_camera`'s
-**rms_px**: reprojection residual on real correspondences, in pixels, with no appearance
-term in it at all. Use `edges` to compare two renders, or once the render carries projected
-photo texture. Reach for residuals otherwise.
+This file used to answer that with "reach for residuals" — go get correspondences from
+`solve.solve_camera` instead. That sentence cost a working week. Residuals need
+correspondences, correspondences on a photograph need lines, lines need paint, and paint
+needs a road: the forecourt got solved by hand-seeding traces off zoomed crops, which works
+on exactly one photograph of exactly one petrol station and generalises to nothing. A
+living room has no road markings. The loss failing is not a reason to go surveying; it is a
+reason to fix the loss.
+
+`chamfer` is the fix, and the fix is asymmetry. Correlation asks "do these two edge maps
+look alike", so the photo's cracks and stains — which the render can never have and should
+never be asked to have — dominate it. Chamfer asks only "is every edge I DREW supported by
+something real nearby". Structure the photo has and the render lacks is free; structure the
+render invents is paid for. That question is answerable against any photograph of anything,
+which is what `edges` never was, and it needs no paint, no rectangles and no hand-seeding.
 
 `compare` also writes a diff plate — reference, render, and where the edges disagree — since
 a number tells you THAT you are wrong and the picture tells you WHERE.
 
-numpy + PIL only, matching the rest of the codebase.
+numpy + PIL only, matching the rest of the codebase — including the distance transform.
 """
 from __future__ import annotations
 
@@ -42,7 +56,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-__all__ = ["srgb_to_linear", "linear_to_srgb", "compare", "edge_map", "diff_plate"]
+__all__ = ["srgb_to_linear", "linear_to_srgb", "compare", "edge_map", "diff_plate",
+           "chamfer", "edt"]
 
 
 def srgb_to_linear(c):
@@ -66,12 +81,19 @@ def _luma(lin):
     return lin @ np.array([0.2126, 0.7152, 0.0722])
 
 
-def edge_map(rgb, blur=5):
+def edge_map(rgb, blur=5, normalize=True):
     """A soft edge field: Sobel magnitude, then blurred into a distance-like ramp.
 
     Blurring is the point. Two hard edge maps a few pixels apart score ZERO overlap and the
     metric can't tell "nearly aligned" from "completely wrong" — no gradient to follow. Blur
     them and near-misses score high, so the number improves as the geometry approaches.
+
+    `normalize` divides by the map's own peak, which makes two maps comparable and makes any
+    ABSOLUTE reading of the result meaningless: a frame holding one faint edge and a frame
+    holding a hundred crisp ones both come out peaking at 1.0. Pass False when you need to
+    know how much edge is actually there — see `chamfer`'s `edge_mass`, which is exactly that
+    question and which silently answered a constant for as long as it was reading a
+    self-normalised map through a quantile.
     """
     g = _luma(srgb_to_linear(rgb))
     gx = np.zeros_like(g)
@@ -79,13 +101,100 @@ def edge_map(rgb, blur=5):
     gx[:, 1:-1] = g[:, 2:] - g[:, :-2]
     gy[1:-1, :] = g[2:, :] - g[:-2, :]
     m = np.hypot(gx, gy)
-    m = m / (m.max() + 1e-9)
+    if normalize:
+        m = m / (m.max() + 1e-9)
     if blur > 1:
         im = Image.fromarray((np.clip(m, 0, 1) * 255).astype(np.uint8))
         from PIL import ImageFilter
         im = im.filter(ImageFilter.GaussianBlur(radius=blur))
         m = np.asarray(im, float) / 255.0
     return m
+
+
+def edt(mask, radius=48):
+    """Distance from every pixel to the nearest True in `mask`, exact out to `radius`.
+
+    Squared Euclidean distance is separable — d2(y,x) = min_x' [(x-x')^2 + min_y' ((y-y')^2 +
+    f(y',x'))] — so two passes of shifted minima give the exact answer, with no scipy and no
+    per-row Python loop. Cost is O(radius) vectorised passes, not O(radius^2).
+
+    Truncating at `radius` is a feature, not a shortcut. Beyond it the distance saturates,
+    which makes anything downstream a ROBUST loss: a render edge with no support at all —
+    something the proxy invented, or a real object the model does not have yet — contributes a
+    bounded penalty instead of dragging the whole fit toward itself. An untruncated chamfer is
+    a least-squares fit to its own worst outlier.
+    """
+    mask = np.asarray(mask, bool)
+    r = int(radius)
+    big = float(r * r + 1)
+    f = np.where(mask, 0.0, big)
+    g = f.copy()
+    for dx in range(1, r + 1):                      # min over x', exactly
+        c = float(dx * dx)
+        g[:, :-dx] = np.minimum(g[:, :-dx], f[:, dx:] + c)
+        g[:, dx:] = np.minimum(g[:, dx:], f[:, :-dx] + c)
+    d = g.copy()
+    for dy in range(1, r + 1):                      # then min over y'
+        c = float(dy * dy)
+        d[:-dy, :] = np.minimum(d[:-dy, :], g[dy:, :] + c)
+        d[dy:, :] = np.minimum(d[dy:, :], g[:-dy, :] + c)
+    return np.sqrt(np.minimum(d, big))
+
+
+def chamfer(render, reference, radius=48, ref_keep=0.05, size=None):
+    """How far every edge the render DREW sits from the nearest strong edge in the photograph.
+
+    The one metric here built to survive a real photograph against a rough untextured proxy,
+    and the only one that does not care what the scene is. It asks a single question — "is
+    what I drew supported by something real nearby" — and never the reverse, so a photo full
+    of cracks, stains, lettering and a burnt-in timestamp costs nothing. Those are edges the
+    render lacks; lacking them is correct.
+
+    `ref_keep` is the fraction of reference pixels kept as edges, so the threshold is a
+    QUANTILE, not a level. A quantile transfers between photographs; an absolute threshold is
+    tuned to one image's contrast and is another thing that only works on the picture you
+    tuned it on. The default keeps the strongest 5% — on a forecourt that is the paint, the
+    kerbs and the hardware, not the tarmac's grain.
+
+    Returns `chamfer_px` (lower is better, saturating at `radius`) plus `edge_mass`.
+
+    MIND THE EDGE MASS. The score is a weighted mean over the render's OWN edges, so a render
+    with no edges scores a perfect 0. Point the camera at the sky and the loss is delighted.
+    An optimiser will find that before it finds the answer, so `edge_mass` — the mean raw
+    gradient of the render — is here to catch a step that buys its improvement by drawing
+    less, and it must be read as ABSOLUTE.
+
+    It was born broken and that is worth keeping. The first version thresholded the RENDER at
+    its own 95th percentile and reported the fraction of pixels kept, which is 5% of pixels by
+    the definition of a percentile: it read exactly 0.0500 for all eleven cameras of a real
+    sweep and could not have read anything else. A guard computed from a self-normalising
+    quantile guards nothing. The render is now weighted by raw gradient STRENGTH with no
+    threshold at all — strong edges dominate on their merits — and only the reference keeps a
+    quantile, where adapting to the photograph's own contrast is the point.
+    """
+    if isinstance(render, (str, Path)):
+        ref_im = Image.open(reference).convert("RGB")
+        ren = _load(render, size=size or ref_im.size)
+        ref = np.asarray(ref_im.resize(size, Image.LANCZOS) if size else ref_im, float) / 255.0
+    else:
+        ren, ref = np.asarray(render, float), np.asarray(reference, float)
+        if ren.max() > 1.5:
+            ren = ren / 255.0
+        if ref.max() > 1.5:
+            ref = ref / 255.0
+
+    er = edge_map(ren, blur=0, normalize=False)
+    ef = edge_map(ref, blur=0, normalize=False)
+    d = edt(ef >= max(float(np.quantile(ef, 1.0 - ref_keep)), 1e-9), radius=radius)
+
+    mass = float(er.mean())
+    tot = float(er.sum())
+    if tot < 1e-9:
+        return {"chamfer_px": float(radius), "edge_mass": 0.0,
+                "note": "the render has no edges at all — scoring it as maximally wrong "
+                        "rather than perfectly right"}
+    return {"chamfer_px": round(float((er * d).sum() / tot), 3),
+            "edge_mass": round(mass, 6)}
 
 
 def compare(render, reference, regions=None, plate=None):
