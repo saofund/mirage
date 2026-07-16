@@ -35,7 +35,8 @@ V3 norm(const V3& a) { double l = len(a); return l > 0 ? a * (1.0 / l) : a; }
 //              path through the same code (see RenderSettings::smooth_angle).
 struct Tri { V3 a, b, c, n; V3 na, nb, nc; V3 albedo; double metallic; double rough; V3 emission{0, 0, 0};
              int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
-             int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; double uv_scale = 1.0; };  // image-map indices
+             int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; double uv_scale = 1.0;  // image-map indices
+             int oid = 0; };   // 1-based index into RenderSettings::id_tags, 0 = untagged
 
 // Axis-aligned bounding box + a binary BVH so intersection is O(log n), not O(n)
 // per ray — the difference between seconds and minutes on a subdivided mesh.
@@ -91,6 +92,7 @@ struct Hit {
     V3 emission{0, 0, 0};
     int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
     int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; double uv_scale = 1.0;
+    int oid = 0;      // which placed object this is, for the id AOV
     bool is_ground = false;
 };
 
@@ -296,6 +298,7 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
                     h.albedo = t.albedo; h.metallic = t.metallic; h.rough = t.rough;
                     h.emission = t.emission; h.tex = t.tex; h.tex_scale = t.tex_scale; h.tex2 = t.tex2;
                     h.alb_tex = t.alb_tex; h.rgh_tex = t.rgh_tex; h.nrm_tex = t.nrm_tex; h.uv_scale = t.uv_scale;
+                    h.oid = t.oid;
                     h.is_ground = false;
                 }
             }
@@ -669,6 +672,10 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                            : [&] { auto a = face_normal(mesh, f.get()); return V3{a[0], a[1], a[2]}; }();
         cn.resize(vs.size());
         for (std::size_t k = 0; k < vs.size(); ++k) cn[k] = corner_normal(vs[k], n);
+        int oid = 0;   // first id_tag this face carries wins; caller's order, not the mesh's
+        for (std::size_t k = 0; k < settings.id_tags.size() && oid == 0; ++k)
+            if (std::find(f->tags.begin(), f->tags.end(), settings.id_tags[k]) != f->tags.end())
+                oid = int(k) + 1;
         const Material& fm = f->material;  // per-face material, or the scene default
         const V3 alb = fm.set ? V3{fm.color[0], fm.color[1], fm.color[2]} : sc.albedo;
         const double met = fm.set ? fm.metallic : sc.metallic;
@@ -690,6 +697,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
             t.albedo = alb; t.metallic = met; t.rough = rgh; t.emission = emis;
             t.tex = tex; t.tex_scale = fm.tex_scale; t.tex2 = tc2;
             t.alb_tex = at; t.rgh_tex = rt; t.nrm_tex = nt; t.uv_scale = uvs;
+            t.oid = oid;
             sc.tris.push_back(t);
         }
         ++fidx;
@@ -740,11 +748,18 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     // HDR accumulation buffer, plus (only if denoising) a noise-free primary G-buffer:
     // the centre-ray hit's albedo / normal / depth, which guides the edge-avoiding filter.
     std::vector<V3> hdr(NP, V3{0, 0, 0});
-    const bool want_gbuf = settings.denoise > 0;
-    std::vector<V3> gAlb(want_gbuf ? NP : 0, V3{1, 1, 1});
-    std::vector<V3> gNrm(want_gbuf ? NP : 0, V3{0, 0, 1});
-    std::vector<double> gDep(want_gbuf ? NP : 0, 1e30);
-    std::vector<char> gMask(want_gbuf ? NP : 0, 0);
+    // The id AOV rides the same centre ray as the denoiser's G-buffer, so asking for ids
+    // turns that pass on even with denoise off. It is one ray per pixel against an spp of
+    // hundreds — free — and it must be the CENTRE ray, not a jittered one, or an object's
+    // id would dither along its own silhouette.
+    const bool want_ids = !settings.id_tags.empty();
+    const bool want_gbuf = settings.denoise > 0 || want_ids;
+    const bool want_guide = settings.denoise > 0;
+    std::vector<V3> gAlb(want_guide ? NP : 0, V3{1, 1, 1});
+    std::vector<V3> gNrm(want_guide ? NP : 0, V3{0, 0, 1});
+    std::vector<double> gDep(want_guide ? NP : 0, 1e30);
+    std::vector<char> gMask(want_guide ? NP : 0, 0);
+    if (want_ids) img.ids.assign(NP, 0);
 
     unsigned nthreads = settings.threads ? settings.threads : std::thread::hardware_concurrency();
     if (nthreads == 0) nthreads = 4;
@@ -774,7 +789,8 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                 if (want_gbuf) {  // centre-ray primary hit: albedo/normal/depth (noise-free)
                     const V3 gd = primary(x + 0.5, y + 0.5);
                     const Hit gh = intersect(sc, eye, gd);
-                    if (gh.t < 1e29) {
+                    if (want_ids && gh.t < 1e29) img.ids[p] = gh.oid;
+                    if (want_guide && gh.t < 1e29) {
                         // Guide the denoiser with the SHADING normal: the flat normal breaks at every
                         // facet, which makes the edge-avoiding weight reject taps across a smooth
                         // surface and leaves the grain it was meant to remove. Albedo is sampled the

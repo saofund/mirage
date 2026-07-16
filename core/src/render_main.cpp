@@ -25,6 +25,7 @@
 // the ground-truth render of the same mirage::Program a human/AI authored. The
 // camera defaults to a 3/4 exterior view; the --cam-* flags place it anywhere
 // (e.g. inside a room), which is what interior scenes need.
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -43,7 +44,7 @@ static std::string read_file(const std::string& path) {
 }
 
 int main(int argc, char** argv) {
-    std::string oplog, out = "render.ppm";
+    std::string oplog, out = "render.ppm", ids_out;
     RenderSettings s;
     Camera cam;  // default 3/4 exterior view; any field overridable via --cam-* below
     for (int i = 1; i < argc; ++i) {
@@ -84,6 +85,13 @@ int main(int argc, char** argv) {
         else if (a == "--bloom-threshold") s.bloom_threshold = next(s.bloom_threshold);
         else if (a == "--smooth-angle") s.smooth_angle = next(s.smooth_angle);  // shade smooth below DEG
         else if (a == "--flat") s.smooth_angle = 0.0;                           // faceted (geometric normals)
+        else if (a == "--ids" && i + 1 < argc) ids_out = argv[++i];        // object-id AOV (PGM)
+        else if (a == "--id-tags" && i + 1 < argc) {   // comma-separated face tags, IN ORDER
+            std::string t = argv[++i], cur;
+            for (char ch : t) { if (ch == ',') { if (!cur.empty()) s.id_tags.push_back(cur); cur.clear(); }
+                                else cur += ch; }
+            if (!cur.empty()) s.id_tags.push_back(cur);
+        }
         else if (a == "--lens-k1") s.lens_k1 = next(s.lens_k1);   // radial distortion (+ = barrel)
         else if (a == "--lens-k2") s.lens_k2 = next(s.lens_k2);
     }
@@ -108,5 +116,24 @@ int main(int argc, char** argv) {
     Image img = path_trace(mesh, cam, s);
     write_ppm(img, out);
     std::printf("wrote %s (%dx%d)\n", out.c_str(), img.w, img.h);
+    if (!ids_out.empty()) {
+        if (img.ids.empty()) {
+            std::fprintf(stderr, "--ids needs --id-tags: without tags to look for there are "
+                                 "no objects to number\n");
+            return 1;
+        }
+        // 16-bit binary PGM, big-endian per the format. Deliberately not PNG: this buffer is
+        // NOT a picture, and anything that resamples or gamma-corrects it would quietly turn
+        // ids into other ids. A lossless integer raster behind a two-line header keeps that
+        // honest and keeps the renderer free of an image library.
+        std::ofstream f(ids_out, std::ios::binary);
+        f << "P5\n" << img.w << " " << img.h << "\n65535\n";
+        for (int v : img.ids) {
+            const unsigned q = unsigned(std::clamp(v, 0, 65535));
+            const char b[2] = {char((q >> 8) & 0xFF), char(q & 0xFF)};
+            f.write(b, 2);
+        }
+        std::printf("wrote %s (object ids: %zu tags)\n", ids_out.c_str(), s.id_tags.size());
+    }
     return 0;
 }

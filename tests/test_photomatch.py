@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from mirage.photomatch import (chamfer, compare, edge_map, edt, linear_to_srgb,
-                               srgb_to_linear)
+from mirage.photomatch import (chamfer, chamfer_per_object, compare, edge_map, edt,
+                               linear_to_srgb, read_ids, srgb_to_linear)
 
 
 def _save(tmp_path, name, arr):
@@ -274,3 +274,75 @@ def test_edge_mass_is_absolute_not_relative_to_the_frames_own_peak():
     weak = np.full((160, 240, 3), 0.5)
     weak[40:110, 60:150] = 0.5 * 0.97                # same shape, 20x less contrast
     assert chamfer(weak, strong)["edge_mass"] < chamfer(strong, strong)["edge_mass"] / 5
+
+
+# --- per object: one number each, instead of one for the frame -------------- #
+def _three_objects(shift_b=0, w=240, h=160):
+    """A frame with three things in it and the id AOV that names them."""
+    img = np.full((h, w, 3), 0.55, float)
+    ids = np.zeros((h, w), int)
+    boxes = [(20, 60, 30, 80), (20, 60, 100 + shift_b, 150 + shift_b), (90, 140, 40, 190)]
+    for k, (y0, y1, x0, x1) in enumerate(boxes, start=1):
+        img[y0:y1, x0:x1] = 0.55 * (0.3 + 0.15 * k)
+        ids[y0:y1, x0:x1] = k
+    return img, ids
+
+
+def test_per_object_isolates_the_one_that_is_wrong():
+    """The reason this exists. On the forecourt the WHOLE-FRAME score sat at 14.1–15.0 px for
+    every camera from fov 0.9 to 1.6 — flat, because a proxy yard and a box van that can never
+    match drowned everything. Move ONE object and the frame average barely twitches; the
+    per-object score names it.
+    """
+    truth, ids_t = _three_objects()
+    ren, ids_r = _three_objects(shift_b=22)          # object 2 is 22 px out; 1 and 3 are exact
+    names = ["left", "middle", "wide"]
+
+    per = chamfer_per_object(ren, ids_r, truth, names=names)
+    assert per["middle"]["chamfer_px"] > 8.0, per
+    assert per["left"]["chamfer_px"] < 1.5, per
+    assert per["wide"]["chamfer_px"] < 1.5, per
+    assert per["middle"]["chamfer_px"] > per["left"]["chamfer_px"] + 6
+
+    whole = chamfer(ren, truth)["chamfer_px"]
+    assert whole < per["middle"]["chamfer_px"] / 2, \
+        f"the frame average ({whole}) hid a {per['middle']['chamfer_px']} px error"
+
+
+def test_per_object_gives_a_measured_work_order():
+    """`worst_first` stops being a guess: sort on the number."""
+    truth, _ = _three_objects()
+    ren, ids_r = _three_objects(shift_b=22)
+    per = chamfer_per_object(ren, ids_r, truth, names=["left", "middle", "wide"])
+    order = sorted(per, key=lambda n: -per[n]["chamfer_px"])
+    assert order[0] == "middle"
+
+
+def test_per_object_reports_area_so_an_object_cannot_optimise_itself_away():
+    """Same trap as edge_mass, one level down: chamfer is a mean over an object's OWN edges,
+    so an object shrinking toward nothing scores beautifully. `px` is what catches it."""
+    truth, _ = _three_objects()
+    ren, ids = _three_objects()
+    ids[ids == 2] = 0                       # object 2 all but vanishes from the AOV
+    ids[30:33, 120:123] = 2
+    per = chamfer_per_object(ren, ids, truth, names=["left", "middle", "wide"])
+    assert per["middle"]["px"] < 60
+    assert per["middle"]["px"] * 20 < per["left"]["px"]
+
+
+def test_per_object_refuses_a_mismatched_id_buffer():
+    """An id is a label, not a brightness: resampling it averages 1 and 3 into 2 and invents an
+    object that was never there. So a size mismatch is an error, never a silent resize."""
+    truth, _ = _three_objects()
+    ren, ids = _three_objects(w=120, h=80)
+    with pytest.raises(ValueError, match="never resampled"):
+        chamfer_per_object(truth, ids, truth)
+
+
+def test_read_ids_round_trips_a_16_bit_pgm(tmp_path):
+    _, ids = _three_objects()
+    p = tmp_path / "ids.pgm"
+    with open(p, "wb") as f:
+        f.write(b"P5\n%d %d\n65535\n" % (ids.shape[1], ids.shape[0]))
+        f.write(ids.astype(">u2").tobytes())
+    assert np.array_equal(read_ids(p), ids)

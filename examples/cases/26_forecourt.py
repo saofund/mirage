@@ -240,11 +240,11 @@ def island():
     p.place(box(2 * ISL_X, ISL_Y, ISL_Z), at=[0, 0, ISL_Z / 2], material=CONCRETE)
     p.place(box(2 * ISL_X - 0.10, ISL_Y - 0.10, 0.02), at=[0, 0, ISL_Z], material=STEEL)
     # the canopy column, rising out of frame
-    p.place(box(0.46, 0.46, 5.4), at=[0, 0.75, ISL_Z + 2.7], material=COL_GREY)
-    p.place(ad_panel(), at=[0, 0.52, ISL_Z + 2.62], material=None)
+    p.place(box(0.46, 0.46, 5.4), at=[0, 0.75, ISL_Z + 2.7], material=COL_GREY, mark="column")
+    p.place(ad_panel(), at=[0, 0.52, ISL_Z + 2.62], material=None, mark="sign")
     p.place(box(0.40, 0.02, 0.10), at=[0, 0.51, ISL_Z + 3.78], material=WHITE)  # the Gulf plate
-    p.place(dispenser(), at=[0, 0.30, ISL_Z])
-    p.place(fire_box(), at=[0.10, -0.44, ISL_Z])
+    p.place(dispenser(), at=[0, 0.30, ISL_Z], mark="dispenser")
+    p.place(fire_box(), at=[0.10, -0.44, ISL_Z], mark="firebox")
     p.place(bucket(), at=[0.58, -0.42, ISL_Z], material=STEEL)
     for i, (dx, h, c) in enumerate([(-0.30, 0.115, (0.34, 0.20, 0.05)),
                                     (-0.14, 0.105, (0.72, 0.72, 0.70))]):
@@ -301,7 +301,7 @@ def cone(h=0.80, r=0.14):
 def yard():
     """The building line across the back: tiled wall, roller shutters, and its clutter."""
     p = MeshProgram()
-    p.place(box(40, 0.4, 5.0), at=[10, 27.5, 2.5], material=WALL_TILE)       # the facade
+    p.place(box(40, 0.4, 5.0), at=[10, 27.5, 2.5], material=WALL_TILE, mark="facade")  # the facade
     for i in range(6):                                                        # roller shutters
         p.place(box(3.10, 0.10, 3.20), at=[-2.0 + i * 4.2, 27.26, 1.75], material=SHUTTER)
         p.place(box(3.30, 0.14, 0.16), at=[-2.0 + i * 4.2, 27.24, 3.42], material=BLACK)
@@ -310,7 +310,7 @@ def yard():
         p.place(box(0.42, 0.06, 1.9), at=[x, 27.1, 2.6], material=ORANGE_S)
     p.place(box(0.10, 0.10, 5.4), at=[19.5, 27.0, 2.7], material=BLACK)
 
-    p.place(van(), at=[9.0, 24.4, 0], rotate=[0, 0, 180])
+    p.place(van(), at=[9.0, 24.4, 0], rotate=[0, 0, 180], mark="van")
     p.place(suv(), at=[-4.35, 6.60, 0], rotate=[0, 0, 92])   # far left, mostly out of frame
     for x, y in [(-3.0, 22.6), (-1.9, 22.6), (12.4, 24.0), (16.2, 23.2), (18.4, 20.0)]:
         p.place(cone(), at=[x, y, 0], material=None)
@@ -332,10 +332,15 @@ ISLAND_X = -1.60   # the island sits left of the bays; the camera looks past it 
 
 def scene():
     p = MeshProgram()
-    p.place(forecourt())
-    p.place(island(), at=[ISLAND_X, 0, 0])
-    p.place(hazard_rail(), at=[ISLAND_X + 0.05, -2.05, 0], material=None)
-    p.place(yard())
+    # Every top-level object is MARKED, and that is what makes the scene measurable rather
+    # than just renderable: mirage_render --ids turns these tags into a per-pixel object id,
+    # so photomatch.chamfer_per_object scores each one against the photo separately. A single
+    # frame score cannot -- eleven cameras over this scene all landed between 14.1 and 15.0 px
+    # because a proxy yard and a box van drowned whatever the camera was doing.
+    p.place(forecourt(), mark="forecourt")
+    p.place(island(), at=[ISLAND_X, 0, 0], mark="island")
+    p.place(hazard_rail(), at=[ISLAND_X + 0.05, -2.05, 0], material=None, mark="rail")
+    p.place(yard(), mark="yard")
     return p
 
 

@@ -49,6 +49,17 @@ struct RenderSettings {
     // 0 = off. Lets a low-spp render (or a path-traced animation) come out clean.
     int denoise = 0;
 
+    // Object-id AOV. Each entry is a face TAG — what `place(mark=...)` and every
+    // primitive already write and what survives a rebuild — and a pixel gets the
+    // 1-based index of the FIRST of these its centre ray lands on. Empty = no AOV.
+    //
+    // The caller supplies the order, which is the whole point: ids assigned by walking
+    // the tags encountered while building would number objects by heap address, and
+    // that exact bug already shipped here once — loop_cut and edge_bevel numbered
+    // vertices by pointer and three identical runs disagreed 13/15/18 times while 328
+    // tests stayed green. An explicit order cannot do that.
+    std::vector<std::string> id_tags;
+
     // Depth of field: a thin-lens camera. aperture = lens radius in world units (0 = a
     // pinhole, everything sharp); focus_dist = distance to the sharp plane (0 = auto, the
     // distance from the eye to the camera target). Larger aperture -> shallower focus, more
@@ -99,6 +110,11 @@ struct RenderSettings {
 struct Image {
     int w = 0, h = 0;
     std::vector<unsigned char> rgb;  // tonemapped, gamma-encoded, row-major, 3 bytes/px
+    // Object id per pixel from the CENTRE ray — 0 where nothing tagged was hit, else
+    // 1-based into RenderSettings::id_tags. Empty unless id_tags was set. This is what
+    // lets a loss ask "is THIS object right" instead of "is the picture right": one
+    // number per placed object rather than one for the frame.
+    std::vector<int> ids;
 };
 
 // Path-trace the mesh. Deterministic for a given (mesh, camera, settings): each

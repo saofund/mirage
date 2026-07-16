@@ -57,6 +57,7 @@ import numpy as np
 from PIL import Image
 
 __all__ = ["srgb_to_linear", "linear_to_srgb", "compare", "edge_map", "diff_plate",
+           "chamfer_per_object", "read_ids",
            "chamfer", "edt"]
 
 
@@ -195,6 +196,91 @@ def chamfer(render, reference, radius=48, ref_keep=0.05, size=None):
                         "rather than perfectly right"}
     return {"chamfer_px": round(float((er * d).sum() / tot), 3),
             "edge_mass": round(mass, 6)}
+
+
+def read_ids(path):
+    """Read mirage_render's --ids AOV: a 16-bit binary PGM of object ids, 0 = nothing."""
+    with open(path, "rb") as f:
+        def tok():
+            out = b""
+            while True:
+                c = f.read(1)
+                if not c or c.isspace():
+                    if out:
+                        return out
+                    if not c:
+                        raise ValueError("truncated PGM header")
+                    continue
+                if c == b"#":
+                    f.readline()
+                    continue
+                out += c
+        magic = tok()
+        if magic != b"P5":
+            raise ValueError(f"{path}: expected a binary PGM (P5), got {magic!r}")
+        w, h, mx = int(tok()), int(tok()), int(tok())
+        if mx != 65535:
+            raise ValueError(f"{path}: expected 16-bit ids, got maxval {mx}")
+        buf = f.read(w * h * 2)
+    return np.frombuffer(buf, dtype=">u2").reshape(h, w).astype(int)
+
+
+def chamfer_per_object(render, ids, reference, names=None, radius=48, ref_keep=0.05, grow=2):
+    """`chamfer`, but one number per PLACED OBJECT instead of one for the frame.
+
+    The whole-frame score answers "is the picture right", which on a real reproduction is a
+    question with no useful answer. Sweeping eleven cameras over the forecourt, the frame
+    score sat between 14.1 and 15.0 px for everything from fov 0.9 to 1.6 — flat, because
+    most of what it was averaging was a proxy yard and a box van that will never match, and
+    those drown whatever the camera is doing. A number that says "the frame is 14 px wrong"
+    tells you nothing about what to fix.
+
+    Split by object and the average stops hiding things. `ids` comes from the renderer's
+    --ids AOV, so the split is the op-log's own `place(mark=...)` list — the scene's real
+    decomposition, not regions somebody drew on the image. Each object is scored on its own
+    pixels plus a `grow`-px collar (its silhouette lives on the boundary, so masking to the
+    interior alone would clip exactly the edge that matters).
+
+    Returns {name: {chamfer_px, px, edge_mass}}. Sorting on chamfer_px is a MEASURED work
+    order — worst object first — which is what photoscene's `worst_first` was guessing at.
+
+    `px` is the object's screen area and it is the guard: chamfer is a mean over an object's
+    own edges, so an object that shrinks toward nothing scores beautifully. Read them together
+    or the loss will happily optimise an object out of the frame. Same trap as `edge_mass`,
+    one level down.
+
+    KNOW WHAT THIS SCORES. "Supported", not "correct". The distance field does not know which
+    object a photo edge belongs to, so an object sitting in clutter is near SOMETHING no matter
+    where you put it, and it is flattered for it. On case 26 the fire box scores 3.93 px while
+    the forecourt scores 18.02 — the fire box is 8 kpx of hardware buried in a thicket of hoses
+    and kerb, and it would score well nailed to the wrong spot. Trust the ranking where an
+    object is large and its surroundings are clean, and read a good score in clutter as "not
+    yet contradicted" rather than "right".
+    """
+    ren = np.asarray(render, float)
+    ref = np.asarray(reference, float)
+    ren = ren / 255.0 if ren.max() > 1.5 else ren
+    ref = ref / 255.0 if ref.max() > 1.5 else ref
+    ids = np.asarray(ids)
+    if ids.shape != ren.shape[:2]:
+        raise ValueError(f"ids {ids.shape} do not match the render {ren.shape[:2]} — the AOV "
+                         f"must be rendered at the same size, and never resampled")
+
+    er = edge_map(ren, blur=0, normalize=False)
+    ef = edge_map(ref, blur=0, normalize=False)
+    d = edt(ef >= max(float(np.quantile(ef, 1.0 - ref_keep)), 1e-9), radius=radius)
+
+    out = {}
+    for k in sorted(int(v) for v in np.unique(ids) if v > 0):
+        m = edt(ids == k, radius=max(grow, 1)) <= grow      # the object, plus its silhouette
+        w = np.where(m, er, 0.0)
+        tot = float(w.sum())
+        name = names[k - 1] if names and k - 1 < len(names) else f"id{k}"
+        out[name] = {"chamfer_px": float(radius) if tot < 1e-9
+                     else round(float((w * d).sum() / tot), 3),
+                     "px": int((ids == k).sum()),
+                     "edge_mass": round(float(tot / max(int(m.sum()), 1)), 6)}
+    return out
 
 
 def compare(render, reference, regions=None, plate=None):
