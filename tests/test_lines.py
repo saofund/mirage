@@ -10,13 +10,18 @@ import math
 import numpy as np
 import pytest
 
-from mirage.solve import (Camera, apply_h, direction_vp, fit_line, fit_quad, ground_point,
-                          homography, line_intersection, paint_mask, project, trace_line,
-                          vanishing_point)
+from mirage.solve import (Camera, apply_h, camera_from_vanishing_points, direction_vp,
+                          fit_line, fit_quad, ground_point, homography, line_intersection,
+                          paint_mask, project, trace_line, vanishing_point)
 
 
 def _canvas(h=400, w=600, bg=(0.10, 0.11, 0.13)):
     return np.tile(np.asarray(bg, float), (h, w, 1))
+
+
+def _n(v):
+    v = np.asarray(v, float)
+    return v / np.linalg.norm(v)
 
 
 def _stroke(img, p0, p1, width=7, col=(0.92, 0.92, 0.90)):
@@ -423,3 +428,98 @@ def test_the_forecourts_asserted_camera_does_not_survive_its_own_photograph():
                                            [0, 1, 0], W, H_) - measured)
                for f in np.linspace(0.4, 2.4, 41))
     assert best > 1000, f"a plain fov sweep got to {best:.0f} px — then fov WAS the story"
+
+
+# --- and the inverse: two vanishing points back to a camera ------------------- #
+def test_camera_from_vanishing_points_round_trips_direction_vp():
+    """The inverse of direction_vp, tested as one. Take a known camera, image two orthogonal
+    world directions, hand ONLY those two pixels and the two directions back, and demand the
+    orientation and fov return. eye is passed through — VPs cannot carry it — so the recovered
+    camera reproduces the SAME VPs from the SAME eye. A rough look_world breaks the four-fold
+    flip; it need only have the right signs, so the crude true direction rounded hard is fair."""
+    for eye, tgt, fov in [([2.0, -4.2, 4.3], [1.53, 2.57, 0.06], 1.181),
+                          ([-3.0, -9.0, 6.5], [1.0, 4.0, 0.4], 0.7),
+                          ([0.0, 0.0, 12.0], [2.0, 5.0, 0.0], 0.95)]:
+        cam = Camera(eye, tgt, fov_y=fov)
+        dirs = np.array([[0, 1.0, 0], [1.0, 0, 0]])          # two orthogonal ground directions
+        vps = np.array([direction_vp(cam, d, W, H_) for d in dirs])
+        look = np.sign(np.array(tgt) - eye)                  # a crude "that way", signs only
+        got, info = camera_from_vanishing_points(vps, dirs, W, H_, eye=eye, look_world=look)
+        assert info["fov_y"] == pytest.approx(fov, abs=1e-6)
+        assert info["residual_px"] < 1e-6
+        assert not info["sense_ambiguous"]
+        fwd_true, fwd_got = _n(np.array(tgt) - eye), _n(got.target - got.eye)
+        assert fwd_got == pytest.approx(fwd_true, abs=1e-6)
+
+
+def test_camera_from_vanishing_points_is_blind_to_position():
+    """The property that both frees it and limits it: slide the eye anywhere and the VPs do
+    not move, so the solver returns the same orientation and cannot object to the wrong eye."""
+    cam = Camera([2.0, -4.2, 4.3], [1.53, 2.57, 0.06], fov_y=0.9)
+    dirs = np.array([[0, 1.0, 0], [1.0, 0, 0]])
+    vps = np.array([direction_vp(cam, d, W, H_) for d in dirs])
+    look = [0, 1.0, -1.0]
+    a, _ = camera_from_vanishing_points(vps, dirs, W, H_, eye=[2.0, -4.2, 4.3], look_world=look)
+    b, _ = camera_from_vanishing_points(vps, dirs, W, H_, eye=[40.0, 15.0, 4.3], look_world=look)
+    assert _n(a.target - a.eye) == pytest.approx(_n(b.target - b.eye), abs=1e-9)
+
+
+def test_camera_from_vanishing_points_is_a_line_not_a_ray_without_a_look_hint():
+    """The four-fold flip is real, not a bug: VP(u) == VP(-u), so a camera turned 180 deg
+    about a world axis reproduces every vanishing point. Without look_world the solver keeps
+    the most upright of the four and says the sense is unpinned; the fov and tilt are still
+    right, and a look hint recovers the true aim exactly."""
+    cam = Camera([0, 0, 6.0], [1.0, 3.0, -2.0], fov_y=0.8)
+    dirs = np.array([[0, 1.0, 0], [1.0, 0, 0]])
+    vps = np.array([direction_vp(cam, d, W, H_) for d in dirs])
+    fwd_true = _n(cam.target - cam.eye)
+
+    guess, info = camera_from_vanishing_points(vps, dirs, W, H_, eye=[0, 0, 6.0])
+    assert info["sense_ambiguous"] and info["residual_px"] < 1e-6   # a valid camera...
+    assert info["fov_y"] == pytest.approx(0.8, abs=1e-6)            # ...fov and tilt intact...
+    assert guess.basis()[2][2] > 0                                  # ...and upright...
+    # ...but the aim may be one of the flips, and a rough look pins the real one.
+    aimed, info2 = camera_from_vanishing_points(vps, dirs, W, H_, eye=[0, 0, 6.0],
+                                                look_world=[0, 1, -1])
+    assert not info2["sense_ambiguous"]
+    assert _n(aimed.target - aimed.eye) == pytest.approx(fwd_true, abs=1e-6)
+
+
+def test_camera_from_vanishing_points_refuses_directions_it_cannot_orthogonalise():
+    """Two vanishing points on the same side of centre cannot be images of perpendicular
+    directions under any focal length (A_i.A_j + B_i.B_j stays positive). The solver must say
+    so, not return an imaginary focal length as a nan or a confident wrong number."""
+    with pytest.raises(ValueError, match="orthogonal"):
+        camera_from_vanishing_points(np.array([[1300.0, 300.0], [1350.0, 310.0]]),
+                                     np.array([[0, 1.0, 0], [1.0, 0, 0]]), W, H_)
+
+
+def test_camera_from_vanishing_points_overdetermines_fov_with_a_third_axis():
+    """Three orthogonal directions give three pairs, so fov is overdetermined and the pairs'
+    disagreement is a real bar. On exact synthetic VPs it collapses to zero; that it is zero
+    HERE and non-zero on noisy input is the point of reporting it."""
+    cam = Camera([1.0, -5.0, 5.0], [1.2, 2.0, 0.3], fov_y=1.05)
+    dirs = np.array([[0, 1.0, 0], [1.0, 0, 0], [0, 0, 1.0]])   # +y, +x, +z: mutually orthogonal
+    vps = np.array([direction_vp(cam, d, W, H_) for d in dirs])
+    got, info = camera_from_vanishing_points(vps, dirs, W, H_, eye=[1.0, -5.0, 5.0])
+    assert info["n_vps"] == 3
+    assert info["fov_y"] == pytest.approx(1.05, abs=1e-6)
+    assert info["f_spread"] < 1e-6
+
+
+def test_camera_from_vanishing_points_reports_case_26_fov_as_a_range():
+    """The honest ending. Case 26's cross direction is degenerate and its VP is only good to
+    13%; the two edge estimates put it at x=9672 and x=11010 on the horizon y=-412. Feed each
+    with the clean strip VP and the fov comes back 0.48-0.53 — a range, from the INPUT spread
+    that no residual sees. Both solves are internally exact."""
+    strip = np.array([272.0, -412.0])
+    fovs = []
+    for x_cross in (9672.0, 11010.0):
+        _, info = camera_from_vanishing_points(
+            np.array([strip, [x_cross, -412.0]]),
+            np.array([[0, 1.0, 0], [1.0, 0, 0]]), W, H_, eye=[2.0, -4.2, 4.3])
+        assert info["residual_px"] < 1e-6            # each is internally perfect...
+        fovs.append(info["fov_y"])
+    assert min(fovs) == pytest.approx(0.484, abs=0.01)   # ...yet they disagree by 0.04 rad,
+    assert max(fovs) == pytest.approx(0.525, abs=0.01)   # which is the real error bar
+    assert all(f < 0.6 for f in fovs), "the asserted 1.181 is nowhere near this range"

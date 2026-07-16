@@ -31,7 +31,7 @@ import math
 import numpy as np
 
 __all__ = ["homography", "apply_h", "rectify", "project", "ground_point", "solve_camera",
-           "direction_vp", "distort", "undistort", "Camera",
+           "direction_vp", "camera_from_vanishing_points", "distort", "undistort", "Camera",
            "place_from_footprint", "solve_sun", "estimate_sun_env_ratio",
            "paint_mask", "fit_line", "trace_line", "line_intersection", "vanishing_point",
            "fit_quad"]
@@ -550,6 +550,139 @@ def direction_vp(cam: Camera, u, w: int, h: int):
     th = math.tan(cam.fov_y * 0.5)
     ab = undistort(np.array([[(u @ right) / (z * th), (u @ up2) / (z * th)]]), cam.k1, cam.k2)[0]
     return np.array([(ab[0] / (w / h) + 1.0) * w * 0.5, (1.0 - ab[1]) * h * 0.5])
+
+
+def camera_from_vanishing_points(vps, dirs, w, h, eye=(0, 0, 0), up_world=(0, 0, 1),
+                                 look_world=None, k1=0.0, k2=0.0):
+    """Recover a camera's ORIENTATION and FOV from the vanishing points of known-orthogonal
+    world directions. The inverse of `direction_vp`; the two round-trip to 1e-9.
+
+    Give it >= 2 vanishing points (pixels) and the world unit vectors they are the images of.
+    The vectors must be MUTUALLY ORTHOGONAL and that is the entire constraint: perpendicular
+    world directions have perpendicular camera-frame rays, and the one focal length that makes
+    a measured pair perpendicular is the camera's. Two directions pin fov and the full
+    rotation; a third overdetermines fov and the disagreement is a real error bar.
+
+    THE DIRECTIONS ONLY FIX ORIENTATION UP TO A FOUR-FOLD FLIP, because a vanishing point is
+    the image of a LINE, not a ray: VP(u) == VP(-u). So a camera turned 180 deg about any of
+    the three world axes images every direction to the very same pixel, and four orientations
+    reproduce the vanishing points exactly. Two hints pick the physical one, and both are
+    things you always know about a real photograph without measuring anything:
+      up_world    which way is up; the camera is assumed not upside down (up nearer +up_world).
+      look_world  roughly where the camera points. Only its signs against the axes matter, so
+                  "into the scene and tilted down", say (0, 1, -1), is enough. Omit it and the
+                  solver keeps the most upright pair and flags `sense_ambiguous` — the fov and
+                  the tilt are right, but left/right and toward/away may be mirrored.
+
+    Returns (Camera, info). The camera carries `eye` UNCHANGED, because —
+
+    POSITION IS NOT RECOVERABLE FROM VANISHING POINTS, and the signature says so by taking eye
+    in and never solving it. A vanishing point is translation-invariant: slide the camera
+    anywhere along any axis and every VP is pixel-for-pixel identical. Eye needs a metric
+    anchor — a known length, a known point — that no VP carries. This solves the three things
+    VPs do carry: yaw, pitch, fov. For the other three use `solve_camera` with real
+    correspondences, or fix eye from a measured size once the orientation is known.
+
+    info:
+      fov_y, f_px    the focal length, as an angle and in pixels.
+      f_spread       with >2 VPs, the range of f across orthogonal pairs. Zero only if they
+                     agree; it is the honest bar, and it blows up if one pair is degenerate.
+      residual_px    how far the recovered camera's own VPs land from the inputs. This is a
+                     SANITY check, not an accuracy estimate — for two VPs the solve is exact
+                     and it is ~0 by construction. It earns its keep by catching a sign or
+                     handedness bug, where it would be hundreds of px. The accuracy lives in
+                     how well you LOCATED the vanishing points, which this cannot see: perturb
+                     them and re-run, exactly as `vanishing_point` tells you to for its sigma.
+      sense_ambiguous  True when no look_world was given, so left/right and toward/away were
+                     not pinned and may be mirrored. fov and tilt are unaffected.
+
+    Case 26 is why the last paragraph is not boilerplate. Its two horizontal directions give
+    one clean VP (the strip) and one degenerate one (the cross edges, 2.5 deg apart), and the
+    cross VP's pixel location is itself only good to 13% — its two edges cross the horizon at
+    x=9672 and x=11010. Feeding those two extremes back gives fov_y 0.525 and 0.484: the fov
+    is a RANGE, 0.48-0.53, and no residual would ever have told you, because each solve is
+    internally perfect. A vertical VP, or a second non-degenerate horizontal, is what tightens
+    it. The tool is general; case 26 just happens to hand it one weak axis.
+    """
+    vps = np.atleast_2d(np.asarray(vps, float))
+    dirs = np.atleast_2d(np.asarray(dirs, float))
+    if len(vps) < 2 or len(vps) != len(dirs):
+        raise ValueError(f"need >= 2 vanishing points and one world direction each, got "
+                         f"{len(vps)} and {len(dirs)}")
+
+    # pixel -> ideal normalised ray coords (A, B). The renderer's principal point is the image
+    # centre with no offset, so that is baked in here; `distort` turns pixel-space (a, b) into
+    # the ideal coords the ray is built from, matching `project` / `ground_point`.
+    aspect = w / h
+    AB = np.array([distort([[(2 * vp[0] / w - 1) * aspect, 1 - 2 * vp[1] / h]], k1, k2)[0]
+                   for vp in vps])
+
+    # focal from orthogonality: for perpendicular dirs i, j the camera rays (A th, B th, 1)
+    # are perpendicular, so A_i A_j + B_i B_j + 1/th^2 = 0. Each pair that is genuinely
+    # convergent (dot < 0) gives one estimate of th^2; degenerate pairs (dot >= 0) cannot be
+    # made orthogonal by any real focal length and are dropped, loudly if none survive.
+    th2 = []
+    for i in range(len(AB)):
+        for j in range(i + 1, len(AB)):
+            dot = float(AB[i] @ AB[j])
+            if dot < -1e-12:
+                th2.append(-1.0 / dot)
+    if not th2:
+        raise ValueError("no pair of these vanishing points can be orthogonal under any focal "
+                         "length (every pair has A_i.A_j + B_i.B_j >= 0). Either the directions "
+                         "are not actually perpendicular, or a vanishing point is misplaced.")
+    th = math.sqrt(float(np.mean(th2)))
+    fov_y = 2.0 * math.atan(th)
+    f_px = (h / 2.0) / th
+
+    # Rotation from the first two directions — two orthogonal directions fix it. The camera-frame
+    # ray of a direction is (A th, B th, 1); the renderer's frame (right, up2, fwd) has
+    # up2 = right x fwd, which is LEFT-handed, so its world<->camera map is a REFLECTION, not a
+    # rotation, and forcing a proper rotation aims the camera at its own mirror. Rather than
+    # track that sign by hand, close the orthonormal frame with the cross product and try both
+    # signs of the camera-side third axis — the one genuine ambiguity, because a vanishing point
+    # cannot tell a frame from its mirror — then keep whichever reproduces the inputs.
+    d_cam = np.array([_n([AB[i, 0] * th, AB[i, 1] * th, 1.0]) for i in range(2)])
+    d_wld = np.array([_n(dirs[0]), _n(dirs[1])])
+    w3 = _n(np.cross(d_wld[0], d_wld[1]))
+    eye = np.asarray(eye, float)
+    up_world = _n(up_world)
+
+    # One frame that reproduces the vanishing points. The renderer's (right, up2, fwd) is
+    # LEFT-handed (up2 = right x fwd), so its world<->camera map is a reflection; the camera
+    # third axis is -cross(d_cam0, d_cam1) rather than +, which puts dir = Dc @ B with B's rows
+    # the world right/up2/fwd. (The sign was found by construction, not guessed: a + here gives
+    # a camera that misses its own vanishing points by tens of kpx.)
+    Dc = np.vstack([d_cam, -_n(np.cross(d_cam[0], d_cam[1]))])          # camera coords (rows)
+    Dw = np.vstack([d_wld, w3])                                         # world (rows)
+    B = Dc.T @ Dw
+    up0, fwd0 = B[1], B[2]                  # B[0] is right; the turns below re-derive it
+
+    # ...but four orientations reproduce them, related by a 180 deg turn about each world axis
+    # (VP(u) == VP(-u)). Turning the whole frame by g fixes every vanishing point, so generate
+    # all four and let the hints choose. g = 2 a a^T - I is the 180 deg rotation about a.
+    def turn(a):
+        a = _n(a)
+        return 2.0 * np.outer(a, a) - np.eye(3)
+    cams = []
+    for g in (np.eye(3), turn(d_wld[0]), turn(d_wld[1]), turn(w3)):
+        up2, fwd = g @ up0, g @ fwd0
+        cams.append(Camera(eye, eye + fwd, up=up2, fov_y=fov_y, k1=k1, k2=k2))
+
+    upright = [c for c in cams if (c.basis()[2] @ up_world) > 0] or cams
+    sense_ambiguous = look_world is None
+    if look_world is None:
+        cam = max(upright, key=lambda c: c.basis()[2] @ up_world)      # most upright
+    else:
+        look = _n(look_world)
+        cam = max(upright, key=lambda c: _n(c.target - c.eye) @ look)  # nearest the given look
+    res = max(float(np.linalg.norm(direction_vp(cam, dirs[i], w, h) - vps[i]))
+              for i in range(len(vps)))
+    fs = [(h / 2.0) / math.sqrt(t) for t in th2]
+    info = {"fov_y": fov_y, "f_px": f_px, "residual_px": res,
+            "f_spread": float(max(fs) - min(fs)) if len(fs) > 1 else 0.0,
+            "n_vps": int(len(vps)), "sense_ambiguous": sense_ambiguous}
+    return cam, info
 
 
 def fit_quad(mask, seeds, halfwidth=14):
