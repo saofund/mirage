@@ -5,11 +5,14 @@ hopeless at its sub-pixel position — reading a bay corner by eye produced a qu
 the paint entirely. The machine is the exact opposite. So the seed is rough by design, and
 the tests check that a rough seed still lands on the true line.
 """
+import math
+
 import numpy as np
 import pytest
 
-from mirage.solve import (apply_h, fit_line, fit_quad, homography, line_intersection,
-                          paint_mask, trace_line, vanishing_point)
+from mirage.solve import (Camera, apply_h, direction_vp, fit_line, fit_quad, ground_point,
+                          homography, line_intersection, paint_mask, project, trace_line,
+                          vanishing_point)
 
 
 def _canvas(h=400, w=600, bg=(0.10, 0.11, 0.13)):
@@ -309,3 +312,114 @@ def test_fit_quad_feeds_a_homography():
     H = homography(r["corners"], world)
     got = apply_h(H, r["corners"])
     assert np.abs(got - world).max() < 1e-9
+
+
+# --- putting a pixel on the ground, and testing the camera that does it ------- #
+W, H_ = 2560, 1440
+CASE26 = Camera([2.0, -4.2, 4.3], [1.53, 2.57, 0.06], fov_y=1.181)   # case 26, as asserted
+
+
+def test_ground_point_inverts_project():
+    rng = np.random.default_rng(7)
+    for z in (0.0, 0.35):
+        w = np.stack([rng.uniform(-8, 8, 40), rng.uniform(1, 14, 40), np.full(40, z)], 1)
+        back = ground_point(CASE26, project(CASE26, w, W, H_), W, H_, z=z)
+        assert np.abs(back - w).max() < 1e-9
+
+
+def test_ground_point_inverts_project_through_a_lens():
+    """Looser, and the slack is not a disagreement: `project` undistorts by fixed-point
+    iteration and this distorts in closed form, so the gap is that iteration's tolerance."""
+    cam = Camera([2.0, -4.2, 4.3], [1.53, 2.57, 0.06], fov_y=1.181, k1=-0.18, k2=0.04)
+    rng = np.random.default_rng(11)
+    w = np.stack([rng.uniform(-8, 8, 40), rng.uniform(1, 14, 40), np.zeros(40)], 1)
+    back = ground_point(cam, project(cam, w, W, H_), W, H_)
+    assert np.abs(back - w).max() < 5e-3
+
+
+def test_ground_point_refuses_a_ray_that_never_lands():
+    """A pixel above the horizon has no ground under it. The guard matters: t = (z-eye_z)/d_z
+    goes NEGATIVE there, and eye + t*d is then a confident point BEHIND the camera."""
+    up = ground_point(CASE26, [[1280, 5]], W, H_)         # near the top edge, above the horizon
+    assert np.isnan(up).all()
+    down = ground_point(CASE26, [[1280, 1400]], W, H_)    # near the bottom edge: real ground
+    assert np.isfinite(down).all() and down[0, 2] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_direction_vp_is_the_limit_of_a_receding_point():
+    """The definition, checked against different algebra: a vanishing point is where a point
+    on the line goes as it recedes forever. `direction_vp` drops the translation instead."""
+    u = np.array([0.3, 1.0, 0.0]) / np.linalg.norm([0.3, 1.0, 0.0])
+    far = project(CASE26, [[0.0, 0.0, 0.0] + u * 1e7], W, H_)[0]
+    assert direction_vp(CASE26, u, W, H_) == pytest.approx(far, abs=0.5)
+
+
+def test_direction_vp_matches_a_vanishing_point_measured_off_the_projection():
+    """The two halves meeting: build two REAL parallel world lines, project them, measure
+    their VP off the image with `vanishing_point`, and predict it with `direction_vp`. One
+    reads pixels, the other reads a camera; they have no code in common past the basis."""
+    u = np.array([0.45, 1.0, 0.0]) / np.linalg.norm([0.45, 1.0, 0.0])
+    perp = np.array([-u[1], u[0], 0.0])
+    lines = []
+    for off in (0.0, 3.4):                       # two rails 3.4 m apart, both along u
+        a = np.array([0.5, 1.5, 0.0]) + perp * off
+        px = project(CASE26, [a + u * t for t in (0.0, 2.0, 4.0, 6.0)], W, H_)
+        lines.append(_traced(px[0], px[-1]))
+    measured = vanishing_point(lines[0], lines[1])
+    assert measured["angle_deg"] > 5.0, "the fixture must give the gate something to pass"
+    assert measured["p"] == pytest.approx(direction_vp(CASE26, u, W, H_), abs=1.0)
+
+
+def test_direction_vp_is_the_same_for_a_direction_and_its_reverse():
+    """A line's two ends share one vanishing point; flipping u flips both terms of the ratio."""
+    u = np.array([0.3, 1.0, -0.2])
+    assert direction_vp(CASE26, u, W, H_) == pytest.approx(direction_vp(CASE26, -u, W, H_))
+
+
+def test_direction_vp_has_no_finite_answer_across_the_view_axis():
+    fwd = CASE26.basis()[0]
+    across = np.cross(fwd, [0, 0, 1.0])          # perpendicular to the axis: stays parallel
+    assert np.isnan(direction_vp(CASE26, across, W, H_)).all()
+
+
+def _aimed(yaw_deg, pitch_deg, fov=1.0, eye=(0.0, 0.0, 4.3)):
+    """A camera aimed BY yaw and pitch, so a test that varies one varies only one.
+
+    Writing the targets out by hand does not do that. [0.4, 1, 0.2] and [-0.9, 1, 0.2] look
+    like a pure yaw change — the z is the same in both — but pitch is z against the HORIZONTAL
+    length, and widening x from 0.4 to -0.9 took that from 1.077 to 1.345 and the pitch with
+    it, 3.4 deg of it. The literals hid the coupling; a parameterisation cannot.
+    """
+    y, p = math.radians(yaw_deg), math.radians(pitch_deg)
+    d = np.array([math.sin(y) * math.cos(p), math.cos(y) * math.cos(p), math.sin(p)])
+    return Camera(eye, np.asarray(eye, float) + d, fov_y=fov)
+
+
+def test_every_horizontal_direction_lands_on_one_horizon():
+    """What lets dx and dy be read apart. With no roll the horizon is one horizontal image
+    line, so yaw slides a VP ALONG it and can never lift it — only pitch and fov do that."""
+    cam = _aimed(20, -25)
+    ys = [direction_vp(cam, [math.sin(a), math.cos(a), 0.0], W, H_)[1]
+          for a in np.radians([-40, -12, 0, 25, 60])]
+    assert np.ptp(ys) < 1e-6, f"horizontal directions left the horizon: {ys}"
+    for yaw in (-40, 0, 55):                        # same pitch and fov, anywhere in yaw
+        assert direction_vp(_aimed(yaw, -25), [0, 1.0, 0], W, H_)[1] == \
+            pytest.approx(ys[0], abs=1e-6)
+    for pitch in (-24, -26):                        # ...and pitch is what does lift it
+        assert abs(direction_vp(_aimed(20, pitch), [0, 1.0, 0], W, H_)[1] - ys[0]) > 20
+
+
+def test_the_forecourts_asserted_camera_does_not_survive_its_own_photograph():
+    """The finding this pair was built to make. Case 26's camera was asserted from framing
+    cues and the case recorded that it "checks out" — against those same cues. The bay strip's
+    VP is measured (17.7 deg apart, the pair that passed the gate) and the camera never saw it.
+
+    fov is swept because that is the parameter everyone reaches for first, and it is not the
+    problem: the miss is mostly dx, and dx is yaw.
+    """
+    measured = np.array([272.0, -412.0])
+    assert np.linalg.norm(direction_vp(CASE26, [0, 1, 0], W, H_) - measured) > 1000
+    best = min(np.linalg.norm(direction_vp(Camera(CASE26.eye, CASE26.target, fov_y=f),
+                                           [0, 1, 0], W, H_) - measured)
+               for f in np.linspace(0.4, 2.4, 41))
+    assert best > 1000, f"a plain fov sweep got to {best:.0f} px — then fov WAS the story"

@@ -345,18 +345,40 @@ def scene():
 
 
 # ---- render --------------------------------------------------------------------- #
-# SOLVED from the reference, not nudged. Constraints read off the photo:
-#   ~100 deg horizontal at 16:9        -> half-vFOV 33.8, so fov_y = 1.181 (not the 1.02 a
-#                                         guess gives -- a security lens is wider than it looks)
-#   the yard sits on the TOP edge      -> axis pitch -32 deg
-#   the column lands ~20% from left    -> ~30 deg left of the axis
-#   the column fills the frame height  -> ~5 m from the eye
-#   the island RECEDES UP-AND-RIGHT    -> the eye is to its RIGHT, looking down its length.
-#     This one is easy to get backwards and it inverts the whole composition. The tell is in
-#     the photo: the hoses hang to the LEFT and RIGHT of the pump and the platform runs
-#     across the frame, so the camera cannot be looking along the island from its end.
-# The solution checks out: frame centre lands on ground ~6.9 m out (the blue bay, where the
-# reference has it), the bottom edge at ~1.9 m (the island), the yard at 99% to the top.
+# THIS CAMERA IS WRONG, AND THE NUMBER IS 1189 PX. Left here deliberately, with the receipt,
+# because how it got here is the useful part.
+#
+# It was asserted from framing cues -- the yard sits on the top edge so pitch is -32, the
+# column lands 20% from the left so yaw is 30 left, the column fills the height so it is 5 m
+# out -- and this comment then claimed the solution "checked out" because the frame centre
+# landed on the blue bay and the yard reached 99% to the top. Every one of those re-read an
+# assertion. You cannot check a camera by looking at where it puts things when you chose it
+# by where you wanted things put.
+#
+# The first test that did not (mirage.solve.direction_vp against mirage.solve.vanishing_point):
+#   measured  strip VP  ( 272, -412)   two long bay edges, traced, 17.7 deg apart, gated
+#   predicted strip VP  (1368,   49)   what this camera says
+#   miss 1189 px on a 2560 px frame, and sweeping fov 0.4 -> 2.4 never gets below 1149.
+# Split it and it says what is broken: dy 461 is the horizon, which pitch and fov set and yaw
+# cannot touch; dx 1096 is yaw alone, about 25-30 deg of it. So the emphatic claim above --
+# "the island RECEDES UP-AND-RIGHT", flagged as the one that is easy to get backwards and
+# inverts the whole composition -- is backwards. The traced edges converge UP-AND-LEFT: their
+# separation goes 728 px at y=900 to 534 at y=550 while their centreline slides left.
+#
+# What this cost, and why it is worth a paragraph: no rendering loss found it. The whole-frame
+# chamfer sat at 14.1-15.0 px for every fov from 0.9 to 1.6, and the per-object chamfer on the
+# ground -- 60% of the frame, the thing most sensitive to the camera -- sat at 16.7-18.5 for
+# fov 0.7 to 1.7. Both flat, both blind, because nothing descends to a camera 30 deg of yaw
+# away; there is no shared feature left to pull on. Two traced lines and a subtraction found it
+# in microseconds. Measurement lands you in the basin, the loss polishes inside it.
+#
+# Do not just re-aim it. The layout was authored to look right THROUGH this camera, so the two
+# are wrong together and yawing the camera alone would wreck the composition rather than fix
+# it -- which is exactly the failure ground_point's docstring warns about, already committed,
+# before anyone measured. Camera and layout have to be resolved together, against the photo.
+# Solving it needs one more measurement than exists: a vertical. Verticals' VP plus the horizon
+# gives pitch and fov outright, and the column is right there -- but it is grey-on-grey and its
+# trace ran off into the sign's border, then the hoses (rms 26.7 px). Find a cleaner one.
 CAM_EYE, CAM_TGT, CAM_FOV = [2.00, -4.20, 4.30], [1.53, 2.57, 0.06], 1.181
 
 

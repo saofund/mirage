@@ -30,8 +30,8 @@ import math
 
 import numpy as np
 
-__all__ = ["homography", "apply_h", "rectify", "project", "solve_camera",
-           "distort", "undistort", "Camera",
+__all__ = ["homography", "apply_h", "rectify", "project", "ground_point", "solve_camera",
+           "direction_vp", "distort", "undistort", "Camera",
            "place_from_footprint", "solve_sun", "estimate_sun_env_ratio",
            "paint_mask", "fit_line", "trace_line", "line_intersection", "vanishing_point",
            "fit_quad"]
@@ -152,6 +152,37 @@ def project(cam: Camera, world, w: int, h: int):
     y = (1.0 - ab[:, 1]) * h * 0.5
     out = np.stack([x, y], 1)
     out[z <= 1e-9] = np.nan          # behind the camera
+    return out
+
+
+def ground_point(cam: Camera, px, w: int, h: int, z: float = 0.0):
+    """Pixels -> where their rays strike the horizontal plane z. The inverse of `project`.
+
+    Round-trips against `project` to 1e-14 m. With a strong lens it comes back to ~2e-3 m,
+    and that is `undistort`'s iteration tolerance showing through rather than a disagreement:
+    `project` undistorts by fixed-point iteration, this distorts in closed form.
+
+    Rays that go up, or that reach the plane only behind the eye, return nan. Without that
+    guard `eye + t*d` with t < 0 hands back a confident point in the sky.
+
+    THIS INHERITS THE CAMERA'S ERROR WHOLE, and that is not a footnote. Unprojecting a photo
+    with a wrong camera does not fail; it silently writes the camera's error into geometry,
+    and you get a scene that is wrong in a way that renders plausibly — worse than no scene.
+    Case 26's four measured bay corners land as a quad with corner angles 77/93/81/108 deg. A
+    painted parking bay is 90/90/90/90, and no fov gets that under 13 deg. So those corners
+    are not a bay; they are a bay plus a broken camera, and building from them would bake the
+    break in. Test the camera with `direction_vp` FIRST, and only then unproject.
+    """
+    px = np.atleast_2d(np.asarray(px, float))
+    fwd, right, up2 = cam.basis()
+    th = math.tan(cam.fov_y * 0.5)
+    ab = np.stack([(2.0 * px[:, 0] / w - 1.0) * (w / h), 1.0 - 2.0 * px[:, 1] / h], 1)
+    AB = distort(ab, cam.k1, cam.k2)
+    d = fwd + th * (AB[:, 0:1] * right + AB[:, 1:2] * up2)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (z - cam.eye[2]) / d[:, 2]
+    out = cam.eye + t[:, None] * d
+    out[~(t > 0)] = np.nan           # the ray never reaches the plane in front of the eye
     return out
 
 
@@ -475,6 +506,50 @@ def vanishing_point(l1, l2, min_angle_deg=5.0):
     else:
         reach, sigma = float("nan"), float("nan")
     return {"p": p, "angle_deg": ang, "reach": reach, "sigma_px": sigma}
+
+
+def direction_vp(cam: Camera, u, w: int, h: int):
+    """Where a CAMERA SAYS a world direction's parallel lines meet — `vanishing_point`'s dual.
+
+    That function reads a vanishing point off a photograph. This one predicts the same point
+    from a camera. Subtract them and you have the camera's error, in pixels, for the price of
+    two traced lines. It needs no scale, no rectangle, and no correspondence — only two lines
+    you believe are parallel in the world, which is most photographs of most man-made things.
+
+    Case 26 is why this exists. Its camera was asserted from framing cues — the yard sits on
+    the top edge so pitch is -32, the column lands 20% from the left so yaw is 30 left, the
+    column fills the height so it is 5 m out — and the case then recorded that "the solution
+    checks out". Every one of those checks re-read an assertion. The first test that did not:
+    the bay strip's vanishing point, measured at (272, -412) and gated (17.7 deg apart, the
+    pair that passed). The asserted camera predicts (1368, 49). It misses by 1189 px on a
+    2560 px frame, and sweeping fov from 0.4 to 2.4 never gets below 1149.
+
+    Read the two coordinates apart; they blame different things. With no roll every horizontal
+    direction's VP sits on one horizontal line — the horizon — whose height is set by pitch and
+    fov and NOT by yaw. So dy is "the horizon is in the wrong place" (461 px of it here) and dx
+    is yaw alone (1096 px, about 25-30 deg). fov moves only the first, which is why no fov
+    rescued it.
+
+    WHY NOT JUST MINIMISE A RENDERING LOSS. Because it cannot see this. The whole-frame chamfer
+    sat at 14.1-15.0 px for every fov from 0.9 to 1.6, and the per-object chamfer on the ground
+    itself sat at 16.7-18.5 for fov 0.7 to 1.7 — both flat, both blind. There is no path
+    downhill to a camera 30 deg of yaw away; the render and the photo share no feature to pull
+    on. Measurement's job is to land you inside the basin, and the loss's job is to polish
+    once you are in it. They are not alternatives, and this project spent a while treating
+    them as though they were.
+
+    u and -u give the same point, as they must — a line's two ends share one vanishing point,
+    and flipping u flips numerator and denominator together. A direction perpendicular to the
+    view axis has no finite VP (its lines stay parallel in the image); that returns nan.
+    """
+    u = _n(u)
+    fwd, right, up2 = cam.basis()
+    z = float(u @ fwd)
+    if abs(z) < 1e-9:
+        return np.array([np.nan, np.nan])      # parallel to the image plane: no finite VP
+    th = math.tan(cam.fov_y * 0.5)
+    ab = undistort(np.array([[(u @ right) / (z * th), (u @ up2) / (z * th)]]), cam.k1, cam.k2)[0]
+    return np.array([(ab[0] / (w / h) + 1.0) * w * 0.5, (1.0 - ab[1]) * h * 0.5])
 
 
 def fit_quad(mask, seeds, halfwidth=14):
