@@ -50,15 +50,9 @@ def mat(c, metallic=0.0, roughness=0.5, emission=None):
     return m
 
 
-CONCRETE  = mat((0.30, 0.305, 0.295), 0.0, 0.72)    # the forecourt slab, damp
-WET       = mat((0.16, 0.17, 0.185), 0.0, 0.18)     # standing water / wet patches
-ORANGE    = mat((0.46, 0.165, 0.085), 0.0, 0.62)    # terracotta bay
-ORANGE_W  = mat((0.60, 0.32, 0.235), 0.0, 0.68)     # its worn/faded half
-SLATE     = mat((0.15, 0.185, 0.275), 0.0, 0.42)    # the blue bay
-NAVY      = mat((0.115, 0.14, 0.20), 0.0, 0.55)
-LINE      = mat((0.74, 0.745, 0.72), 0.0, 0.70)     # painted lines
-ASPHALT   = mat((0.055, 0.058, 0.060), 0.0, 0.55)   # the road beyond
+CONCRETE  = mat((0.30, 0.305, 0.295), 0.0, 0.72)    # dry plinth kerb / circle infill
 YELLOWP   = mat((0.62, 0.44, 0.05), 0.0, 0.70)      # yellow road paint
+# (the wet ground palette lives just below, after the object materials)
 
 COL_GREY  = mat((0.56, 0.56, 0.55), 0.0, 0.42)      # canopy column cladding
 PANEL_BL  = mat((0.045, 0.085, 0.40), 0.0, 0.35)    # the ad panel / dispenser blue
@@ -78,6 +72,31 @@ SHUTTER   = mat((0.34, 0.35, 0.36), 0.3, 0.45)
 BANNER_BL = mat((0.03, 0.10, 0.42), 0.0, 0.55)
 CONE_BL   = mat((0.05, 0.09, 0.34), 0.0, 0.50)
 
+# Wet-overcast ground. The whole forecourt is a mirror of a bright sky, so the wet surfaces
+# are near-BLACK diffuse with a low-roughness specular that carries the reflection: the
+# contrast IS the wetness. A light matte grey (what "damp concrete" naively wants to be) kills
+# it. Sampled darker than the photo's pixels, because a photo pixel is albedo x light, and the
+# reflection supplies the light. See the render notes at the foot of the file.
+WET_CONC  = mat((0.058, 0.061, 0.066), 0.0, 0.14)    # damp concrete slab
+DRY_CONC  = mat((0.255, 0.255, 0.247), 0.0, 0.66)    # the drier apron patches (matte)
+WET_STRK  = mat((0.030, 0.032, 0.037), 0.0, 0.10)    # darker wet streaks
+TYRE_MK   = mat((0.045, 0.045, 0.047), 0.0, 0.55)    # dry tyre-scuff, matte
+ASPH_W    = mat((0.018, 0.020, 0.024), 0.0, 0.10)    # wet asphalt road, near-black mirror
+# The bays are soaked-MATTE, not mirrors: a broad specular lobe (roughness ~0.3-0.45) reflects
+# the sky and column as a soft sheen the denoiser can clean, where a sharp lobe left a firefly
+# triangle it could not (the reflected column is not in its albedo/normal guide buffer).
+SLATE_W   = mat((0.034, 0.044, 0.072), 0.0, 0.18)    # the blue bay, soaked
+SHEET_W   = mat((0.050, 0.055, 0.066), 0.0, 0.30)    # the blue bay's wettest sheet
+TERRA_D   = mat((0.360, 0.135, 0.072), 0.0, 0.44)    # terracotta, drier
+TERRA_F   = mat((0.260, 0.125, 0.085), 0.0, 0.42)    # faded terracotta beyond
+NAVY_W    = mat((0.028, 0.038, 0.062), 0.0, 0.16)    # the dark strip by the island
+PUDDLE    = mat((0.022, 0.028, 0.040), 0.0, 0.26)    # standing water, broad soft reflection
+LINE_W    = mat((0.60, 0.605, 0.59), 0.0, 0.58)      # painted lines, damp
+
+# The scene's forward axis (the bay's long edge, world +y) is not square to the building line
+# behind it; the yard and road sit at this yaw.
+ANG = -15.0
+
 
 def box(sx, sy, sz):
     """An axis-aligned box of the given SIZE (the cube primitive is unit, centred)."""
@@ -92,47 +111,52 @@ def slab(p, x0, x1, y0, y1, z, t, material):
 
 
 # ---- the painted forecourt ------------------------------------------------------ #
-# The dominant graphic. Bays run away from the camera; the island is along their left.
-# Read off the reference: a terracotta bay, a slate-blue bay, another terracotta, each
-# ~3.4 x 6 m, separated by ~0.14 m white lines, on a damp concrete slab.
-LINE_W = 0.14
-BAYS = [  # (x0, x1, y0, y1, material)
-    (-0.05, 0.70, -1.2, 5.4, NAVY),       # the narrow dark strip beside the island
-    (0.84, 4.25, -0.4, 6.1, SLATE),       # the big blue bay
-    (0.84, 3.55, 6.25, 9.6, ORANGE_W),    # the faded terracotta beyond it
-    (4.39, 8.10, -2.6, 4.6, ORANGE),      # the big near terracotta bay
-]
-
-
+# The dominant graphic, rebuilt in the SOLVED camera's frame by unprojecting the photo. The
+# blue bay's four measured corners are a 3.47 x 6.0 m rectangle at world x[0,3.47] y[0,6]; the
+# terracotta bays, the road and the building line were unprojected the same way with
+# solve.ground_point. Nothing here is eyeballed against a render -- the camera put every edge
+# where it saw it, and a projection overlay on the photo confirmed the fit before any render.
 def forecourt():
     p = MeshProgram()
-    p.place(box(46, 54, 0.4), at=[8, 12, -0.2], material=CONCRETE)          # the slab
-    p.place(box(46, 26, 0.42), at=[8, 30, -0.19], material=ASPHALT)         # the road beyond
-    for x0, x1, y0, y1, m in BAYS:                                           # painted bays
+    p.place(box(44, 48, 0.4), at=[6, 8, -0.2], material=WET_CONC)            # the damp slab
+    for cx, cy, sx, sy in [(9, 10.5, 9, 6), (13, 6, 8, 8), (-4, 3, 5, 9)]:   # drier patches
+        p.place(box(sx, sy, 0.01), at=[cx, cy, 0.006], material=DRY_CONC)
+    p.place(box(40, 9.5, 0.03), at=[7, 16.2, 0.012], rotate=[0, 0, ANG], material=ASPH_W)
+    LW = 0.12
+    bays = [(0, 3.47, 0, 6, SLATE_W), (3.62, 7.5, -3.4, 6.0, TERRA_D),
+            (0, 3.47, 6.2, 9.7, TERRA_F), (-1.30, -0.14, -1.6, 5.7, NAVY_W)]
+    for x0, x1, y0, y1, m in bays:
         slab(p, x0, x1, y0, y1, 0.004, 0.006, m)
-        for lx in (x0 - LINE_W, x1):                                         # bordering lines
-            slab(p, lx, lx + LINE_W, y0 - LINE_W, y1 + LINE_W, 0.006, 0.006, LINE)
-        for ly in (y0 - LINE_W, y1):
-            slab(p, x0 - LINE_W, x1 + LINE_W, ly, ly + LINE_W, 0.006, 0.006, LINE)
-    # standing water: the wet sheen the whole shot lives on
-    for x0, x1, y0, y1 in [(2.6, 5.4, 2.2, 5.6), (3.0, 4.6, 0.2, 2.0),
-                           (1.6, 3.4, 4.4, 6.0), (6.4, 9.2, 6.0, 12.0),
-                           (10.0, 20.0, 8.0, 18.0), (0.5, 6.0, 12.0, 20.0)]:
-        slab(p, x0, x1, y0, y1, 0.008, 0.004, WET)
-    # the white circle painted around the island, and a yellow lane arrow
-    p.place(MeshProgram().cylinder(sides=64, radius=2.30, height=0.006)
-            .place(MeshProgram().cylinder(sides=64, radius=2.16, height=0.02),
-                   at=[0, 0, 0], material=CONCRETE),
-            at=[-1.75, -2.6, 0.004], material=LINE)
-    p.place(box(0.16, 2.2, 0.006), at=[1.6, 13.6, 0.004], material=YELLOWP)
+        for lx in (x0 - LW, x1):
+            slab(p, lx, lx + LW, y0 - LW, y1 + LW, 0.006, 0.006, LINE_W)
+        for ly in (y0 - LW, y1):
+            slab(p, x0 - LW, x1 + LW, ly, ly + LW, 0.006, 0.006, LINE_W)
+    # the soaked centre of the blue bay + wet sheets bridging into the terracotta. DISTINCT
+    # heights on purpose: overlapping slabs that share a top face z-fight, and the denoiser
+    # smears that flicker into a grainy triangular patch that no spp or roughness removes.
+    for x0, x1, y0, y1, z, m in [(0.25, 3.1, 0.4, 4.9, 0.014, SHEET_W),
+                                 (0.7, 2.5, 1.1, 3.6, 0.018, PUDDLE),
+                                 (3.7, 6.9, -1.2, 3.2, 0.016, PUDDLE)]:
+        slab(p, x0, x1, y0, y1, z, 0.003, m)
+    # tyre tracks and wet streaks that break the flat sheet
+    for x, y0, y1, ww, m in [(4.9, 7, 15, 0.24, WET_STRK), (5.5, 7, 15, 0.24, WET_STRK),
+                             (8.6, 8, 16, 0.24, TYRE_MK), (9.2, 8, 16, 0.24, TYRE_MK),
+                             (12.0, 3, 12, 0.8, WET_STRK), (6.4, -3, 5, 0.6, WET_STRK)]:
+        slab(p, x - ww / 2, x + ww / 2, y0, y1, 0.007, 0.004, m)
+    # the white circle painted around the island (centre + radius measured), the yellow arrow
+    p.place(MeshProgram().cylinder(sides=72, radius=1.03, height=0.006)
+            .place(MeshProgram().cylinder(sides=72, radius=0.91, height=0.02),
+                   at=[0, 0, 0], material=WET_CONC),
+            at=[-3.20, -2.44, 0.004], material=LINE_W)
+    p.place(box(0.15, 2.0, 0.006), at=[9.0, 9.4, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
     for s in (-1, 1):
-        p.place(box(0.16, 1.0, 0.006), at=[1.6 + s * 0.30, 12.8, 0.004],
-                rotate=[0, 0, s * 38], material=YELLOWP)
+        p.place(box(0.15, 0.95, 0.006), at=[9.0 + s * 0.28, 8.55, 0.004],
+                rotate=[0, 0, ANG + s * 40], material=YELLOWP)
+    p.place(box(14, 0.14, 0.006), at=[8, 12.6, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
     return p
 
 
 # ---- the dispenser island ------------------------------------------------------- #
-ISL_X, ISL_Y, ISL_Z = 1.05, 5.2, 0.17     # plinth footprint and height
 
 
 def hose_loop(radius=0.34, tube=0.021, angle=250.0):
@@ -235,21 +259,24 @@ def hazard_rail():
 
 
 def island():
+    """The dispenser island, built for THIS shot: a tall clad column that leaves the frame,
+    the blue ad lightbox on its face, the pump and hoses at its foot, fire box and bucket.
+    Placed by unprojecting the pump footprint, the fire box and the painted circle; the sign
+    height was set against a projection overlay so 油卡支付 / 降 1.1 land on the real sign."""
     p = MeshProgram()
-    # the plinth: a concrete kerb capped with checker plate
-    p.place(box(2 * ISL_X, ISL_Y, ISL_Z), at=[0, 0, ISL_Z / 2], material=CONCRETE)
-    p.place(box(2 * ISL_X - 0.10, ISL_Y - 0.10, 0.02), at=[0, 0, ISL_Z], material=STEEL)
-    # the canopy column, rising out of frame
-    p.place(box(0.46, 0.46, 5.4), at=[0, 0.75, ISL_Z + 2.7], material=COL_GREY, mark="column")
-    p.place(ad_panel(), at=[0, 0.52, ISL_Z + 2.62], material=None, mark="sign")
-    p.place(box(0.40, 0.02, 0.10), at=[0, 0.51, ISL_Z + 3.78], material=WHITE)  # the Gulf plate
-    p.place(dispenser(), at=[0, 0.30, ISL_Z], mark="dispenser")
-    p.place(fire_box(), at=[0.10, -0.44, ISL_Z], mark="firebox")
-    p.place(bucket(), at=[0.58, -0.42, ISL_Z], material=STEEL)
-    for i, (dx, h, c) in enumerate([(-0.30, 0.115, (0.34, 0.20, 0.05)),
-                                    (-0.14, 0.105, (0.72, 0.72, 0.70))]):
+    Z = 0.14
+    p.place(box(1.9, 1.35, Z), at=[0, 0.10, Z / 2], material=CONCRETE)          # grate plinth
+    p.place(box(1.78, 1.24, 0.03), at=[0, 0.10, Z], material=STEEL)
+    p.place(box(0.72, 0.60, 8.0), at=[0.04, 0.42, Z + 3.9], material=COL_GREY, mark="column")
+    p.place(box(0.44, 0.02, 0.11), at=[0.04, 0.13, Z + 3.28], material=WHITE)   # the Gulf plate
+    p.place(ad_panel(), at=[0.04, 0.13, Z + 2.07], material=None, mark="sign")
+    p.place(dispenser(), at=[0, 0.02, Z], mark="dispenser")
+    p.place(fire_box(), at=[0.06, -0.40, Z], mark="firebox")
+    p.place(bucket(), at=[0.54, -0.40, Z], material=STEEL)
+    for i, (dx, h, col) in enumerate([(-0.30, 0.115, (0.34, 0.20, 0.05)),
+                                      (-0.14, 0.105, (0.72, 0.72, 0.70))]):
         p.place(MeshProgram().cylinder(sides=16, radius=0.032, height=h),
-                at=[dx, -0.50, ISL_Z + h / 2], material=mat(c, 0.0, 0.30))   # the little bottles
+                at=[dx, -0.46, Z + h / 2], material=mat(col, 0.0, 0.30))        # the little bottles
     return p
 
 
@@ -299,87 +326,77 @@ def cone(h=0.80, r=0.14):
 
 
 def yard():
-    """The building line across the back: tiled wall, roller shutters, and its clutter."""
+    """The building line across the back and its clutter -- facade, roller shutters, the white
+    van, bollards, the speed hump, the wash-machine banner -- placed by unprojecting the
+    building base line (world y ~ 20, yawed by ANG) and the road front."""
     p = MeshProgram()
-    p.place(box(40, 0.4, 5.0), at=[10, 27.5, 2.5], material=WALL_TILE, mark="facade")  # the facade
+    p.place(box(24, 0.4, 5.2), at=[8.5, 20.2, 2.6], rotate=[0, 0, ANG], material=WALL_TILE,
+            mark="facade")
     for i in range(6):                                                        # roller shutters
-        p.place(box(3.10, 0.10, 3.20), at=[-2.0 + i * 4.2, 27.26, 1.75], material=SHUTTER)
-        p.place(box(3.30, 0.14, 0.16), at=[-2.0 + i * 4.2, 27.24, 3.42], material=BLACK)
-    p.place(box(2.6, 0.12, 2.9), at=[-6.6, 27.26, 1.55], material=BLACK)      # an open doorway
-    for x in (-4.4, 8.6, 14.0):                                               # hanging banners
-        p.place(box(0.42, 0.06, 1.9), at=[x, 27.1, 2.6], material=ORANGE_S)
-    p.place(box(0.10, 0.10, 5.4), at=[19.5, 27.0, 2.7], material=BLACK)
-
-    p.place(van(), at=[9.0, 24.4, 0], rotate=[0, 0, 180], mark="van")
-    p.place(suv(), at=[-4.35, 6.60, 0], rotate=[0, 0, 92])   # far left, mostly out of frame
-    for x, y in [(-3.0, 22.6), (-1.9, 22.6), (12.4, 24.0), (16.2, 23.2), (18.4, 20.0)]:
-        p.place(cone(), at=[x, y, 0], material=None)
-    for s in (0, 1):                                                          # 小心地滑 A-frames
-        p.place(box(0.42, 0.32, 0.66), at=[-5.6 + s * 0.62, 25.9, 0.33],
-                rotate=[0, 0, 6 * s], material=YELLOW)
-    # the 加油站洗车机 banner at the left edge
-    p.place(box(0.06, 2.4, 2.5), at=[-6.2, 17.0, 1.6], rotate=[0, 0, -8], material=BANNER_BL)
-    p.place(box(0.06, 3.0, 2.9), at=[-7.4, 8.0, 1.9], rotate=[0, 0, -4], material=BANNER_BL)
-    # a black/white speed hump at the right
-    for i in range(9):
-        p.place(box(0.34, 0.30, 0.07), at=[13.0 + i * 0.34, 9.6, 0.035],
+        dx = -6 + i * 3.9
+        cxy = [8.5 + dx * math.cos(math.radians(ANG)), 20.2 + dx * math.sin(math.radians(ANG))]
+        p.place(box(3.0, 0.10, 3.1), at=[cxy[0], cxy[1] - 0.18, 1.75], rotate=[0, 0, ANG],
+                material=SHUTTER)
+    p.place(box(2.4, 0.12, 2.8), at=[15.5, 19.0, 1.5], rotate=[0, 0, ANG], material=BLACK)  # doorway
+    for dx in (-7.5, 5.5, 10.0):                                              # hanging banners
+        cxy = [8.5 + dx * math.cos(math.radians(ANG)), 20.2 + dx * math.sin(math.radians(ANG))]
+        p.place(box(0.42, 0.06, 1.8), at=[cxy[0], cxy[1] - 0.25, 2.7], rotate=[0, 0, ANG],
+                material=ORANGE_S)
+    p.place(van(), at=[9.9, 17.3, 0], rotate=[0, 0, -11], mark="van")
+    for cx, cy in [(9.6, 18.3), (11.1, 18.2), (12.6, 18.1), (14.0, 17.9), (7.9, 18.4),
+                   (15.4, 17.7)]:                                             # blue-white bollards
+        p.place(cone(), at=[cx, cy, 0], material=None)
+    for i in range(9):                                                        # the speed hump
+        dx = -1.6 + i * 0.4
+        cxy = [11.0 + dx * math.cos(math.radians(26)), 5.6 + dx * math.sin(math.radians(26))]
+        p.place(box(0.36, 0.30, 0.08), at=[cxy[0], cxy[1], 0.04], rotate=[0, 0, 26],
                 material=WHITE if i % 2 else BLACK)
+    p.place(box(0.06, 2.6, 2.7), at=[-5.6, 11.0, 1.5], rotate=[0, 0, -6], material=BANNER_BL)
+    for s in (0, 1):                                                          # 小心地滑 A-frame
+        p.place(box(0.40, 0.30, 0.64), at=[4.1 + s * 0.55, 19.3, 0.32],
+                rotate=[0, 0, 6 * s], material=YELLOW)
+    p.place(suv(), at=[-5.3, 4.4, 0], rotate=[0, 0, 96])   # far left, mostly out of frame
     return p
 
 
-ISLAND_X = -1.60   # the island sits left of the bays; the camera looks past it down the lane
+ISLAND_AT = [-3.12, -1.05]   # where the pump island stands, unprojected from its footprint
 
 
 def scene():
     p = MeshProgram()
-    # Every top-level object is MARKED, and that is what makes the scene measurable rather
-    # than just renderable: mirage_render --ids turns these tags into a per-pixel object id,
-    # so photomatch.chamfer_per_object scores each one against the photo separately. A single
-    # frame score cannot -- eleven cameras over this scene all landed between 14.1 and 15.0 px
-    # because a proxy yard and a box van drowned whatever the camera was doing.
+    # Every top-level object is MARKED, which makes the scene measurable rather than just
+    # renderable: mirage_render --ids turns these tags into a per-pixel object id, so
+    # photomatch.chamfer_per_object can score each against the photo separately. That per-object
+    # score is the loss that will POLISH this scene; measurement -- the solved camera and the
+    # unprojected layout below -- is what landed it in the basin first, which no loss could do:
+    # eleven cameras once all scored 14-15 px because nothing downhill led to the true camera,
+    # 22 deg of yaw and half the fov away.
     p.place(forecourt(), mark="forecourt")
-    p.place(island(), at=[ISLAND_X, 0, 0], mark="island")
-    p.place(hazard_rail(), at=[ISLAND_X + 0.05, -2.05, 0], material=None, mark="rail")
+    p.place(island(), at=[ISLAND_AT[0], ISLAND_AT[1], 0], rotate=[0, 0, ANG], mark="island")
+    p.place(hazard_rail().scale({"by": "all"}, [0.60, 1.0, 1.0]),
+            at=[-3.16, -2.20, 0], rotate=[0, 0, -16], material=None, mark="rail")
     p.place(yard(), mark="yard")
     return p
 
 
 # ---- render --------------------------------------------------------------------- #
-# THIS CAMERA IS WRONG, AND THE NUMBER IS 1189 PX. Left here deliberately, with the receipt,
-# because how it got here is the useful part.
+# THE CAMERA, SOLVED. The 1189 px falsification (git log: "let a camera be tested against the
+# photograph, and fail") retired the asserted camera; this is what replaced it, and how:
 #
-# It was asserted from framing cues -- the yard sits on the top edge so pitch is -32, the
-# column lands 20% from the left so yaw is 30 left, the column fills the height so it is 5 m
-# out -- and this comment then claimed the solution "checked out" because the frame centre
-# landed on the blue bay and the yard reached 99% to the top. Every one of those re-read an
-# assertion. You cannot check a camera by looking at where it puts things when you chose it
-# by where you wanted things put.
+#   - orientation + fov from the bay's strip vanishing point (272,-412) FUSED with "the bay is
+#     a rectangle": the single fov that unprojects the four measured corners to right angles.
+#     That pins fov to 0.505 with no fragile vertical trace, and the strip VP reproduces exactly.
+#   - the corners then unproject to 91/89/89/91 deg (the asserted camera gave 77/93/81/108) and
+#     aspect 1.73 -- a 3.47 x 6.0 m bay. An independent check that the orientation+fov are right.
+#   - eye by linear least squares once orientation+fov are fixed and the gauge is chosen (bay
+#     length 6 m): the four corners reproject within 4.2 px. Eye lands 6.1 m up, a CCTV on a post.
 #
-# The first test that did not (mirage.solve.direction_vp against mirage.solve.vanishing_point):
-#   measured  strip VP  ( 272, -412)   two long bay edges, traced, 17.7 deg apart, gated
-#   predicted strip VP  (1368,   49)   what this camera says
-#   miss 1189 px on a 2560 px frame, and sweeping fov 0.4 -> 2.4 never gets below 1149.
-# Split it and it says what is broken: dy 461 is the horizon, which pitch and fov set and yaw
-# cannot touch; dx 1096 is yaw alone, about 25-30 deg of it. So the emphatic claim above --
-# "the island RECEDES UP-AND-RIGHT", flagged as the one that is easy to get backwards and
-# inverts the whole composition -- is backwards. The traced edges converge UP-AND-LEFT: their
-# separation goes 728 px at y=900 to 534 at y=550 while their centreline slides left.
-#
-# What this cost, and why it is worth a paragraph: no rendering loss found it. The whole-frame
-# chamfer sat at 14.1-15.0 px for every fov from 0.9 to 1.6, and the per-object chamfer on the
-# ground -- 60% of the frame, the thing most sensitive to the camera -- sat at 16.7-18.5 for
-# fov 0.7 to 1.7. Both flat, both blind, because nothing descends to a camera 30 deg of yaw
-# away; there is no shared feature left to pull on. Two traced lines and a subtraction found it
-# in microseconds. Measurement lands you in the basin, the loss polishes inside it.
-#
-# Do not just re-aim it. The layout was authored to look right THROUGH this camera, so the two
-# are wrong together and yawing the camera alone would wreck the composition rather than fix
-# it -- which is exactly the failure ground_point's docstring warns about, already committed,
-# before anyone measured. Camera and layout have to be resolved together, against the photo.
-# Solving it needs one more measurement than exists: a vertical. Verticals' VP plus the horizon
-# gives pitch and fov outright, and the column is right there -- but it is grey-on-grey and its
-# trace ran off into the sign's border, then the hoses (rms 26.7 px). Find a cleaner one.
-CAM_EYE, CAM_TGT, CAM_FOV = [2.00, -4.20, 4.30], [1.53, 2.57, 0.06], 1.181
+# The recovered camera differs from the asserted one by exactly what the falsification predicted:
+# yaw pulled back ~22 deg, fov roughly halved (1.181 -> 0.505). Every object in the scene above
+# was then unprojected through THIS camera with solve.ground_point and checked by projecting the
+# layout back onto the photo -- not by eyeballing a render. Measurement lands you in the basin;
+# the per-object chamfer loss is what polishes inside it. (solve.camera_from_vanishing_points.)
+CAM_EYE, CAM_TGT, CAM_FOV = [-3.1349, -12.0379, 6.0852], [-2.8408, -11.1592, 5.7095], 0.5054
 
 
 def render(prog, out, spp, w, h, extra=()):
@@ -424,16 +441,14 @@ def main():
     m = p.build()
     print(f"forecourt: {len(m.verts):,} verts  {len(m.faces):,} faces  ({len(p.ops)} top-level ops)")
     spp = 44 if preview else 300
-    # An overcast wet morning: soft high sun, sky fill, no hard key.
-    #
-    # The exposure is SOLVED, not chosen: mirage.photomatch reports the render's median
-    # luma against the reference's in stops, and a secant on that converges in two steps
-    # (0.38 -> -2.36 stops, 1.406 -> +0.13, 1.353 -> +0.07). By eye I had swung from a stop
-    # too bright to two and a third too dark across half a dozen renders and called each of
-    # them about right. Do not hand-tune what you can measure.
+    # An overcast wet morning: soft high sun, a bright sky fill for the wet surfaces to mirror,
+    # no hard key. Env is turned up (0.86) because on this shot the reflected sky IS the light on
+    # the floor -- the wet materials are near-black diffuse and read only through what they
+    # reflect. Exposure 1.35 sits the concrete where the reference's is; --clamp 2 stops a hot
+    # specular sample on the near-mirror puddles from leaving a firefly the denoiser can't fix.
     png = render(p, "hero", spp, 1600, 900,
-                 extra=["--sun", "0.18", "--env", "0.42", "--exposure", "1.353",
-                        "--sun-dir", "0.30", "0.62", "0.72", "--denoise", "4"])
+                 extra=["--sun", "0.12", "--env", "0.86", "--exposure", "1.35", "--clamp", "1.5",
+                        "--sun-dir", "0.25", "0.55", "0.80", "--denoise", "4"])
     print("wrote", png)
     have_ref = REF.exists()
     if have_ref:
@@ -443,9 +458,10 @@ def main():
     if not preview:
         GALLERY.mkdir(parents=True, exist_ok=True)
         from PIL import Image
-        Image.open(png).save(GALLERY / "forecourt.png")
-        if have_ref:
-            Image.open(OUT / "compare.png").save(GALLERY / "forecourt_compare.png")
+        Image.open(png).save(GALLERY / "forecourt.png")   # the render alone: a pure synthetic image
+        # The side-by-side is NOT copied to the gallery, and must never be: it embeds the
+        # reference CCTV frame, which is somebody's security footage, not ours to publish. It
+        # lives only in outputs/ (gitignored). Only the render ships.
         print("wrote", GALLERY / "forecourt.png")
 
 
