@@ -58,14 +58,14 @@ def mat(c, metallic=0.0, roughness=0.5, emission=None, maps=None, uv_scale=1.0):
 # demand into assets/textures/. The wet look is carried by the roughness pools mirroring the
 # sky, not by flat near-black fills -- and the bays' staining is ORGANIC, baked into the map,
 # which is what finally kills the "rectangle nested in a rectangle" bullseye.
-TEX = ensure_textures(["forecourt_concrete", "asphalt_wet", "bay_blue", "bay_orange"])
+TEX = ensure_textures(["forecourt_concrete", "asphalt_wet", "bay_blue", "bay_orange", "clad_panel"])
 
 
 CONCRETE  = mat((0.30, 0.305, 0.295), 0.0, 0.72)    # dry plinth kerb / circle infill
 YELLOWP   = mat((0.62, 0.44, 0.05), 0.0, 0.70)      # yellow road paint
 # (the wet ground palette lives just below, after the object materials)
 
-COL_GREY  = mat((0.56, 0.56, 0.55), 0.0, 0.42)      # canopy column cladding
+COL_GREY  = mat((0.56, 0.56, 0.55), 0.0, 0.42, maps=TEX["clad_panel"], uv_scale=3.0)  # canopy column cladding
 PANEL_BL  = mat((0.045, 0.085, 0.40), 0.0, 0.35)    # the ad panel / dispenser blue
 PANEL_WH  = mat((0.80, 0.80, 0.79), 0.0, 0.40)
 RED       = mat((0.50, 0.045, 0.030), 0.0, 0.45)    # fire box / the panel's red banner
@@ -78,12 +78,12 @@ CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.22)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.45)
 GLASS     = mat((0.06, 0.07, 0.08), 0.0, 0.10)
 TYRE      = mat((0.020, 0.020, 0.022), 0.0, 0.80)
-WALL_TILE = mat((0.62, 0.62, 0.60), 0.0, 0.35)
+WALL_TILE = mat((0.62, 0.62, 0.60), 0.0, 0.35, maps=TEX["clad_panel"], uv_scale=4.5)
 SHUTTER   = mat((0.34, 0.35, 0.36), 0.3, 0.45)
 BANNER_BL = mat((0.03, 0.10, 0.42), 0.0, 0.55)
 CONE_BL   = mat((0.05, 0.09, 0.34), 0.0, 0.50)
 
-LINE_W    = mat((0.60, 0.605, 0.59), 0.0, 0.58)      # painted lines, damp
+LINE_W    = mat((0.52, 0.525, 0.515), 0.0, 0.62)     # painted lines, damp and grimy (not bright white)
 
 # Textured floor (triplanar PBR maps, generated above). This replaced a dozen flat near-black
 # fills stacked into nested rectangles: the wet-overcast look is the SAME idea -- a dark

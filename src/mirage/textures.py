@@ -227,10 +227,11 @@ def _crack_net(res: int, seed: int, period: int, thresh: float, sharp: float = 1
     return np.clip((ridged - thresh) * sharp, 0, 1)
 
 
-def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7):
+def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_base=0.72):
     """Damp concrete apron: broad tonal mottle, fine aggregate, a web of hairline cracks and
     dark oil/water staining pooled in the low spots. `wet` drops roughness inside the stains so
-    they read as a wet sheen rather than more grey paint — the contrast is the wetness."""
+    they read as a wet sheen rather than more grey paint — the contrast is the wetness.
+    `rough_base` sets the dry matte level: ~0.72 for concrete, lower for painted cladding."""
     mott = _fbm(res, 6, 4, seed)                       # slab-scale tone variation (gentle)
     fine = _fbm(res, 150, 3, seed + 5)                 # aggregate speckle
     cracks = _crack_net(res, seed + 9, period=5, thresh=0.91) * crack
@@ -243,8 +244,8 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7):
     base = base * (1 - 0.14 * stain * wet_patch[..., None])   # damp only slightly darker in albedo
     base = base * (1 - 0.50 * cracks[..., None])              # joints/cracks darkest
     albedo = np.clip(base, 0, 1)
-    rough = 0.72 - 0.06 * (mott - 0.5) - wet * 0.50 * wet_patch + 0.06 * cracks
-    rough = np.clip(rough, 0.10, 0.95)
+    rough = rough_base - 0.06 * (mott - 0.5) - wet * 0.50 * wet_patch + 0.06 * cracks
+    rough = np.clip(rough, 0.10, 0.98)
     height = mott * 0.18 + fine * 0.16 - cracks * 0.8
     normal = _normal_from_height(height, strength=0.9)
     return albedo, rough, normal
@@ -273,22 +274,24 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0):
     dry paint. All the weathering lives here so the scene can lay ONE slab, not a stack."""
     mott = _fbm(res, 12, 4, seed)                      # paint laid unevenly
     fine = _fbm(res, 150, 3, seed + 5)
-    wear = np.clip((_fbm(res, 18, 4, seed + 11) - 0.60) * 3.0, 0, 1) ** 1.4   # rubbed to concrete
-    st = _fbm(res, 3, 4, seed + 17)                    # the organic wet pools
-    wet_mask = np.clip((0.54 - st) * 2.2, 0, 1) ** 1.3
-    # only a few hairline cracks on a bay — the WET POOLS are the story, not a mud-crack web
+    wear = np.clip((_fbm(res, 18, 4, seed + 11) - 0.64) * 3.0, 0, 1) ** 1.5   # rubbed to concrete
+    # ONE big soft pool per tile, like the photo's dark wet SHEET across the blue bay -- not a
+    # scatter of little puddles. Low frequency (period 2) gives a single dominant lobe.
+    st = _fbm(res, 2, 4, seed + 17)
+    wet_mask = np.clip((0.55 - st) * 2.1, 0, 1) ** 1.2
+    # only a few hairline cracks on a bay — the WET SHEET is the story, not a mud-crack web
     cracks = _crack_net(res, seed + 23, period=8, thresh=0.91) * 0.55
     paint_c = np.stack(paint, -1)[None, None]
     conc_c = np.stack(concrete, -1)[None, None]
     col = _lerp(paint_c, conc_c, wear[..., None])                   # worn paint -> concrete
     col = col * (0.86 + 0.28 * mott[..., None]) * (0.94 + 0.12 * (fine[..., None] - 0.5))
-    col = _lerp(col, col * 0.30, wet_mask[..., None])              # standing water darkens
+    col = _lerp(col, col * 0.26, wet_mask[..., None])              # the dark wet sheet
     col = col * (1 - faded * 0.28)
     col = col * (1 - 0.42 * cracks[..., None])
     albedo = np.clip(col, 0, 1)
     rough = 0.60 + 0.18 * wear - 0.10 * (mott - 0.5)               # matte paint, rougher where worn
-    rough = _lerp(rough, np.full_like(rough, 0.11), wet * wet_mask)  # glossy pools
-    rough = np.clip(rough, 0.08, 0.92)
+    rough = _lerp(rough, np.full_like(rough, 0.09), wet * wet_mask)  # near-mirror wet sheet
+    rough = np.clip(rough, 0.07, 0.92)
     height = mott * 0.20 + fine * 0.15 - cracks * 0.6 - wet_mask * 0.30 - wear * 0.10
     normal = _normal_from_height(height, strength=1.0)
     return albedo, rough, normal
@@ -314,8 +317,11 @@ _LIBRARY = {
     # scene's dark wet look comes from the roughness pools mirroring a bright overcast sky.
     "forecourt_concrete": lambda: _concrete(RES, 101, (0.30, 0.31, 0.32), crack=0.35, stain=0.5, wet=0.7),
     "asphalt_wet":        lambda: _asphalt(RES, 107, (0.050, 0.055, 0.063)),
-    "bay_blue":           lambda: _painted_bay(RES, 113, (0.075, 0.105, 0.185), (0.30, 0.30, 0.29), wet=0.85),
+    "bay_blue":           lambda: _painted_bay(RES, 113, (0.075, 0.105, 0.185), (0.17, 0.18, 0.19), wet=0.85),
     "bay_orange":         lambda: _painted_bay(RES, 127, (0.355, 0.150, 0.065), (0.32, 0.29, 0.25), wet=0.40, faded=0.40),
+    # painted metal cladding for the canopy column / facade: light cool grey, faint panel seams
+    # (the concrete crack net, kept sparse), a semi-gloss sheen rather than matte concrete.
+    "clad_panel":         lambda: _concrete(RES, 137, (0.52, 0.535, 0.55), crack=0.30, stain=0.22, wet=0.30, rough_base=0.50),
 }
 
 
