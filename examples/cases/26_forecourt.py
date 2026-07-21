@@ -25,6 +25,7 @@ from pathlib import Path
 
 from mirage.capture import default_render
 from mirage.meshlang import MeshProgram
+from mirage.textures import ensure_textures
 
 ROOT = Path(__file__).resolve().parents[2]
 RENDER = default_render()
@@ -43,11 +44,21 @@ BIG = 500.0
 # ---- palette ------------------------------------------------------------------- #
 # Sampled from the reference and converted sRGB -> linear, then lifted for the fact that a
 # photo's pixel is albedo x light x tonemap, not albedo.
-def mat(c, metallic=0.0, roughness=0.5, emission=None):
+def mat(c, metallic=0.0, roughness=0.5, emission=None, maps=None, uv_scale=1.0):
     m = {"color": list(c), "metallic": metallic, "roughness": roughness}
     if emission:
         m["emission"] = list(emission)
+    if maps:                                 # real triplanar PBR maps; uv_scale = m per tile.
+        m["albedo_map"] = str(maps["albedo"]); m["roughness_map"] = str(maps["rough"])
+        m["normal_map"] = str(maps["normal"]); m["uv_scale"] = uv_scale
     return m
+
+
+# Real PBR map sets for the wet forecourt floor (albedo / roughness / normal), generated on
+# demand into assets/textures/. The wet look is carried by the roughness pools mirroring the
+# sky, not by flat near-black fills -- and the bays' staining is ORGANIC, baked into the map,
+# which is what finally kills the "rectangle nested in a rectangle" bullseye.
+TEX = ensure_textures(["forecourt_concrete", "asphalt_wet", "bay_blue", "bay_orange"])
 
 
 CONCRETE  = mat((0.30, 0.305, 0.295), 0.0, 0.72)    # dry plinth kerb / circle infill
@@ -72,26 +83,19 @@ SHUTTER   = mat((0.34, 0.35, 0.36), 0.3, 0.45)
 BANNER_BL = mat((0.03, 0.10, 0.42), 0.0, 0.55)
 CONE_BL   = mat((0.05, 0.09, 0.34), 0.0, 0.50)
 
-# Wet-overcast ground. The whole forecourt is a mirror of a bright sky, so the wet surfaces
-# are near-BLACK diffuse with a low-roughness specular that carries the reflection: the
-# contrast IS the wetness. A light matte grey (what "damp concrete" naively wants to be) kills
-# it. Sampled darker than the photo's pixels, because a photo pixel is albedo x light, and the
-# reflection supplies the light. See the render notes at the foot of the file.
-WET_CONC  = mat((0.058, 0.061, 0.066), 0.0, 0.14)    # damp concrete slab
-DRY_CONC  = mat((0.255, 0.255, 0.247), 0.0, 0.66)    # the drier apron patches (matte)
-WET_STRK  = mat((0.030, 0.032, 0.037), 0.0, 0.10)    # darker wet streaks
-TYRE_MK   = mat((0.045, 0.045, 0.047), 0.0, 0.55)    # dry tyre-scuff, matte
-ASPH_W    = mat((0.018, 0.020, 0.024), 0.0, 0.10)    # wet asphalt road, near-black mirror
-# The bays are soaked-MATTE, not mirrors: a broad specular lobe (roughness ~0.3-0.45) reflects
-# the sky and column as a soft sheen the denoiser can clean, where a sharp lobe left a firefly
-# triangle it could not (the reflected column is not in its albedo/normal guide buffer).
-SLATE_W   = mat((0.034, 0.044, 0.072), 0.0, 0.18)    # the blue bay, soaked
-SHEET_W   = mat((0.050, 0.055, 0.066), 0.0, 0.30)    # the blue bay's wettest sheet
-TERRA_D   = mat((0.360, 0.135, 0.072), 0.0, 0.44)    # terracotta, drier
-TERRA_F   = mat((0.260, 0.125, 0.085), 0.0, 0.42)    # faded terracotta beyond
-NAVY_W    = mat((0.028, 0.038, 0.062), 0.0, 0.16)    # the dark strip by the island
-PUDDLE    = mat((0.022, 0.028, 0.040), 0.0, 0.26)    # standing water, broad soft reflection
 LINE_W    = mat((0.60, 0.605, 0.59), 0.0, 0.58)      # painted lines, damp
+
+# Textured floor (triplanar PBR maps, generated above). This replaced a dozen flat near-black
+# fills stacked into nested rectangles: the wet-overcast look is the SAME idea -- a dark
+# surface whose contrast is the bright sky mirrored in its low-roughness patches -- but now the
+# staining, wear, cracks and standing water live in the maps, organic and per-texel, instead of
+# reading as a dartboard of concentric slabs. uv_scale is world-metres per tile: sized so the
+# staining reads at puddle scale and each bay is about one tile, so no two bays look cloned
+# (triplanar projects world x,y, and the bays sit at different world positions).
+APRON     = mat((0.30, 0.31, 0.32), 0.0, 0.6, maps=TEX["forecourt_concrete"], uv_scale=12.0)
+ROAD      = mat((0.05, 0.055, 0.063), 0.0, 0.3, maps=TEX["asphalt_wet"],       uv_scale=4.0)
+BAY_BLUE  = mat((0.10, 0.13, 0.24), 0.0, 0.5, maps=TEX["bay_blue"],            uv_scale=5.5)
+BAY_ORNG  = mat((0.44, 0.17, 0.06), 0.0, 0.5, maps=TEX["bay_orange"],          uv_scale=6.0)
 
 # The scene's forward axis (the bay's long edge, world +y) is not square to the building line
 # behind it; the yard and road sit at this yaw.
@@ -118,35 +122,28 @@ def slab(p, x0, x1, y0, y1, z, t, material):
 # where it saw it, and a projection overlay on the photo confirmed the fit before any render.
 def forecourt():
     p = MeshProgram()
-    p.place(box(44, 48, 0.4), at=[6, 8, -0.2], material=WET_CONC)            # the damp slab
-    for cx, cy, sx, sy in [(9, 10.5, 9, 6), (13, 6, 8, 8), (-4, 3, 5, 9)]:   # drier patches
-        p.place(box(sx, sy, 0.01), at=[cx, cy, 0.006], material=DRY_CONC)
-    p.place(box(40, 9.5, 0.03), at=[7, 16.2, 0.012], rotate=[0, 0, ANG], material=ASPH_W)
-    LW = 0.12
-    bays = [(0, 3.47, 0, 6, SLATE_W), (3.62, 7.5, -3.4, 6.0, TERRA_D),
-            (0, 3.47, 6.2, 9.7, TERRA_F), (-1.30, -0.14, -1.6, 5.7, NAVY_W)]
+    # the damp concrete apron: ONE textured slab. Aggregate, hairline cracks, and dark
+    # oil/water staining all live in the map; the wet sheen is the map's low-roughness pools
+    # mirroring the sky, not a flat near-black fill.
+    p.place(box(44, 48, 0.4), at=[6, 8, -0.2], material=APRON)
+    # the wet asphalt beyond the bays (the road edge and forecourt run-off)
+    p.place(box(40, 9.5, 0.03), at=[7, 16.2, 0.012], rotate=[0, 0, ANG], material=ROAD)
+    LW = 0.11
+    # the painted bays, each ONE textured slab. The worn paint, the fine cracks and the
+    # ORGANIC standing water are baked into the bay map -- so there are no stacked overlay
+    # rectangles (which read as a dartboard) and no overlapping top faces to z-fight.
+    bays = [(0, 3.47, 0, 6, BAY_BLUE), (3.62, 7.5, -3.4, 6.0, BAY_ORNG),
+            (0, 3.47, 6.2, 9.7, BAY_ORNG)]
     for x0, x1, y0, y1, m in bays:
         slab(p, x0, x1, y0, y1, 0.004, 0.006, m)
         for lx in (x0 - LW, x1):
             slab(p, lx, lx + LW, y0 - LW, y1 + LW, 0.006, 0.006, LINE_W)
         for ly in (y0 - LW, y1):
             slab(p, x0 - LW, x1 + LW, ly, ly + LW, 0.006, 0.006, LINE_W)
-    # the soaked centre of the blue bay + wet sheets bridging into the terracotta. DISTINCT
-    # heights on purpose: overlapping slabs that share a top face z-fight, and the denoiser
-    # smears that flicker into a grainy triangular patch that no spp or roughness removes.
-    for x0, x1, y0, y1, z, m in [(0.25, 3.1, 0.4, 4.9, 0.014, SHEET_W),
-                                 (0.7, 2.5, 1.1, 3.6, 0.018, PUDDLE),
-                                 (3.7, 6.9, -1.2, 3.2, 0.016, PUDDLE)]:
-        slab(p, x0, x1, y0, y1, z, 0.003, m)
-    # tyre tracks and wet streaks that break the flat sheet
-    for x, y0, y1, ww, m in [(4.9, 7, 15, 0.24, WET_STRK), (5.5, 7, 15, 0.24, WET_STRK),
-                             (8.6, 8, 16, 0.24, TYRE_MK), (9.2, 8, 16, 0.24, TYRE_MK),
-                             (12.0, 3, 12, 0.8, WET_STRK), (6.4, -3, 5, 0.6, WET_STRK)]:
-        slab(p, x - ww / 2, x + ww / 2, y0, y1, 0.007, 0.004, m)
     # the white circle painted around the island (centre + radius measured), the yellow arrow
     p.place(MeshProgram().cylinder(sides=72, radius=1.03, height=0.006)
             .place(MeshProgram().cylinder(sides=72, radius=0.91, height=0.02),
-                   at=[0, 0, 0], material=WET_CONC),
+                   at=[0, 0, 0], material=APRON),
             at=[-3.20, -2.44, 0.004], material=LINE_W)
     p.place(box(0.15, 2.0, 0.006), at=[9.0, 9.4, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
     for s in (-1, 1):
