@@ -7,13 +7,18 @@ behind it. The job is to read the photo and rebuild the scene as an op-log — g
 palette, layout and camera — then render it from the same viewpoint and put the two side by
 side.
 
-What it exercises: `spin` (the lathe) for the hose loops and the fire bucket, box-selector
-`material` painting for the rail's hazard bands, `place` for the layout, and the tracer's
-smooth shading + creases on the hardware.
+The scene is built in three separable pieces, which is the point of the case:
+
+* the **camera**, solved from the photo (`mirage.solve`) — see the block above CAM_EYE;
+* the **parts**, each modelled and reviewed on its own (`forecourt/parts.py`, and
+  `python -m forecourt.sheet` to look at them one at a time);
+* the **layout** below, which is nothing but `place` ops at unprojected positions.
+
+Keeping those apart is what makes the thing improvable: a part can be rebuilt without
+touching the camera, and the layout can be re-solved without touching the parts.
 
     uv run python examples/cases/26_forecourt.py            # hero -> docs/gallery
     uv run python examples/cases/26_forecourt.py --preview  # fast low-spp look
-    uv run python examples/cases/26_forecourt.py --compare  # reference | render
 
 Needs mirage_render + Pillow.
 """
@@ -23,9 +28,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mirage.capture import default_render
-from mirage.meshlang import MeshProgram
-from mirage.textures import ensure_textures
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # so `forecourt` imports as a kit
+
+from forecourt import parts as P                                          # noqa: E402
+from forecourt.materials import (APRON, BAY_BLUE, BAY_ORNG, BLACK, CONCRETE,  # noqa: E402
+                                 LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
+                                 WASH_F, WHITE, YELLOW, YELLOWP, mat)
+from mirage.capture import default_render                                 # noqa: E402
+from mirage.meshlang import MeshProgram                                   # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 RENDER = default_render()
@@ -38,99 +48,52 @@ REF = Path(os.environ.get("MIRAGE_REF", "D:/dRepo_26/frame_2026-5-9_09-28-55.png
 # Don't hardcode the machine you happen to be sitting at.
 THREADS = os.environ.get("MIRAGE_THREADS", "14")
 
-BIG = 500.0
-
-
-# ---- palette ------------------------------------------------------------------- #
-# Sampled from the reference and converted sRGB -> linear, then lifted for the fact that a
-# photo's pixel is albedo x light x tonemap, not albedo.
-def mat(c, metallic=0.0, roughness=0.5, emission=None, maps=None, uv_scale=1.0):
-    m = {"color": list(c), "metallic": metallic, "roughness": roughness}
-    if emission:
-        m["emission"] = list(emission)
-    if maps:                                 # real triplanar PBR maps; uv_scale = m per tile.
-        m["albedo_map"] = str(maps["albedo"]); m["roughness_map"] = str(maps["rough"])
-        m["normal_map"] = str(maps["normal"]); m["uv_scale"] = uv_scale
-    return m
-
-
-# Real PBR map sets for the wet forecourt floor (albedo / roughness / normal), generated on
-# demand into assets/textures/. The wet look is carried by the roughness pools mirroring the
-# sky, not by flat near-black fills -- and the bays' staining is ORGANIC, baked into the map,
-# which is what finally kills the "rectangle nested in a rectangle" bullseye.
-TEX = ensure_textures(["forecourt_concrete", "asphalt_wet", "bay_blue", "bay_orange", "clad_panel"])
-
-
-CONCRETE  = mat((0.30, 0.305, 0.295), 0.0, 0.72)    # dry plinth kerb / circle infill
-YELLOWP   = mat((0.62, 0.44, 0.05), 0.0, 0.70)      # yellow road paint
-# (the wet ground palette lives just below, after the object materials)
-
-COL_GREY  = mat((0.56, 0.56, 0.55), 0.0, 0.42, maps=TEX["clad_panel"], uv_scale=3.0)  # canopy column cladding
-PANEL_BL  = mat((0.045, 0.085, 0.40), 0.0, 0.35)    # the ad panel / dispenser blue
-PANEL_WH  = mat((0.80, 0.80, 0.79), 0.0, 0.40)
-RED       = mat((0.50, 0.045, 0.030), 0.0, 0.45)    # fire box / the panel's red banner
-ORANGE_S  = mat((0.72, 0.26, 0.03), 0.0, 0.45)      # the dispenser's orange stripe
-YELLOW    = mat((0.74, 0.55, 0.03), 0.0, 0.45)      # rail bands / the big arrow
-BLACK     = mat((0.028, 0.028, 0.030), 0.0, 0.55)
-HOSE      = mat((0.022, 0.022, 0.024), 0.0, 0.62)
-STEEL     = mat((0.52, 0.52, 0.53), 1.0, 0.38)      # the bucket, checker plate
-CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.22)
-WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.45)
-GLASS     = mat((0.06, 0.07, 0.08), 0.0, 0.10)
-TYRE      = mat((0.020, 0.020, 0.022), 0.0, 0.80)
-WALL_TILE = mat((0.62, 0.62, 0.60), 0.0, 0.35, maps=TEX["clad_panel"], uv_scale=4.5)
-SHUTTER   = mat((0.34, 0.35, 0.36), 0.3, 0.45)
-BANNER_BL = mat((0.03, 0.10, 0.42), 0.0, 0.55)
-CONE_BL   = mat((0.05, 0.09, 0.34), 0.0, 0.50)
-
-LINE_W    = mat((0.52, 0.525, 0.515), 0.0, 0.62)     # painted lines, damp and grimy (not bright white)
-
-# Textured floor (triplanar PBR maps, generated above). This replaced a dozen flat near-black
-# fills stacked into nested rectangles: the wet-overcast look is the SAME idea -- a dark
-# surface whose contrast is the bright sky mirrored in its low-roughness patches -- but now the
-# staining, wear, cracks and standing water live in the maps, organic and per-texel, instead of
-# reading as a dartboard of concentric slabs. uv_scale is world-metres per tile: sized so the
-# staining reads at puddle scale and each bay is about one tile, so no two bays look cloned
-# (triplanar projects world x,y, and the bays sit at different world positions).
-APRON     = mat((0.30, 0.31, 0.32), 0.0, 0.6, maps=TEX["forecourt_concrete"], uv_scale=12.0)
-ROAD      = mat((0.05, 0.055, 0.063), 0.0, 0.3, maps=TEX["asphalt_wet"],       uv_scale=4.0)
-BAY_BLUE  = mat((0.10, 0.13, 0.24), 0.0, 0.5, maps=TEX["bay_blue"],            uv_scale=5.5)
-BAY_ORNG  = mat((0.44, 0.17, 0.06), 0.0, 0.5, maps=TEX["bay_orange"],          uv_scale=6.0)
-
-# The scene's forward axis (the bay's long edge, world +y) is not square to the building line
-# behind it; the yard and road sit at this yaw.
+# The scene's forward axis (the bay's long edge, world +y) is not square to the building
+# line behind it; the yard and road sit at this yaw.
 ANG = -15.0
+ISLAND_AT = [-3.12, -1.05]   # where the pump island stands, unprojected from its footprint
 
 
-def box(sx, sy, sz):
-    """An axis-aligned box of the given SIZE (the cube primitive is unit, centred)."""
-    return MeshProgram().cube(size=1.0).scale({"by": "all"}, [sx, sy, sz])
+def at(dx, dy, ang=ANG, base=(8.5, 20.2)):
+    """A point `dx` along the building line and `dy` off it — the yard's own coordinates.
+    The facade runs at ANG, so laying its clutter out in world x/y by hand is a way to get
+    everything subtly off the wall."""
+    c, s = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+    return [base[0] + dx * c - dy * s, base[1] + dx * s + dy * c]
 
 
 def slab(p, x0, x1, y0, y1, z, t, material):
     """A flat painted patch lying ON the ground, spanning [z, z+t] — not straddling z, which
     buries half of it in the slab and z-fights the rest."""
-    p.place(box(x1 - x0, y1 - y0, t), at=[(x0 + x1) / 2, (y0 + y1) / 2, z + t / 2],
+    p.place(P.box(x1 - x0, y1 - y0, t), at=[(x0 + x1) / 2, (y0 + y1) / 2, z + t / 2],
             material=material)
 
 
 # ---- the painted forecourt ------------------------------------------------------ #
 # The dominant graphic, rebuilt in the SOLVED camera's frame by unprojecting the photo. The
-# blue bay's four measured corners are a 3.47 x 6.0 m rectangle at world x[0,3.47] y[0,6]; the
-# terracotta bays, the road and the building line were unprojected the same way with
-# solve.ground_point. Nothing here is eyeballed against a render -- the camera put every edge
-# where it saw it, and a projection overlay on the photo confirmed the fit before any render.
+# blue bay's four measured corners are a 3.47 x 6.0 m rectangle at world x[0,3.47] y[0,6];
+# the terracotta bays, the road and the building line were unprojected the same way with
+# solve.ground_point. Nothing here is eyeballed against a render -- the camera put every
+# edge where it saw it, and a projection overlay on the photo confirmed the fit.
 def forecourt():
     p = MeshProgram()
-    # the damp concrete apron: ONE textured slab. Aggregate, hairline cracks, and dark
-    # oil/water staining all live in the map; the wet sheen is the map's low-roughness pools
-    # mirroring the sky, not a flat near-black fill.
-    p.place(box(44, 48, 0.4), at=[6, 8, -0.2], material=APRON)
-    # the wet asphalt beyond the bays (the road edge and forecourt run-off)
-    p.place(box(40, 9.5, 0.03), at=[7, 16.2, 0.012], rotate=[0, 0, ANG], material=ROAD)
+    # the damp concrete apron: ONE textured slab. Aggregate, hairline cracks and dark
+    # oil/water staining all live in the map; the wet sheen is the map's low-roughness
+    # pools mirroring the sky, not a flat near-black fill.
+    p.place(P.box(44, 48, 0.4), at=[6, 8, -0.2], material=APRON)
+    p.place(P.box(40, 9.5, 0.03), at=[7, 16.2, 0.012], rotate=[0, 0, ANG], material=ROAD)
+    # The saw-cut construction joints. A poured apron is a GRID of slabs, and those long
+    # straight lines are most of what tells the eye it is looking at concrete rather than at
+    # a grey plane — the texture's random cracks cannot supply them, because they are not
+    # random. Laid below the bays (z 0.001..0.005) so the paint covers them, as it does.
+    JOINT = mat((0.115, 0.118, 0.120), 0.0, 0.58)
+    for k in range(-2, 7):
+        p.place(P.box(0.022, 46, 0.004), at=[-7.6 + k * 5.4, 8, 0.003], material=JOINT)
+    for k in range(-2, 6):
+        p.place(P.box(42, 0.022, 0.004), at=[6, -8.1 + k * 5.4, 0.003], material=JOINT)
     LW = 0.11
-    # the painted bays, each ONE textured slab. The worn paint, the fine cracks and the
-    # ORGANIC standing water are baked into the bay map -- so there are no stacked overlay
+    # the painted bays, each ONE textured slab: the worn paint, the fine cracks and the
+    # organic standing water are baked into the bay maps, so there are no stacked overlay
     # rectangles (which read as a dartboard) and no overlapping top faces to z-fight.
     bays = [(0, 3.47, 0, 6, BAY_BLUE), (3.62, 7.5, -3.4, 6.0, BAY_ORNG),
             (0, 3.47, 6.2, 9.7, BAY_ORNG)]
@@ -140,238 +103,82 @@ def forecourt():
             slab(p, lx, lx + LW, y0 - LW, y1 + LW, 0.006, 0.006, LINE_W)
         for ly in (y0 - LW, y1):
             slab(p, x0 - LW, x1 + LW, ly, ly + LW, 0.006, 0.006, LINE_W)
-    # the white circle painted around the island (centre + radius measured), the yellow arrow
-    p.place(MeshProgram().cylinder(sides=72, radius=1.03, height=0.006)
-            .place(MeshProgram().cylinder(sides=72, radius=0.91, height=0.02),
-                   at=[0, 0, 0], material=APRON),
-            at=[-3.20, -2.44, 0.004], material=LINE_W)
-    p.place(box(0.15, 2.0, 0.006), at=[9.0, 9.4, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
+    # The white RING painted around the island. Both discs are painted INSIDE the
+    # sub-program: a material on the outer `place` would repaint every face it carries,
+    # including the concrete infill, and the ring would come out as a solid white pancake —
+    # which is exactly what it had been doing.
+    ring = MeshProgram()
+    ring.place(MeshProgram().cylinder(sides=72, radius=1.03, height=0.006), material=LINE_W)
+    ring.place(MeshProgram().cylinder(sides=72, radius=0.90, height=0.014), material=APRON)
+    p.place(ring, at=[-3.20, -2.44, 0.004])
+    p.place(P.box(0.15, 2.0, 0.006), at=[9.0, 9.4, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
     for s in (-1, 1):
-        p.place(box(0.15, 0.95, 0.006), at=[9.0 + s * 0.28, 8.55, 0.004],
+        p.place(P.box(0.15, 0.95, 0.006), at=[9.0 + s * 0.28, 8.55, 0.004],
                 rotate=[0, 0, ANG + s * 40], material=YELLOWP)
-    p.place(box(14, 0.14, 0.006), at=[8, 12.6, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
-    return p
-
-
-# ---- the dispenser island ------------------------------------------------------- #
-
-
-def hose_loop(radius=0.34, tube=0.021, angle=250.0):
-    """A fuel hose hanging in a loop — the lathe, used as a bender.
-
-    `profile` lays a small circle as a wire, `spin` revolves it about the z axis. Revolved
-    only part-way it is not a torus but an ARC of tube: exactly a hose drooping from its
-    holster. Six of these, rotated and placed, are the black tangle either side.
-    """
-    pts = [(radius + tube * math.cos(a * math.pi / 8), tube * math.sin(a * math.pi / 8))
-           for a in range(16)]
-    p = MeshProgram()
-    p.profile(points=[list(q) for q in pts], plane="xz", closed=True)
-    p.spin(axis="z", steps=40, angle=angle)
-    return p
-
-
-def dispenser():
-    """The blue pump body, its hoses, and the ad panel above — all hung off the column."""
-    p = MeshProgram()
-    # pump body: a blue box with a silver band and an orange stripe
-    p.place(box(0.86, 0.62, 1.28), at=[0, 0, 0.81], material=PANEL_BL)
-    p.place(box(0.88, 0.64, 0.075), at=[0, 0, 1.30], material=ORANGE_S)
-    p.place(box(0.885, 0.645, 0.05), at=[0, 0, 1.03], material=PANEL_WH)
-    for s in (-1, 1):                                   # the white corner pilasters
-        p.place(box(0.045, 0.645, 1.28), at=[s * 0.425, 0, 0.81], material=PANEL_WH)
-    p.place(box(0.20, 0.06, 0.16), at=[0.16, -0.33, 1.16], material=PANEL_WH)  # keypad plate
-
-    # hoses: loops drooping either side, plus the nozzles in their holsters
-    for s in (-1, 1):
-        for k, (r, dz, tilt) in enumerate([(0.40, 0.30, 8), (0.34, 0.52, -6), (0.29, 0.74, 4)]):
-            p.place(hose_loop(radius=r, angle=252 - 14 * k),
-                    at=[s * 0.50, 0.02 + 0.10 * k, dz + 0.34],
-                    rotate=[90, tilt, 90 + s * 8], material=HOSE)
-        p.place(box(0.07, 0.10, 0.30), at=[s * 0.52, -0.20, 1.10],
-                rotate=[16, 0, 0], material=BLACK)      # the nozzle in its holster
-    return p
-
-
-def ad_panel():
-    """The lightbox on the column: 油卡支付 超划算, a red banner, and a big yellow arrow."""
-    p = MeshProgram()
-    p.place(box(0.94, 0.09, 2.05), at=[0, 0, 0], material=PANEL_WH)       # the white frame
-    p.place(box(0.86, 0.11, 1.95), at=[0, 0, 0], material=PANEL_BL)       # the blue face
-    p.place(box(0.64, 0.13, 0.16), at=[0, -0.015, 0.16], material=RED)    # 每周二…特惠日
-    # the down arrow: a shaft plus a rotated square for the head
-    p.place(box(0.30, 0.13, 0.36), at=[0, -0.02, -0.19], material=YELLOW)
-    p.place(box(0.34, 0.13, 0.34), at=[0, -0.02, -0.46], rotate=[0, 45, 0], material=YELLOW)
-    p.place(box(0.60, 0.13, 0.10), at=[0, -0.02, 0.86], material=PANEL_WH)  # 油卡支付
-    p.place(box(0.60, 0.13, 0.10), at=[0, -0.02, 0.66], material=PANEL_WH)  # 超划算
-    p.place(box(0.52, 0.13, 0.05), at=[0, -0.02, -0.84], material=PANEL_WH)  # 其他时段…
-    return p
-
-
-def fire_box():
-    """灭火器箱 — the red cabinet, two doors and an orange stripe."""
-    p = MeshProgram()
-    p.place(box(0.44, 0.30, 0.86), at=[0, 0, 0.43], material=RED)
-    p.place(box(0.455, 0.31, 0.045), at=[0, 0, 0.72], material=ORANGE_S)
-    p.place(box(0.40, 0.02, 0.012), at=[0, -0.155, 0.44], material=BLACK)   # the door split
-    p.place(box(0.13, 0.10, 0.16), at=[0.02, 0.0, 0.93], material=WHITE)    # the glove box on top
-    return p
-
-
-def bucket():
-    """消防桶 — a tapered fire bucket, turned on the lathe from its own section."""
-    p = MeshProgram()
-    p.profile(points=[[0.005, 0.0], [0.115, 0.0], [0.152, 0.30], [0.158, 0.315],
-                      [0.150, 0.318], [0.145, 0.31], [0.108, 0.012], [0.005, 0.012]],
-              plane="xz", closed=True)
-    p.spin(axis="z", steps=44, angle=360.0)
-    return p
-
-
-def hazard_rail():
-    """The guard rail: three legs and a top rail, banded black and yellow.
-
-    Built from SEGMENTS rather than painted by a box query, and the reason is a nice bit of
-    kernel reality: a cylinder's side faces are full-length quads whose centroids all sit at
-    its middle, so a box selector asking for "the faces in this 0.15 m slice" correctly
-    matches nothing — there is no geometry there to select. Segment the tube and the bands
-    are the segments, which is also what the real thing is: separate paint.
-    """
-    p = MeshProgram()
-    LEN, H, R, band = 3.05, 0.62, 0.043, 0.152
-    n = max(2, int(round(LEN / band)))
-    for i in range(n):                                              # the top rail
-        p.place(MeshProgram().cylinder(sides=18, radius=R, height=LEN / n + 0.003),
-                at=[-LEN / 2 + (i + 0.5) * LEN / n, 0, H], rotate=[0, 90, 0],
-                material=BLACK if i % 2 else YELLOW)
-    for lx in (-LEN / 2 + R, 0.02, LEN / 2 - R):                    # three legs
-        m = max(2, int(round(H / band)))
-        for k in range(m):
-            p.place(MeshProgram().cylinder(sides=18, radius=R, height=H / m + 0.003),
-                    at=[lx, 0, (k + 0.5) * H / m],
-                    material=BLACK if k % 2 else YELLOW)
-        p.place(MeshProgram().uv_sphere(segments=18, rings=10, radius=R),   # the elbow
-                at=[lx, 0, H], material=YELLOW)
-    return p
-
-
-def island():
-    """The dispenser island, built for THIS shot: a tall clad column that leaves the frame,
-    the blue ad lightbox on its face, the pump and hoses at its foot, fire box and bucket.
-    Placed by unprojecting the pump footprint, the fire box and the painted circle; the sign
-    height was set against a projection overlay so 油卡支付 / 降 1.1 land on the real sign."""
-    p = MeshProgram()
-    Z = 0.14
-    p.place(box(1.9, 1.35, Z), at=[0, 0.10, Z / 2], material=CONCRETE)          # grate plinth
-    p.place(box(1.78, 1.24, 0.03), at=[0, 0.10, Z], material=STEEL)
-    p.place(box(0.72, 0.60, 8.0), at=[0.04, 0.42, Z + 3.9], material=COL_GREY, mark="column")
-    p.place(box(0.44, 0.02, 0.11), at=[0.04, 0.13, Z + 3.28], material=WHITE)   # the Gulf plate
-    p.place(ad_panel(), at=[0.04, 0.13, Z + 2.07], material=None, mark="sign")
-    p.place(dispenser(), at=[0, 0.02, Z], mark="dispenser")
-    p.place(fire_box(), at=[0.06, -0.40, Z], mark="firebox")
-    p.place(bucket(), at=[0.54, -0.40, Z], material=STEEL)
-    for i, (dx, h, col) in enumerate([(-0.30, 0.115, (0.34, 0.20, 0.05)),
-                                      (-0.14, 0.105, (0.72, 0.72, 0.70))]):
-        p.place(MeshProgram().cylinder(sides=16, radius=0.032, height=h),
-                at=[dx, -0.46, Z + h / 2], material=mat(col, 0.0, 0.30))        # the little bottles
+    p.place(P.box(14, 0.14, 0.006), at=[8, 12.6, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
+    p.place(P.drain_channel(13.0), at=[7.0, 11.3, 0], rotate=[0, 0, ANG])
     return p
 
 
 # ---- the yard behind ------------------------------------------------------------ #
-def van():
-    """The white van: a body, a cab step-down, a glass band and four wheels."""
-    p = MeshProgram()
-    p.place(box(5.30, 2.02, 1.30), at=[0, 0, 1.30], material=WHITE)          # box body
-    p.place(box(1.55, 1.96, 0.72), at=[2.55, 0, 0.86], material=WHITE)       # bonnet
-    p.place(box(5.34, 2.04, 0.34), at=[0, 0, 0.62], material=mat((0.30, 0.31, 0.32), 0.0, 0.5))
-    p.place(box(3.30, 2.06, 0.52), at=[-0.35, 0, 1.72], material=GLASS)      # side glass
-    p.place(box(0.10, 1.90, 0.62), at=[3.28, 0, 1.55], rotate=[0, 22, 0], material=GLASS)
-    for x, y in [(1.95, 1.02), (1.95, -1.02), (-1.85, 1.02), (-1.85, -1.02)]:
-        p.place(MeshProgram().cylinder(sides=24, radius=0.37, height=0.24),
-                at=[x, y, 0.37], rotate=[90, 0, 0], material=TYRE)
-        p.place(MeshProgram().cylinder(sides=20, radius=0.21, height=0.26),
-                at=[x, y, 0.37], rotate=[90, 0, 0], material=CHROME)
-    p.place(box(0.30, 0.16, 0.10), at=[2.66, -0.86, 0.60], material=YELLOW)  # plate
-    return p
-
-
-def suv():
-    p = MeshProgram()
-    p.place(box(4.55, 1.86, 0.80), at=[0, 0, 0.72], material=WHITE)
-    p.place(box(2.70, 1.80, 0.62), at=[-0.25, 0, 1.42], material=WHITE)
-    p.place(box(2.40, 1.84, 0.44), at=[-0.25, 0, 1.44], material=GLASS)
-    for x, y in [(1.45, 0.92), (1.45, -0.92), (-1.45, 0.92), (-1.45, -0.92)]:
-        p.place(MeshProgram().cylinder(sides=24, radius=0.34, height=0.22),
-                at=[x, y, 0.34], rotate=[90, 0, 0], material=TYRE)
-    p.place(box(0.24, 0.14, 0.09), at=[2.30, -0.60, 0.52], material=mat((0.10, 0.35, 0.75), 0, 0.4))
-    return p
-
-
-def cone(h=0.80, r=0.14):
-    """A blue/white reflective bollard — stacked frusta, same reason as the rail: the bands
-    have to BE geometry before a colour can land on only some of them."""
-    p = MeshProgram()
-    n = 8
-    for k in range(n):
-        t0, t1 = k / n, (k + 1) / n
-        rr = r * (1.0 - 0.62 * (t0 + t1) / 2)
-        p.place(MeshProgram().cylinder(sides=20, radius=rr, height=h / n + 0.004),
-                at=[0, 0, 0.03 + (k + 0.5) * h / n],
-                material=WHITE if k % 2 else CONE_BL)
-    p.place(box(2 * r + 0.12, 2 * r + 0.12, 0.03), at=[0, 0, 0.015], material=CONE_BL)
-    return p
-
-
 def yard():
-    """The building line across the back and its clutter -- facade, roller shutters, the white
-    van, bollards, the speed hump, the wash-machine banner -- placed by unprojecting the
+    """The building line across the back and its clutter, placed by unprojecting the
     building base line (world y ~ 20, yawed by ANG) and the road front."""
     p = MeshProgram()
-    p.place(box(24, 0.4, 5.2), at=[8.5, 20.2, 2.6], rotate=[0, 0, ANG], material=WALL_TILE,
-            mark="facade")
-    for i in range(6):                                                        # roller shutters
-        dx = -6 + i * 3.9
-        cxy = [8.5 + dx * math.cos(math.radians(ANG)), 20.2 + dx * math.sin(math.radians(ANG))]
-        p.place(box(3.0, 0.10, 3.1), at=[cxy[0], cxy[1] - 0.18, 1.75], rotate=[0, 0, ANG],
-                material=SHUTTER)
-    p.place(box(2.4, 0.12, 2.8), at=[15.5, 19.0, 1.5], rotate=[0, 0, ANG], material=BLACK)  # doorway
-    for dx in (-7.5, 5.5, 10.0):                                              # hanging banners
-        cxy = [8.5 + dx * math.cos(math.radians(ANG)), 20.2 + dx * math.sin(math.radians(ANG))]
-        p.place(box(0.42, 0.06, 1.8), at=[cxy[0], cxy[1] - 0.25, 2.7], rotate=[0, 0, ANG],
-                material=ORANGE_S)
-    p.place(van(), at=[9.9, 17.3, 0], rotate=[0, 0, -11], mark="van")
-    for cx, cy in [(9.6, 18.3), (11.1, 18.2), (12.6, 18.1), (14.0, 17.9), (7.9, 18.4),
-                   (15.4, 17.7)]:                                             # blue-white bollards
-        p.place(cone(), at=[cx, cy, 0], material=None)
-    for i in range(9):                                                        # the speed hump
-        dx = -1.6 + i * 0.4
-        cxy = [11.0 + dx * math.cos(math.radians(26)), 5.6 + dx * math.sin(math.radians(26))]
-        p.place(box(0.36, 0.30, 0.08), at=[cxy[0], cxy[1], 0.04], rotate=[0, 0, 26],
-                material=WHITE if i % 2 else BLACK)
-    p.place(box(0.06, 2.6, 2.7), at=[-5.6, 11.0, 1.5], rotate=[0, 0, -6], material=BANNER_BL)
-    for s in (0, 1):                                                          # 小心地滑 A-frame
-        p.place(box(0.40, 0.30, 0.64), at=[4.1 + s * 0.55, 19.3, 0.32],
-                rotate=[0, 0, 6 * s], material=YELLOW)
-    p.place(suv(), at=[-5.3, 4.4, 0], rotate=[0, 0, 96])   # far left, mostly out of frame
+    p.place(P.facade(24.0, 5.2), at=[8.5, 20.2, 0], rotate=[0, 0, ANG], mark="facade")
+    for dx in (-8.4, -4.3, -0.2, 4.6, 8.7):                       # the workshop bays
+        c = at(dx, -0.22)
+        p.place(P.roller_shutter(3.4, 3.2), at=[c[0], c[1], 0], rotate=[0, 0, ANG])
+    for dx in (-6.35, 2.2, 6.65):                                 # the piers between them
+        c = at(dx, -0.24)
+        p.place(P.tiled_pilaster(0.62, 4.6), at=[c[0], c[1], 0], rotate=[0, 0, ANG])
+    c = at(11.6, -0.30)                                           # an open doorway
+    p.place(P.box(2.1, 0.12, 2.6), at=[c[0], c[1], 1.35], rotate=[0, 0, ANG],
+            material=mat((0.045, 0.048, 0.05), 0.0, 0.6))
+    c = at(-2.4, -0.55)
+    p.place(P.hanging_banner(1.30, 1.76, WASH_F), at=[c[0], c[1], 3.15], rotate=[0, 0, ANG])
+    c = at(3.9, -0.55)
+    p.place(P.hanging_banner(0.55, 2.75, PROMO_F), at=[c[0], c[1], 3.30], rotate=[0, 0, ANG])
+    # the vehicles and the ground clutter along the wall
+    p.place(P.van(), at=[9.9, 17.4, 0], rotate=[0, 0, ANG + 4], mark="van")
+    for dx, dy in [(-9.0, -1.5), (-6.1, -1.6), (-3.2, -1.7), (-0.4, -1.8), (2.4, -1.9),
+                   (5.2, -2.0)]:
+        c = at(dx, dy)
+        p.place(P.bollard(), at=[c[0], c[1], 0])
+    for dx, dy, kind in [(-7.6, -0.95, "bin"), (-7.0, -0.9, "broom"), (-6.8, -0.85, "broom")]:
+        c = at(dx, dy)
+        if kind == "bin":
+            p.place(P.bin_(), at=[c[0], c[1], 0], rotate=[0, 0, ANG])
+        else:
+            p.place(P.broom(1.4), at=[c[0], c[1], 0], rotate=[0, 9, ANG])
+    for dx, dy, top in [(-5.2, -1.15, (0.10, 0.11, 0.13)), (0.9, -1.05, (0.30, 0.30, 0.31)),
+                        (1.5, -1.15, (0.14, 0.15, 0.30))]:
+        c = at(dx, dy)
+        p.place(P.person(1.70, top), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 150])
+    for k, (dx, dy) in enumerate([(-9.6, -1.05), (-9.0, -1.15)]):  # the 小心地滑 A-frames
+        c = at(dx, dy)
+        p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 8 * k])
+    p.place(P.speed_hump(3.6, 0.52), at=[11.0, 5.6, 0], rotate=[0, 0, 26])
+    p.place(P.bollard(0.86), at=[13.6, 8.6, 0])
+    p.place(P.hanging_banner(0.60, 2.60, REPAIR_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6])
+    p.place(P.suv(), at=[-5.3, 4.4, 0], rotate=[0, 0, 96])         # far left, half out of frame
     return p
-
-
-ISLAND_AT = [-3.12, -1.05]   # where the pump island stands, unprojected from its footprint
 
 
 def scene():
     p = MeshProgram()
     # Every top-level object is MARKED, which makes the scene measurable rather than just
     # renderable: mirage_render --ids turns these tags into a per-pixel object id, so
-    # photomatch.chamfer_per_object can score each against the photo separately. That per-object
-    # score is the loss that will POLISH this scene; measurement -- the solved camera and the
-    # unprojected layout below -- is what landed it in the basin first, which no loss could do:
-    # eleven cameras once all scored 14-15 px because nothing downhill led to the true camera,
-    # 22 deg of yaw and half the fov away.
+    # photomatch.chamfer_per_object can score each against the photo separately. That
+    # per-object score is the loss that will POLISH this scene; measurement -- the solved
+    # camera and the unprojected layout -- is what landed it in the basin first, which no
+    # loss could do: eleven cameras once all scored 14-15 px because nothing downhill led
+    # to the true camera, 22 deg of yaw and half the fov away.
     p.place(forecourt(), mark="forecourt")
-    p.place(island(), at=[ISLAND_AT[0], ISLAND_AT[1], 0], rotate=[0, 0, ANG], mark="island")
-    p.place(hazard_rail().scale({"by": "all"}, [0.60, 1.0, 1.0]),
-            at=[-3.16, -2.20, 0], rotate=[0, 0, -16], material=None, mark="rail")
+    p.place(P.island(), at=[ISLAND_AT[0], ISLAND_AT[1], 0], rotate=[0, 0, ANG], mark="island")
+    p.place(P.hazard_rail(1.88, 0.74), at=[-3.16, -2.30, 0], rotate=[0, 0, ANG - 1],
+            mark="rail")
+    p.place(P.jerrycan(), at=[-3.92, -3.00, 0])
     p.place(yard(), mark="yard")
     return p
 
@@ -437,18 +244,17 @@ def main():
     p = scene()
     m = p.build()
     print(f"forecourt: {len(m.verts):,} verts  {len(m.faces):,} faces  ({len(p.ops)} top-level ops)")
-    spp = 44 if preview else 300
+    spp = 40 if preview else 260
     # An overcast wet morning: soft high sun, a bright sky fill for the wet surfaces to mirror,
     # no hard key. Env is turned up (0.86) because on this shot the reflected sky IS the light on
     # the floor -- the wet materials are near-black diffuse and read only through what they
-    # reflect. Exposure 1.35 sits the concrete where the reference's is; --clamp 2 stops a hot
+    # reflect. Exposure 1.35 sits the concrete where the reference's is; --clamp stops a hot
     # specular sample on the near-mirror puddles from leaving a firefly the denoiser can't fix.
     png = render(p, "hero", spp, 1600, 900,
                  extra=["--sun", "0.12", "--env", "0.86", "--exposure", "1.35", "--clamp", "1.5",
                         "--sun-dir", "0.25", "0.55", "0.80", "--denoise", "4"])
     print("wrote", png)
-    have_ref = REF.exists()
-    if have_ref:
+    if REF.exists():
         print("wrote", compare(png))
     else:
         print(f"(no reference at {REF} — skipping the side-by-side; set MIRAGE_REF)")

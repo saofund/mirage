@@ -26,7 +26,7 @@ from .kernel import (
     make_torus, make_grid, make_profile, face_normal, faces_by_normal,
     extrude_faces, inset_faces, bevel_faces, loop_cut, edge_bevel,
     delete_faces, bridge_faces, fill_holes, catmull_clark,
-    solidify, mirror, array, bisect, spin, screw, boolean,
+    solidify, mirror, array, bisect, spin, screw, sweep, boolean,
 )
 
 
@@ -77,12 +77,37 @@ def _place_xform(V, t, rot, s):
     return out
 
 
+_MAP_KEYS = ("albedo_map", "roughness_map", "normal_map", "uv_scale",
+             "decal_origin", "decal_du", "decal_dv")
+
+
 def _place_material(pm):
-    """Normalise a place op's material (a dict) into the stored {color,metallic,roughness}."""
+    """Normalise a place op's material (a dict) into the stored material — the shading
+    fields plus any image maps, which the tracer needs and which must therefore survive
+    the round trip through a place."""
     if pm is None:
         return None
-    return {"color": list(pm.get("color", [0.8, 0.8, 0.8])),
-            "metallic": pm.get("metallic", 0.0), "roughness": pm.get("roughness", 0.5)}
+    m = {"color": list(pm.get("color", [0.8, 0.8, 0.8])),
+         "metallic": pm.get("metallic", 0.0), "roughness": pm.get("roughness", 0.5)}
+    for k in _MAP_KEYS:
+        if k in pm:
+            m[k] = pm[k]
+    return m
+
+
+def _xform_material(m, t, rot, s):
+    """Carry a material's DECAL frame through a place. The origin moves as a point and the
+    edge vectors through the transform's linear part only, so artwork authored on a part
+    stays stuck to that part through any number of nested placements. Mirrors C++
+    program.cpp xform_decal."""
+    if not m or "decal_origin" not in m:
+        return m
+    o = _place_xform([list(m["decal_origin"])], t, rot, s)[0]
+    du, dv = _place_xform([list(m.get("decal_du", [1, 0, 0])),
+                           list(m.get("decal_dv", [0, 0, 1]))], [0, 0, 0], rot, s)
+    out = dict(m)
+    out["decal_origin"], out["decal_du"], out["decal_dv"] = o, du, dv
+    return out
 
 
 def _diagnostics(mesh):
@@ -650,6 +675,13 @@ class MeshProgram:
         return self.add(**_cmd("bisect", mark=mark, point=list(point), normal=list(normal), fill=fill))
     def spin(self, axis="z", steps=24, angle=360.0, mark=None):
         return self.add(**_cmd("spin", mark=mark, axis=axis, steps=steps, angle=angle))
+    def sweep(self, path, closed=False, twist=0.0, mark=None):
+        """Sweep the current profile along a 3-D polyline (the general lathe). The profile
+        is authored in the XY plane and carried on a parallel-transport frame, so a hose,
+        a cable or a bent handrail follows the path it was given without wringing."""
+        return self.add(**_cmd("sweep", mark=mark, path=[list(p) for p in path],
+                               closed=closed, twist=twist))
+
     def screw(self, axis="z", steps=24, turns=1, height=1.0, angle=360.0, mark=None):
         return self.add(**_cmd("screw", mark=mark, axis=axis, steps=steps, turns=turns,
                                height=height, angle=angle))
@@ -806,12 +838,18 @@ class MeshProgram:
                     Tags = aTags + subTags
                     mesh = Mesh.from_pydata(V, F, [({"tags": list(t)} if t else {}) for t in Tags])
                     place_mat = _place_material(cmd.get("material"))
-                    all_mats = aMats + ([place_mat] * len(subF) if place_mat is not None else subMats)
+                    placed = [place_mat] * len(subF) if place_mat is not None else subMats
+                    tt, rr, ss = (cmd.get("translate", [0, 0, 0]), cmd.get("rotate", [0, 0, 0]),
+                                  cmd.get("scale", [1, 1, 1]))
+                    all_mats = aMats + [_xform_material(m2, tt, rr, ss) for m2 in placed]
                     for f, m2 in zip(mesh.faces, all_mats):
                         if m2:
-                            f.attrs["material"] = {"color": list(m2["color"]),
-                                                   "metallic": m2.get("metallic", 0.0),
-                                                   "roughness": m2.get("roughness", 0.5)}
+                            out = {"color": list(m2["color"]), "metallic": m2.get("metallic", 0.0),
+                                   "roughness": m2.get("roughness", 0.5)}
+                            for k in _MAP_KEYS:
+                                if k in m2:
+                                    out[k] = m2[k]
+                            f.attrs["material"] = out
                     outs = list(mesh.faces[nA:])           # last_created = the placed object
                 elif mesh is None:
                     raise MeshLangError(f"op '{op}' before any primitive")
@@ -863,6 +901,10 @@ class MeshProgram:
                 elif op == "spin":
                     mesh = spin(mesh, cmd.get("axis", "z"), cmd.get("steps", 24), cmd.get("angle", 360.0),
                                 mark=out_tag)
+                    outs = [f for f in mesh.faces if out_tag in _tags(f)]
+                elif op == "sweep":
+                    mesh = sweep(mesh, cmd.get("path", []), cmd.get("closed", False),
+                                 cmd.get("twist", 0.0), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "screw":
                     mesh = screw(mesh, cmd.get("axis", "z"), cmd.get("steps", 24), cmd.get("turns", 1),

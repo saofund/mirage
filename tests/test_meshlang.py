@@ -347,3 +347,61 @@ def test_resolve_is_identity_on_plain_oplog():
     from mirage.meshlang import _resolve_program
     ops = [{"op": "cube", "size": 1.0}, {"op": "bevel", "on": {"by": "all"}, "width": 0.2, "depth": 0.1}]
     assert _resolve_program(ops) == ops
+
+
+def test_sweep_carries_a_profile_along_its_path():
+    # a closed square profile swept along an L: a tube that reaches both ends of the path
+    # and is watertight nowhere (an open-ended tube), with one quad ring per segment.
+    path = [[0, 0, 0], [0, 0, 1.0], [0.8, 0, 1.0]]
+    m = (MeshProgram()
+         .profile(points=[[0.1, 0], [0, 0.1], [-0.1, 0], [0, -0.1]], plane="xy", closed=True)
+         .sweep(path=path)).build()
+    m.validate()
+    assert m.stats()["faces"] == 4 * (len(path) - 1)        # 4 profile edges x 2 segments
+    lo = [min(v.co[k] for v in m.verts) for k in range(3)]
+    hi = [max(v.co[k] for v in m.verts) for k in range(3)]
+    # the last station's profile is perpendicular to a +x tangent, so it adds no x extent
+    assert lo[0] < -0.05 and hi[0] >= 0.799 and hi[2] > 1.05   # it went where it was told
+
+
+def test_sweep_closed_path_is_a_torus():
+    # a closed path with a closed profile has no ends, so it is a genus-1 closed manifold —
+    # the same object spin() makes, reached the general way.
+    ring = [[0.5, 0, 0], [0, 0.5, 0], [-0.5, 0, 0], [0, -0.5, 0]]
+    m = (MeshProgram()
+         .profile(points=[[0.08, 0], [0, 0.08], [-0.08, 0], [0, -0.08]], plane="xy", closed=True)
+         .sweep(path=ring, closed=True)).build()
+    m.validate()
+    assert m.is_closed_manifold() and m.euler() == 0
+
+
+def test_sweep_frame_does_not_wring_on_a_bend():
+    # the parallel-transport frame is the point of sweep: on a path that turns, a naive
+    # fixed-up frame collapses the profile where the tangent nears the up vector. Every
+    # ring must keep its radius.
+    import math
+    path = [[0, 0, 0], [0, 0, 0.5], [0.3, 0.3, 0.9], [0.9, 0.3, 1.0], [1.4, 0.3, 0.6]]
+    m = (MeshProgram()
+         .profile(points=[[0.1, 0], [0, 0.1], [-0.1, 0], [0, -0.1]], plane="xy", closed=True)
+         .sweep(path=path)).build()
+    m.validate()
+    co = [v.co for v in m.verts]
+    for k, c in enumerate(path):                            # 4 verts per station
+        ring = [co[i] for i in range(len(co)) if abs(sum((co[i][j] - c[j]) ** 2 for j in range(3)) ** 0.5 - 0.1) < 1e-6]
+        assert len(ring) >= 4, f"station {k} lost its profile"
+
+
+def test_decal_frame_rides_through_place():
+    # printed artwork is pinned to a rectangle in the part's OWN frame; `place` has to move
+    # that rectangle with the geometry, or a labelled part arrives with its label elsewhere.
+    art = {"color": [0.5, 0.5, 0.5], "albedo_map": "art.ppm",
+           "decal_origin": [-0.5, 0.0, -1.0], "decal_du": [1.0, 0.0, 0.0],
+           "decal_dv": [0.0, 0.0, 2.0]}
+    inner = MeshProgram().place(MeshProgram().cube(1.0), material=art)
+    m = MeshProgram().place(inner, at=[3.0, 4.0, 5.0], rotate=[0, 0, 90]).build()
+    mat = m.faces[0].attrs["material"]
+    assert mat["albedo_map"] == "art.ppm"
+    # yaw +90 sends local +x to world +y; the origin also translates
+    assert [round(c, 6) for c in mat["decal_du"]] == [0.0, 1.0, 0.0]
+    assert [round(c, 6) for c in mat["decal_dv"]] == [0.0, 0.0, 2.0]
+    assert [round(c, 6) for c in mat["decal_origin"]] == [3.0, 3.5, 4.0]

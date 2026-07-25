@@ -353,6 +353,36 @@ OPLOGS = {
         {"op": "spin", "axis": "z", "steps": 12, "angle": 360},
         {"op": "solidify", "thickness": 0.05},
     ],
+    # sweep: a profile carried along an arbitrary path on a parallel-transport frame —
+    # the general case of spin (circular) and screw (helical). Both engines must agree on
+    # the frame, or a hose modelled in Python renders wrung in the C++ tracer.
+    "sweep_straight_tube": [
+        {"op": "profile", "points": [[0.05, 0.0], [0.0, 0.05], [-0.05, 0.0], [0.0, -0.05]],
+         "plane": "xy", "closed": True},
+        {"op": "sweep", "path": [[0, 0, 0], [0, 0, 0.4], [0, 0, 0.8]]},
+    ],
+    "sweep_bent_tube": [   # a bend: the transported frame has real work to do here
+        {"op": "profile", "points": [[0.06, 0.0], [0.0, 0.06], [-0.06, 0.0], [0.0, -0.06]],
+         "plane": "xy", "closed": True},
+        {"op": "sweep", "path": [[0, 0, 0], [0, 0, 0.5], [0.2, 0.1, 0.9], [0.7, 0.1, 1.0]]},
+    ],
+    "sweep_closed_loop": [
+        {"op": "profile", "points": [[0.04, 0.0], [0.0, 0.04], [-0.04, 0.0], [0.0, -0.04]],
+         "plane": "xy", "closed": True},
+        {"op": "sweep", "path": [[0.5, 0, 0], [0, 0.5, 0], [-0.5, 0, 0], [0, -0.5, 0]],
+         "closed": True},
+    ],
+    "sweep_twisted": [
+        {"op": "profile", "points": [[0.10, 0.0], [0.0, 0.04], [-0.10, 0.0], [0.0, -0.04]],
+         "plane": "xy", "closed": True},
+        {"op": "sweep", "path": [[0, 0, 0], [0, 0, 0.3], [0, 0, 0.6], [0, 0, 0.9]],
+         "twist": 180.0},
+    ],
+    "sweep_then_solidify": [
+        {"op": "profile", "points": [[0.0, 0.0], [0.12, 0.0]], "plane": "xy"},
+        {"op": "sweep", "path": [[0, 0, 0], [0.1, 0, 0.4], [0.4, 0, 0.7]]},
+        {"op": "solidify", "thickness": 0.02},
+    ],
     "spin_y_axis": [   # a plane pushed off the y-axis, revolved around it
         {"op": "plane", "size_x": 0.3},
         {"op": "translate", "on": {"by": "all"}, "by": [0.6, 0.0, 0.0]},

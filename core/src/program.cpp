@@ -90,6 +90,35 @@ std::array<double, 3> place_xform(std::array<double, 3> p, const std::array<doub
     return {x + t[0], y + t[1], z + t[2]};
 }
 
+// The image-map block of a material, read the same way wherever a material is written
+// (the `material` op, a mesh's face_materials, a place's material) so a decal is spelled
+// once. `decal_*` pins the maps to a rectangle instead of tiling them triplanar.
+void read_material_maps(const json& j, Material& m) {
+    if (j.contains("albedo_map"))    m.albedo_map    = j.at("albedo_map").get<std::string>();
+    if (j.contains("roughness_map")) m.roughness_map = j.at("roughness_map").get<std::string>();
+    if (j.contains("normal_map"))    m.normal_map    = j.at("normal_map").get<std::string>();
+    m.uv_scale = j.value("uv_scale", 1.0);
+    if (j.contains("decal_origin")) {
+        m.decal = true;
+        m.decal_origin = json_vec3(j, "decal_origin", {0, 0, 0});
+        m.decal_du = json_vec3(j, "decal_du", {1, 0, 0});
+        m.decal_dv = json_vec3(j, "decal_dv", {0, 0, 1});
+    }
+}
+
+// Carry a decal through a `place`: the origin moves as a point, the edge vectors as
+// vectors (the transform's linear part), so artwork authored on a part stays stuck to it
+// through any number of nested placements.
+void xform_decal(Material& m, const std::array<double, 3>& t, const std::array<double, 3>& r,
+                 const std::array<double, 3>& s) {
+    if (!m.decal) return;
+    const std::array<double, 3> o = place_xform(m.decal_origin, t, r, s);
+    const std::array<double, 3> zero{0, 0, 0};
+    const std::array<double, 3> u0 = place_xform(m.decal_du, zero, r, s);
+    const std::array<double, 3> v0 = place_xform(m.decal_dv, zero, r, s);
+    m.decal_origin = o; m.decal_du = u0; m.decal_dv = v0;
+}
+
 // A mesh flattened to (positions, ngon faces, per-face tags, per-face materials) —
 // the operands the place-merge concatenates before one from_pydata rebuild.
 struct MeshArrays {
@@ -575,10 +604,7 @@ Mesh Program::build(std::string* last_tag_out) const {
                                 mtl.tex_scale = fm.value("tex_scale", 4.0);
                                 if (fm.contains("tex2")) { auto e = fm.at("tex2"); mtl.tex_color2 = {e[0], e[1], e[2]}; }
                             }
-                            if (fm.contains("albedo_map"))    mtl.albedo_map    = fm.at("albedo_map").get<std::string>();
-                            if (fm.contains("roughness_map")) mtl.roughness_map = fm.at("roughness_map").get<std::string>();
-                            if (fm.contains("normal_map"))    mtl.normal_map    = fm.at("normal_map").get<std::string>();
-                            mtl.uv_scale = fm.value("uv_scale", 1.0);
+                            read_material_maps(fm, mtl);
                             mtl.set = true;
                             const_cast<Face*>(f.get())->material = mtl;
                         }
@@ -653,14 +679,17 @@ Mesh Program::build(std::string* last_tag_out) const {
                         pm.tex_scale = mj.value("tex_scale", 4.0);
                         if (mj.contains("tex2")) { auto e = mj.at("tex2"); pm.tex_color2 = {e[0], e[1], e[2]}; }
                     }
-                    if (mj.contains("albedo_map"))    pm.albedo_map    = mj.at("albedo_map").get<std::string>();
-                    if (mj.contains("roughness_map")) pm.roughness_map = mj.at("roughness_map").get<std::string>();
-                    if (mj.contains("normal_map"))    pm.normal_map    = mj.at("normal_map").get<std::string>();
-                    pm.uv_scale = mj.value("uv_scale", 1.0);
+                    read_material_maps(mj, pm);
                     pm.set = true;
                 }
                 std::vector<Material> mats = std::move(A.mats);
-                for (std::size_t k = 0; k < B.faces.size(); ++k) mats.push_back(has_pm ? pm : B.mats[k]);
+                for (std::size_t k = 0; k < B.faces.size(); ++k) {
+                    // The placed faces' decals ride along with the geometry: authored in the
+                    // sub-object's own frame, moved by this place like everything else.
+                    Material bm = has_pm ? pm : B.mats[k];
+                    xform_decal(bm, tt, rr, ss);
+                    mats.push_back(std::move(bm));
+                }
                 std::size_t fi = 0;
                 for (const auto& f : mesh.faces()) {
                     if (fi < mats.size()) const_cast<Face*>(f.get())->material = mats[fi];
@@ -739,6 +768,13 @@ Mesh Program::build(std::string* last_tag_out) const {
                 mesh = mirage::spin(mesh, cmd.value("axis", std::string("z")), cmd.value("steps", 24),
                                     cmd.value("angle", 360.0), out_tag);
                 outs = faces_with_tag(mesh, out_tag);
+            } else if (op == "sweep") {
+                std::vector<std::array<double, 3>> path;
+                for (const auto& p : cmd.value("path", json::array()))
+                    path.push_back({p.at(0).get<double>(), p.at(1).get<double>(), p.at(2).get<double>()});
+                mesh = mirage::sweep(mesh, path, cmd.value("closed", false),
+                                     cmd.value("twist", 0.0), out_tag);
+                outs = faces_with_tag(mesh, out_tag);
             } else if (op == "screw") {
                 mesh = mirage::screw(mesh, cmd.value("axis", std::string("z")), cmd.value("steps", 24),
                                      cmd.value("turns", 1), cmd.value("height", 1.0),
@@ -776,10 +812,7 @@ Mesh Program::build(std::string* last_tag_out) const {
                     m.tex_scale = cmd.value("tex_scale", 4.0);
                     if (cmd.contains("tex2")) { auto e = cmd.at("tex2"); m.tex_color2 = {e[0], e[1], e[2]}; }
                 }
-                if (cmd.contains("albedo_map"))    m.albedo_map    = cmd.at("albedo_map").get<std::string>();
-                if (cmd.contains("roughness_map")) m.roughness_map = cmd.at("roughness_map").get<std::string>();
-                if (cmd.contains("normal_map"))    m.normal_map    = cmd.at("normal_map").get<std::string>();
-                m.uv_scale = cmd.value("uv_scale", 1.0);
+                read_material_maps(cmd, m);
                 m.set = true;
                 for (const Face* f : seln) const_cast<Face*>(f)->material = m;
                 outs = seln;

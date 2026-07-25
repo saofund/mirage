@@ -68,6 +68,15 @@ struct Material {
     std::string roughness_map;                       // roughness (grayscale)
     std::string normal_map;                          // tangent-space normal
     double uv_scale = 1.0;                           // world units per texture tile
+    // A DECAL pins the maps to an explicit rectangle instead of tiling them triplanar:
+    // `origin` is the uv=(0,0) corner and du/dv are its edge vectors, so printed artwork
+    // (a sign, a warning label, a number plate) lands exactly where it was authored and
+    // nowhere else. The frame lives in the same space as the geometry it is painted on and
+    // is carried through `place` with it, so a labelled part stays labelled wherever it goes.
+    bool decal = false;
+    std::array<double, 3> decal_origin{0.0, 0.0, 0.0};
+    std::array<double, 3> decal_du{1.0, 0.0, 0.0};
+    std::array<double, 3> decal_dv{0.0, 0.0, 1.0};
     bool set = false;
 };
 
@@ -282,6 +291,13 @@ Mesh spin(const Mesh& mesh, const std::string& axis = "z", int steps = 24,
 // `height` is the axial rise per turn. Always open (the helix never wraps closed).
 Mesh screw(const Mesh& mesh, const std::string& axis = "z", int steps = 24, int turns = 1,
            double height = 1.0, double angle = 360.0, const std::string& mark = "");
+// sweep: carry a profile (authored in the XY plane) along an arbitrary 3-D polyline on a
+// PARALLEL-TRANSPORT frame — the general case of spin (circular path) and screw (helical).
+// The transported frame is the one that does not rotate about the tangent, so a swept tube
+// follows a bending path without wringing itself (and, unlike a Frenet frame, does not flip
+// at an inflection). `twist` is the total roll in degrees across the run.
+Mesh sweep(const Mesh& mesh, const std::vector<std::array<double, 3>>& path, bool closed = false,
+           double twist = 0.0, const std::string& mark = "");
 // boolean: the real mesh-mesh CSG (BSP / Naylor-Thurston, csg.js lineage). mode is
 // union / difference (A minus B) / intersection. Inputs should be closed solids.
 // Twin of the Python kernel's boolean (byte-identical). Note: the BSP approach can

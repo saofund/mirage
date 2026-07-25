@@ -52,6 +52,8 @@ imgui.ini
 
 # generated PBR texture maps (regenerated deterministically by mirage.textures) — 57 MB, not source
 assets/textures/
+# generated decal artwork (redrawn deterministically by mirage.decals) — output, not source
+assets/decals/
 
 # never publish the CCTV-reference side-by-side (embeds third-party security footage)
 docs/gallery/forecourt_compare.png

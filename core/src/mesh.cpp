@@ -1278,6 +1278,93 @@ Mesh spin(const Mesh& mesh, const std::string& axis, int steps, double angle, co
     return build_compact(np, faces, tags);
 }
 
+namespace {
+double sw_dot(const A3& a, const A3& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+A3 sw_cross(const A3& a, const A3& b) {
+    return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+}
+A3 sw_norm(const A3& a) {
+    const double m = std::sqrt(sw_dot(a, a));
+    return m > 1e-12 ? A3{a[0] / m, a[1] / m, a[2] / m} : A3{0, 0, 1};
+}
+// The minimal rotation carrying t0 onto t1, applied to v (Rodrigues). Identity on a
+// straight run, which is the common case.
+A3 sw_rotate_onto(const A3& v, const A3& t0, const A3& t1) {
+    A3 ax = sw_cross(t0, t1);
+    const double s = std::sqrt(sw_dot(ax, ax));
+    if (s < 1e-12) return sw_dot(t0, t1) > 0 ? v : A3{-v[0], -v[1], -v[2]};
+    for (int k = 0; k < 3; ++k) ax[k] /= s;
+    const double ang = std::atan2(s, sw_dot(t0, t1));
+    const double c = std::cos(ang), si = std::sin(ang), d = sw_dot(ax, v) * (1 - c);
+    const A3 cr = sw_cross(ax, v);
+    return {v[0] * c + cr[0] * si + ax[0] * d, v[1] * c + cr[1] * si + ax[1] * d,
+            v[2] * c + cr[2] * si + ax[2] * d};
+}
+}  // namespace
+
+Mesh sweep(const Mesh& mesh, const std::vector<std::array<double, 3>>& path, bool closed,
+           double twist, const std::string& mark) {
+    constexpr double PI = 3.14159265358979323846;
+    std::vector<A3> pts = path;
+    if (closed && pts.size() > 2) {
+        const A3 d{pts.front()[0] - pts.back()[0], pts.front()[1] - pts.back()[1],
+                   pts.front()[2] - pts.back()[2]};
+        if (std::sqrt(sw_dot(d, d)) < 1e-9) pts.pop_back();
+    }
+    if (pts.size() < 2) throw std::invalid_argument("sweep needs a path of at least 2 points");
+    const int n = static_cast<int>(pts.size());
+
+    std::vector<A3> tans(n);
+    for (int k = 0; k < n; ++k) {
+        const A3& a = closed ? pts[(k - 1 + n) % n] : pts[std::max(k - 1, 0)];
+        const A3& b = closed ? pts[(k + 1) % n] : pts[std::min(k + 1, n - 1)];
+        tans[k] = sw_norm({b[0] - a[0], b[1] - a[1], b[2] - a[2]});
+    }
+    std::vector<std::pair<A3, A3>> frames(n);
+    A3 seed = std::fabs(tans[0][2]) < 0.9 ? A3{0, 0, 1} : A3{1, 0, 0};
+    A3 u = sw_norm(sw_cross(seed, tans[0]));
+    for (int k = 0; k < n; ++k) {
+        if (k) {
+            u = sw_rotate_onto(u, tans[k - 1], tans[k]);
+            const double d = sw_dot(u, tans[k]);
+            u = sw_norm({u[0] - tans[k][0] * d, u[1] - tans[k][1] * d, u[2] - tans[k][2] * d});
+        }
+        frames[k] = {u, sw_cross(tans[k], u)};
+    }
+
+    std::vector<A3> np;
+    const int nv = static_cast<int>(mesh.num_verts());
+    np.reserve(std::size_t(nv) * n);
+    for (const auto& v : mesh.verts()) {
+        const double px = v->co[0], py = v->co[1];
+        for (int k = 0; k < n; ++k) {
+            const double ang = twist * PI / 180.0 * (n > 1 ? double(k) / (n - 1) : 0.0);
+            const double c = std::cos(ang), s = std::sin(ang);
+            const double a = px * c - py * s, b = px * s + py * c;
+            const A3& uk = frames[k].first;
+            const A3& vk = frames[k].second;
+            np.push_back({pts[k][0] + uk[0] * a + vk[0] * b, pts[k][1] + uk[1] * a + vk[1] * b,
+                          pts[k][2] + uk[2] * a + vk[2] * b});
+        }
+    }
+    auto outid = [&](int v, int k) { return v * n + (closed ? k % n : k); };
+
+    const int segs = closed ? n : n - 1;
+    std::vector<std::vector<int>> faces;
+    std::vector<Tags> tags;
+    for (const auto& e : mesh.edges()) {
+        auto fs = mesh.edge_faces(e.get());
+        if (fs.size() > 1) continue;               // sweep wire edges (0 faces) + boundary (1)
+        const Face* src = fs.empty() ? nullptr : fs[0];
+        const int a = e->v1->id, b = e->v2->id;
+        for (int k = 0; k < segs; ++k) {
+            faces.push_back({outid(a, k), outid(b, k), outid(b, k + 1), outid(a, k + 1)});
+            tags.push_back(copy_tags(src, mark));
+        }
+    }
+    return build_compact(np, faces, tags);
+}
+
 Mesh make_profile(const std::vector<std::array<double, 2>>& points, const std::string& plane,
                   bool closed) {
     int iu, iv;

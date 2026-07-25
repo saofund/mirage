@@ -1032,6 +1032,111 @@ def bisect(mesh: Mesh, point=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0),
     return m
 
 
+def sweep(mesh: Mesh, path, closed: bool = False, twist: float = 0.0,
+          mark: str | None = None) -> Mesh:
+    """Sweep a profile along an arbitrary 3-D path — the general case of ``spin`` (a
+    circular path) and ``screw`` (a helical one).
+
+    The profile is authored in the XY plane (its local +z is the direction of travel) and
+    is carried along ``path`` (a polyline of >= 2 points) on a PARALLEL-TRANSPORT frame:
+    each station's frame is the previous one rotated by the minimal rotation taking the
+    old tangent onto the new one. That is the frame that does not spin about the tangent,
+    which is why a swept tube does not wring itself into a twist on a bending path the way
+    a naive up-vector frame does (and why a Frenet frame, which flips at every inflection,
+    is unusable for a hose that goes over and then under).
+
+    ``twist`` (degrees, total) rotates the profile about the tangent across the whole run.
+    ``closed`` joins the last station back to the first. Like spin, it sweeps WIRE edges
+    (0 faces) and BOUNDARY edges (1 face), so a closed wire profile gives a tube."""
+    import math
+    pts = [[float(c) for c in p] for p in path]
+    if closed and len(pts) > 2 and _dist3(pts[0], pts[-1]) < 1e-9:
+        pts.pop()
+    if len(pts) < 2:
+        raise ValueError("sweep needs a path of at least 2 points")
+    n = len(pts)
+
+    def tangent(k):
+        if closed:
+            a, b = pts[(k - 1) % n], pts[(k + 1) % n]
+        else:
+            a, b = pts[max(k - 1, 0)], pts[min(k + 1, n - 1)]
+        return _norm3([b[c] - a[c] for c in range(3)])
+
+    tans = [tangent(k) for k in range(n)]
+    # Seed the frame with any axis not parallel to the first tangent, then transport it.
+    seed = [0.0, 0.0, 1.0] if abs(tans[0][2]) < 0.9 else [1.0, 0.0, 0.0]
+    u = _norm3(_cross3(seed, tans[0]))
+    frames = []
+    for k in range(n):
+        if k:
+            u = _rotate_onto(u, tans[k - 1], tans[k])
+            u = _norm3([u[c] - tans[k][c] * _dot3(u, tans[k]) for c in range(3)])
+        frames.append((u, _cross3(tans[k], u)))
+
+    pos = [list(v.co) for v in mesh.verts]
+    new_pos = []
+    for v in range(len(pos)):
+        px, py = pos[v][0], pos[v][1]
+        for k in range(n):
+            uk, vk = frames[k]
+            ang = math.radians(twist) * (k / (n - 1 if n > 1 else 1))
+            c, s = math.cos(ang), math.sin(ang)
+            a, b = px * c - py * s, px * s + py * c
+            new_pos.append([pts[k][c2] + uk[c2] * a + vk[c2] * b for c2 in range(3)])
+
+    def outid(v, k):
+        return v * n + (k % n if closed else k)
+
+    segs = n if closed else n - 1
+    new_faces, new_attrs = [], []
+    for e in mesh.edges:
+        fs = mesh.edge_faces(e)
+        if len(fs) > 1:
+            continue
+        src = fs[0].attrs if fs else {}
+        a, b = e.v1.id, e.v2.id
+        for k in range(segs):
+            new_faces.append([outid(a, k), outid(b, k), outid(b, k + 1), outid(a, k + 1)])
+            new_attrs.append(_copy_attrs(src, add_tag=mark))
+
+    new_pos, new_faces = _compact(new_pos, new_faces)
+    return Mesh.from_pydata(new_pos, new_faces, new_attrs)
+
+
+def _dist3(a, b):
+    return sum((a[k] - b[k]) ** 2 for k in range(3)) ** 0.5
+
+
+def _dot3(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross3(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def _norm3(a):
+    m = _dot3(a, a) ** 0.5
+    return [a[0] / m, a[1] / m, a[2] / m] if m > 1e-12 else [0.0, 0.0, 1.0]
+
+
+def _rotate_onto(v, t0, t1):
+    """Rotate v by the minimal rotation carrying t0 onto t1 (Rodrigues; identity when the
+    tangents agree, which is the common straight-run case)."""
+    import math
+    ax = _cross3(t0, t1)
+    s = _dot3(ax, ax) ** 0.5
+    if s < 1e-12:
+        return list(v) if _dot3(t0, t1) > 0 else [-c for c in v]
+    ax = [c / s for c in ax]
+    ang = math.atan2(s, _dot3(t0, t1))
+    c, si = math.cos(ang), math.sin(ang)
+    cr = _cross3(ax, v)
+    d = _dot3(ax, v) * (1 - c)
+    return [v[k] * c + cr[k] * si + ax[k] * d for k in range(3)]
+
+
 def spin(mesh: Mesh, axis: str = "z", steps: int = 24, angle: float = 360.0,
          mark: str | None = None) -> Mesh:
     """Revolve a profile around an axis (the lathe). The profile is the BOUNDARY edge

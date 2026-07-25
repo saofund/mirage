@@ -266,7 +266,7 @@ def _asphalt(res: int, seed: int, col):
     return albedo, rough, normal
 
 
-def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0):
+def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_amt=1.0):
     """A weathered painted forecourt bay. The paint is worn through to the concrete in patches,
     fine-cracked, and — the point of the whole exercise — stained with big ORGANIC dark wet
     lobes pooled in the low spots. The photo's blue bay is that: irregular standing water, not a
@@ -274,7 +274,10 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0):
     dry paint. All the weathering lives here so the scene can lay ONE slab, not a stack."""
     mott = _fbm(res, 12, 4, seed)                      # paint laid unevenly
     fine = _fbm(res, 150, 3, seed + 5)
-    wear = np.clip((_fbm(res, 18, 4, seed + 11) - 0.64) * 3.0, 0, 1) ** 1.5   # rubbed to concrete
+    # rubbed through to concrete. `wear_amt` matters more than it looks: the pale patches it
+    # leaves catch the sky at low roughness and read as light BLUE flecks, so a bay with the
+    # wear turned up comes out tie-dyed rather than worn.
+    wear = np.clip((_fbm(res, 18, 4, seed + 11) - 0.64) * 3.0, 0, 1) ** 1.5 * wear_amt
     # ONE big soft pool per tile, like the photo's dark wet SHEET across the blue bay -- not a
     # scatter of little puddles. Low frequency (period 2) gives a single dominant lobe.
     st = _fbm(res, 2, 4, seed + 17)
@@ -297,6 +300,46 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0):
     return albedo, rough, normal
 
 
+def _painted_metal(res: int, seed: int, col, dirt=0.35, rough_base=0.38):
+    """Painted sheet-metal cladding — a canopy column, a shop front.
+
+    Deliberately almost featureless: the *only* things a painted panel has are a faint
+    roll of the sheet, a semi-gloss sheen and grime washed down it by rain. Reaching for
+    the concrete generator here was a mistake worth naming — its crack network reads as
+    marble veining at any scale a 0.7 m column is tiled at, so a painted steel column came
+    out looking like a quarried one."""
+    roll = _fbm(res, 4, 3, seed)                       # the shallow waviness of a sheet
+    fine = _fbm(res, 90, 2, seed + 7)
+    streak = _fbm(res, 3, 4, seed + 13)                # rain-washed vertical grime
+    streak = np.clip((streak - 0.48) * 1.7, 0, 1) * dirt
+    streak = streak * (0.35 + 0.65 * np.linspace(1.0, 0.0, res)[:, None])   # heavier low down
+    base = np.stack(col, -1)[None, None] * (0.96 + 0.09 * roll[..., None])
+    base = base * (0.985 + 0.03 * (fine[..., None] - 0.5))
+    albedo = np.clip(base * (1.0 - 0.22 * streak[..., None]), 0, 1)
+    rough = np.clip(rough_base + 0.10 * (roll - 0.5) + 0.22 * streak, 0.16, 0.85)
+    normal = _normal_from_height(roll * 0.30 + fine * 0.06, strength=0.45)
+    return albedo, rough, normal
+
+
+def _wall_tile(res: int, seed: int, col, grout, tiles=10, grout_w=0.055):
+    """A tiled shop front: a real grout GRID, per-tile tone variation, and dirt in the
+    joints. A tiled wall's signature is the grid — no amount of noise substitutes for it."""
+    u = (np.arange(res) + 0.5) / res * tiles
+    gx = np.minimum(u % 1.0, 1.0 - u % 1.0)[None, :]
+    gy = np.minimum(u % 1.0, 1.0 - u % 1.0)[:, None]
+    joint = np.clip(1.0 - np.minimum(gx, gy) / grout_w, 0, 1) ** 0.7      # 1 in the joint
+    rng = np.random.default_rng(seed)
+    tone = rng.normal(1.0, 0.035, (tiles, tiles))
+    tone = np.repeat(np.repeat(tone, res // tiles + 1, 0), res // tiles + 1, 1)[:res, :res]
+    grime = _fbm(res, 5, 3, seed + 3)
+    base = np.stack(col, -1)[None, None] * tone[..., None] * (0.93 + 0.14 * grime[..., None])
+    albedo = np.clip(_lerp(base, np.stack(grout, -1)[None, None], joint[..., None]), 0, 1)
+    rough = np.clip(_lerp(np.full((res, res), 0.30), np.full((res, res), 0.82), joint)
+                    + 0.10 * (grime - 0.5), 0.12, 0.92)
+    normal = _normal_from_height(-joint * 0.55 + grime * 0.05, strength=1.5)
+    return albedo, rough, normal
+
+
 # name -> generator thunk
 _LIBRARY = {
     "wood_floor":  lambda: _wood(RES, 11, (0.30, 0.18, 0.09), (0.52, 0.34, 0.18), plank=7, warp_amt=0.7, grain_freq=34),
@@ -315,13 +358,19 @@ _LIBRARY = {
     "marble":      lambda: _marble(RES, 71, (0.86, 0.85, 0.82), (0.42, 0.44, 0.48)),
     # the wet petrol-station forecourt (case 26). Albedos are honest surface colours; the
     # scene's dark wet look comes from the roughness pools mirroring a bright overcast sky.
-    "forecourt_concrete": lambda: _concrete(RES, 101, (0.30, 0.31, 0.32), crack=0.35, stain=0.5, wet=0.7),
-    "asphalt_wet":        lambda: _asphalt(RES, 107, (0.050, 0.055, 0.063)),
-    "bay_blue":           lambda: _painted_bay(RES, 113, (0.075, 0.105, 0.185), (0.17, 0.18, 0.19), wet=0.85),
-    "bay_orange":         lambda: _painted_bay(RES, 127, (0.355, 0.150, 0.065), (0.32, 0.29, 0.25), wet=0.40, faded=0.40),
-    # painted metal cladding for the canopy column / facade: light cool grey, faint panel seams
-    # (the concrete crack net, kept sparse), a semi-gloss sheen rather than matte concrete.
-    "clad_panel":         lambda: _concrete(RES, 137, (0.52, 0.535, 0.55), crack=0.30, stain=0.22, wet=0.30, rough_base=0.50),
+    # A wet forecourt is DARK. The first pass set the concrete at 0.30 linear, which is a
+    # dry pavement in bright sun -- against the reference it read as a white floor with
+    # brown worms crawling over it, and no amount of roughness work fixes a base colour
+    # that is twice as light as the thing it is copying. 0.15 with faint cracks is a damp
+    # apron; the contrast then comes, correctly, from the sky mirrored in the wet patches.
+    "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.14, stain=0.55, wet=0.75),
+    "asphalt_wet":        lambda: _asphalt(RES, 107, (0.095, 0.100, 0.110)),
+    "bay_blue":           lambda: _painted_bay(RES, 113, (0.052, 0.070, 0.128), (0.105, 0.110, 0.115), wet=0.85, wear_amt=0.45),
+    "bay_orange":         lambda: _painted_bay(RES, 127, (0.300, 0.122, 0.050), (0.185, 0.165, 0.145), wet=0.45, faded=0.35, wear_amt=0.35),
+    # painted metal cladding for the canopy column: light cool grey, semi-gloss, streaked
+    # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
+    "clad_panel":         lambda: _painted_metal(RES, 137, (0.55, 0.555, 0.56), dirt=0.40, rough_base=0.36),
+    "shop_tile":          lambda: _wall_tile(RES, 149, (0.55, 0.555, 0.54), (0.27, 0.27, 0.265), tiles=8),
 }
 
 
@@ -351,7 +400,7 @@ def _recipe_id(name: str) -> str:
     parts += [repr(c) for c in (fn.__code__.co_consts or ()) if c is not None]
     # and the generator it calls, so editing _leather() alone still invalidates
     for gen in (_wood, _veneer, _fabric, _plaster, _leather, _marble, _concrete, _asphalt,
-                _painted_bay, _crack_net, _normal_from_height, _fbm):
+                _painted_bay, _crack_net, _painted_metal, _wall_tile, _normal_from_height, _fbm):
         parts.append(gen.__name__)
         parts.append(hashlib.sha1(gen.__code__.co_code).hexdigest()[:8])
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
