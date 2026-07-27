@@ -116,9 +116,14 @@ constexpr double SUN_SOFT = 0.025;  // angular jitter -> soft penumbra
 
 // Sky-only environment (the sun is added via NEE, never via the sky, so it can't
 // be double-counted or spawn fireflies). A cool horizon->zenith gradient fill.
-V3 sky(const V3& d, const V3& tint = V3{1, 1, 1}) {
+V3 sky(const V3& d, const V3& tint = V3{1, 1, 1}, double flat = 0.0) {
+    const V3 horizon{0.52, 0.60, 0.76}, zenith{0.16, 0.28, 0.52};
     const double up = std::clamp(d[2] * 0.5 + 0.5, 0.0, 1.0);
-    const V3 c = (V3{0.52, 0.60, 0.76} * (1.0 - up) + V3{0.16, 0.28, 0.52} * up) * 0.75;
+    V3 c = (horizon * (1.0 - up) + zenith * up) * 0.75;
+    if (flat > 0.0) {                       // blend toward a uniform dome: overcast
+        const V3 mean = (horizon + zenith) * 0.5 * 0.75;
+        c = c * (1.0 - flat) + mean * flat;
+    }
     return {c[0] * tint[0], c[1] * tint[1], c[2] * tint[2]};
 }
 
@@ -255,6 +260,7 @@ struct Scene {
     double metallic = 0.0, roughness = 0.5;
     double env_intensity = 1.0;     // scales the sky image-based fill
     V3 sky_tint{1, 1, 1};           // per-channel multiplier on the sky gradient
+    double sky_flat = 0.0;          // 0 = clear gradient, 1 = uniform dome (overcast)
     double sun_intensity = 1.0;     // scales the NEE directional key
     V3 sun_dir{0.4, 0.5, 0.8};      // the sun's direction (normalized in path_trace)
     double clamp_indirect = 12.0;   // firefly cap on indirect contributions (0 = off)
@@ -446,7 +452,7 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
                                // after a diffuse bounce the emitter is covered by NEE (no double-count)
     for (int bounce = 0; bounce < max_bounce; ++bounce) {
         Hit h = intersect(sc, o, d);
-        if (h.t > 1e29) { add(mulv(beta, sky(d, sc.sky_tint) * sc.env_intensity), bounce); break; }  // sky fill
+        if (h.t > 1e29) { add(mulv(beta, sky(d, sc.sky_tint, sc.sky_flat) * sc.env_intensity), bounce); break; }  // sky fill
         if (luminance(h.emission) > 0.0 && (bounce == 0 || spec_bounce))
             add(mulv(beta, h.emission), bounce);                                          // a lamp seen directly
         const V3 wp = o + d * h.t;   // world hit position (texture lookups + offsets)
@@ -631,6 +637,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     sc.ground = settings.ground;
     sc.env_intensity = settings.env_intensity;
     sc.sky_tint = {settings.sky_tint[0], settings.sky_tint[1], settings.sky_tint[2]};
+    sc.sky_flat = settings.sky_flat;
     sc.sun_intensity = settings.sun_intensity;
     sc.sun_dir = norm({settings.sun_dir[0], settings.sun_dir[1], settings.sun_dir[2]});
     sc.clamp_indirect = settings.clamp_indirect;

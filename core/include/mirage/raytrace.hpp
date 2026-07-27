@@ -45,6 +45,12 @@ struct RenderSettings {
     // once, so it reads as "my renders look CG" rather than as a colour error. 1,1,1
     // keeps the original; warming it toward {1.15, 1.05, 0.92} gives an overcast white.
     std::array<double, 3> sky_tint{1.0, 1.0, 1.0};
+    // Sky FLATNESS. The built-in gradient is a clear day: blue, and DARKER toward the
+    // zenith. Overcast is the opposite -- a near-uniform bright dome -- and the
+    // difference shows up first on metal, which mirrors the zenith and comes back blue
+    // under a sky no tint can fix, because a tint scales the gradient without flattening
+    // it. 0 = the gradient as authored, 1 = a uniform sky of its average. ~0.75 = overcast.
+    double sky_flat = 0.0;
     double exposure = 1.0;    // linear stops applied before the ACES tonemap
     // Firefly clamp: cap the luminance of INDIRECT (bounce>=1) contributions so a
     // rare high-variance specular bounce can't leave a white speckle. 0 = off. The

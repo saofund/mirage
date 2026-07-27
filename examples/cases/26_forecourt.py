@@ -289,8 +289,20 @@ def main():
     # --sky-tint warms the sky fill. The scorecard is what found this: EVERY object came
     # back with a cool cast, all seventeen, which is not seventeen colour errors but one —
     # the sky is the only thing lighting most of this scene, and it was blue.
-    extra = ["--sun", "0.12", "--env", "0.86", "--exposure", "1.35", "--clamp", "1.5",
-             "--sun-dir", "0.25", "0.55", "0.80", "--sky-tint", "1.26", "1.07", "0.86",
+    extra = ["--sun", "0.12", "--env", "0.74", "--exposure", "1.35", "--clamp", "1.5",
+             "--sun-dir", "0.25", "0.55", "0.80",
+             # An OVERCAST dome, not a clear-day gradient. --sky-flat was added for this
+             # scene: the residual colour error after tinting sat entirely on the METALS
+             # -- plinth, bucket, bollards, all at cast -0.25 while the diffuse surfaces
+             # were neutral -- because a mirror sees the zenith, and the built-in zenith
+             # is the darkest, bluest part of a clear sky. Flattening the dome is what a
+             # tint cannot do.
+             # SOLVED, not nudged: the flattened dome is (0.255, 0.330, 0.480) as authored,
+             # chromaticity r-b = -0.211, and every mirror in the scene was returning
+             # exactly that. The tint below takes it to (0.425, 0.412, 0.398) -- overcast
+             # white, a touch warm -- and --env drops by the same luminance ratio so the
+             # exposure that was already measured right does not move.
+             "--sky-tint", "1.667", "1.248", "0.829", "--sky-flat", "0.80",
              # denoise 4 at 260 spp was eating the apron's grain: the scorecard read detail
              # 0.18 and barely moved when the map got twice the staining, because the filter
              # was removing exactly what the map was adding. 2 keeps it.
