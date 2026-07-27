@@ -286,8 +286,12 @@ def main():
     # the floor -- the wet materials are near-black diffuse and read only through what they
     # reflect. Exposure 1.35 sits the concrete where the reference's is; --clamp stops a hot
     # specular sample on the near-mirror puddles from leaving a firefly the denoiser can't fix.
+    # --sky-tint warms the sky fill. The scorecard is what found this: EVERY object came
+    # back with a cool cast, all seventeen, which is not seventeen colour errors but one —
+    # the sky is the only thing lighting most of this scene, and it was blue.
     extra = ["--sun", "0.12", "--env", "0.86", "--exposure", "1.35", "--clamp", "1.5",
-             "--sun-dir", "0.25", "0.55", "0.80", "--denoise", "4"]
+             "--sun-dir", "0.25", "0.55", "0.80", "--sky-tint", "1.20", "1.06", "0.90",
+             "--denoise", "4"]
     # The id AOV comes out of the SAME trace as the beauty pass, so the scorecard's masks
     # are the pixels it is scoring and not a re-render that drifted.
     extra += ["--ids", str(OUT / "hero_ids.pgm"), "--id-tags", ",".join(ID_TAGS)]

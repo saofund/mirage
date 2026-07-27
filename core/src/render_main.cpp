@@ -2,7 +2,12 @@
 //
 //   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N] [--threads N]
 //                 [--cam-eye X Y Z] [--cam-target X Y Z] [--cam-up X Y Z] [--cam-fov RAD]
-//                 [--denoise [N]] [--smooth-angle DEG | --flat]
+//                 [--denoise [N]] [--smooth-angle DEG | --flat] [--sky-tint R G B]
+//
+// --sky-tint multiplies the sky gradient per channel. The built-in sky is a cool blue,
+// which tints EVERY surface at once — a whole render drifts blue and no single object
+// looks wrong. Warming it (~1.15 1.05 0.92) gives the flat white overcast most
+// reference photography is shot under.
 //
 // --denoise runs an edge-avoiding a-trous wavelet filter (N passes, default 5) so a
 // low-spp render comes out clean — the difference between a grainy path-traced clip
@@ -65,6 +70,7 @@ int main(int argc, char** argv) {
         else if (a == "--env") s.env_intensity = next(s.env_intensity);
         else if (a == "--sun") s.sun_intensity = next(s.sun_intensity);
         else if (a == "--sun-dir") s.sun_dir = next3(s.sun_dir);
+        else if (a == "--sky-tint") s.sky_tint = next3(s.sky_tint);   // warm/cool the sky fill
         else if (a == "--exposure") s.exposure = next(s.exposure);
         else if (a == "--clamp") s.clamp_indirect = next(s.clamp_indirect);
         else if (a == "--threads") s.threads = unsigned(next(double(s.threads)));

@@ -363,14 +363,14 @@ _LIBRARY = {
     # brown worms crawling over it, and no amount of roughness work fixes a base colour
     # that is twice as light as the thing it is copying. 0.15 with faint cracks is a damp
     # apron; the contrast then comes, correctly, from the sky mirrored in the wet patches.
-    "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.14, stain=0.55, wet=0.75),
+    "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.22, stain=0.95, wet=0.85),
     "asphalt_wet":        lambda: _asphalt(RES, 107, (0.095, 0.100, 0.110)),
     "bay_blue":           lambda: _painted_bay(RES, 113, (0.052, 0.070, 0.128), (0.105, 0.110, 0.115), wet=0.85, wear_amt=0.45),
     "bay_orange":         lambda: _painted_bay(RES, 127, (0.300, 0.122, 0.050), (0.185, 0.165, 0.145), wet=0.45, faded=0.35, wear_amt=0.35),
     # painted metal cladding for the canopy column: light cool grey, semi-gloss, streaked
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
-    "clad_panel":         lambda: _painted_metal(RES, 137, (0.55, 0.555, 0.56), dirt=0.40, rough_base=0.36),
-    "shop_tile":          lambda: _wall_tile(RES, 149, (0.55, 0.555, 0.54), (0.27, 0.27, 0.265), tiles=8),
+    "clad_panel":         lambda: _painted_metal(RES, 137, (0.55, 0.555, 0.56), dirt=0.70, rough_base=0.36),
+    "shop_tile":          lambda: _wall_tile(RES, 149, (0.72, 0.725, 0.71), (0.30, 0.30, 0.295), tiles=6),
 }
 
 

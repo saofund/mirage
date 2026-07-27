@@ -19,9 +19,10 @@ This module asks the other three questions, per object, and ranks the answers:
               painted box lands near 0.05, and says so in a number instead of waiting for
               somebody to say 都是方盒子.
 
-  ``cast``    am I the right COLOUR here?  Mean (R-B)/L. The renderer's sky is a cool
-              gradient, so an untuned scene drifts blue everywhere at once — a global error
-              that is invisible object by object and obvious as a column of numbers.
+  ``cast``    am I the right COLOUR here?  Red-minus-blue in chromaticity. The renderer's
+              sky is a cool gradient, so an untuned scene drifts blue everywhere at once —
+              a global error that is invisible object by object and unmistakable as a
+              column of numbers all carrying the same sign.
 
 WHAT `detail` IS NOT: a target. A photograph carries sensor noise, dirt, dents, reflections
 of things outside the frame and infinite micro-texture, and chasing a ratio of 1.0 would
@@ -56,27 +57,33 @@ __all__ = ["scorecard", "report", "plate"]
 # Thresholds. They are flags, not losses — see the module docstring on `detail`.
 TONE_TOL = 0.06      # sRGB luma difference that starts to read as "wrong exposure"
 DETAIL_FLOOR = 0.25  # below this an object is reading flat
-CAST_TOL = 0.10      # (R-B)/L difference that starts to read as a colour cast
+CAST_TOL = 0.020     # chromaticity (r-b) difference that starts to read as a colour cast
 
 
-def _relative_contrast(lin, mask):
-    """Mean |grad L| / mean L over a mask — how much STRUCTURE this region carries, free of
-    how bright it is. A flat panel and a flat wall both read near zero however lit."""
-    g = _luma(lin)
+def _detail(srgb, mask):
+    """Mean |grad| of DISPLAY luma over a mask — how much visible structure is here.
+
+    Measured on the sRGB-encoded image on purpose, which is the one place in this codebase
+    that is right. The first version divided a linear gradient by the region's mean
+    luminance to be "scale-free", and that blows up on anything dark: the hoses — thin
+    near-black tubes against a bright floor — scored 4.06 and got flagged as *noisy*, and
+    the tiny sliver of visible island scored 3.57. A ratio whose denominator goes to zero
+    tells you about its denominator. Display luma is bounded, is what the eye is looking
+    at, and makes a flat panel read low whether it is lit or shadowed."""
+    g = _luma(srgb)
     gx = np.zeros_like(g)
     gy = np.zeros_like(g)
     gx[:, 1:-1] = g[:, 2:] - g[:, :-2]
     gy[1:-1, :] = g[2:, :] - g[:-2, :]
-    m = np.hypot(gx, gy)
-    lm = float(g[mask].mean())
-    return float(m[mask].mean()) / max(lm, 1e-6)
+    return float(np.hypot(gx, gy)[mask].mean())
 
 
-def _cast(lin, mask):
-    r = float(lin[..., 0][mask].mean())
-    b = float(lin[..., 2][mask].mean())
-    lm = float(_luma(lin)[mask].mean())
-    return (r - b) / max(lm, 1e-6)
+def _cast(srgb, mask):
+    """Red-minus-blue in CHROMATICITY — bounded in [-1, 1], so a dark region cannot post a
+    cast of -2.5 the way a luma-normalised difference did."""
+    s = np.clip(srgb, 0, None)
+    tot = s.sum(axis=-1) + 1e-6
+    return float(((s[..., 0] - s[..., 2]) / tot)[mask].mean())
 
 
 def scorecard(render, reference, ids, names=None, chamfer=True):
@@ -110,16 +117,15 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
         name = names[k - 1] if names and k - 1 < len(names) else f"id{k}"
         t_ren = float(linear_to_srgb(np.median(_luma(lin_ren)[mask])))
         t_ref = float(linear_to_srgb(np.median(_luma(lin_ref)[mask])))
-        d_ren = _relative_contrast(lin_ren, mask)
-        d_ref = _relative_contrast(lin_ref, mask)
+        d_ren, d_ref = _detail(ren, mask), _detail(ref, mask)
         ratio = d_ren / max(d_ref, 1e-6)
-        c_ren, c_ref = _cast(lin_ren, mask), _cast(lin_ref, mask)
+        c_ren, c_ref = _cast(ren, mask), _cast(ref, mask)
         # severity: how wrong, weighted by how much of the frame it is. sqrt so a huge
         # background does not drown a foreground object that is completely wrong.
         area_w = (px / total) ** 0.5
         sev = area_w * (max(abs(t_ren - t_ref) - TONE_TOL, 0.0) * 6.0
                         + max(DETAIL_FLOOR - ratio, 0.0) * 4.0
-                        + max(abs(c_ren - c_ref) - CAST_TOL, 0.0) * 2.0)
+                        + max(abs(c_ren - c_ref) - CAST_TOL, 0.0) * 20.0)
         flags = []
         if t_ren - t_ref > TONE_TOL:
             flags.append("too light")

@@ -75,7 +75,7 @@ DEC = ensure_decals(["pump_sign", "fire_cabinet", "fire_bucket", "wet_floor", "w
                      "promo_banner", "repair_sign", "plate", "shutter_slat"])
 
 # ---- ground (tiled) ------------------------------------------------------------- #
-APRON    = mat((0.20, 0.205, 0.208), 0.0, 0.6, maps=TEX["forecourt_concrete"], uv_scale=9.0)
+APRON    = mat((0.20, 0.205, 0.208), 0.0, 0.6, maps=TEX["forecourt_concrete"], uv_scale=5.5)
 ROAD     = mat((0.095, 0.10, 0.11), 0.0, 0.25, maps=TEX["asphalt_wet"], uv_scale=4.0)
 BAY_BLUE = mat((0.06, 0.08, 0.14), 0.0, 0.5, maps=TEX["bay_blue"], uv_scale=5.5)
 BAY_ORNG = mat((0.32, 0.13, 0.05), 0.0, 0.5, maps=TEX["bay_orange"], uv_scale=6.0)
@@ -84,8 +84,8 @@ YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
 CONCRETE = mat((0.17, 0.175, 0.170), 0.0, 0.72)
 
 # ---- structure ------------------------------------------------------------------ #
-CLAD      = mat((0.48, 0.482, 0.478), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=2.4)
-WALL_TILE = mat((0.55, 0.555, 0.54), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.6)
+CLAD      = mat((0.52, 0.522, 0.518), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
+WALL_TILE = mat((0.72, 0.725, 0.71), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.15)
 SEAM      = mat((0.24, 0.24, 0.24), 0.0, 0.45)      # the shadow line between clad panels
 KERB      = mat((0.24, 0.24, 0.235), 0.0, 0.66)
 
@@ -97,13 +97,13 @@ RED       = mat((0.50, 0.045, 0.030), 0.0, 0.40)
 RED_D     = mat((0.30, 0.028, 0.020), 0.0, 0.44)
 ORANGE_S  = mat((0.72, 0.26, 0.03), 0.0, 0.42)
 YELLOW    = mat((0.74, 0.55, 0.03), 0.0, 0.44)
-BLACK     = mat((0.028, 0.028, 0.030), 0.0, 0.52)
+BLACK     = mat((0.045, 0.045, 0.048), 0.0, 0.52)
 RUBBER    = mat((0.020, 0.020, 0.022), 0.0, 0.78)
-HOSE      = mat((0.026, 0.026, 0.028), 0.0, 0.55)
+HOSE      = mat((0.042, 0.042, 0.045), 0.0, 0.55)
 STEEL     = mat((0.52, 0.52, 0.53), 1.0, 0.36)
 # The island's grating stands in the rain. Bright dry steel turned it into a chrome
 # serving tray; wet steel is darker and glossier, and reads as the thing in the photo.
-WET_STEEL = mat((0.28, 0.285, 0.29), 1.0, 0.26)
+WET_STEEL = mat((0.40, 0.405, 0.41), 1.0, 0.28)
 GALV      = mat((0.46, 0.47, 0.48), 1.0, 0.44)      # galvanised: duller than bright steel
 CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.18)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.42)
@@ -111,7 +111,7 @@ BODY_WH   = mat((0.72, 0.725, 0.73), 0.0, 0.22)     # vehicle paint: brighter an
 GLASS     = mat((0.05, 0.06, 0.07), 0.0, 0.07)
 SHUTTER   = mat((0.42, 0.43, 0.435), 0.35, 0.40)
 SHUTTER_D = mat((0.24, 0.245, 0.255), 0.35, 0.46)
-NAVY      = mat((0.03, 0.055, 0.20), 0.0, 0.44)
+NAVY      = mat((0.05, 0.075, 0.24), 0.0, 0.44)
 TAIL_RED  = mat((0.42, 0.03, 0.02), 0.0, 0.22)
 LAMP      = mat((0.70, 0.68, 0.62), 0.0, 0.14)
 
@@ -120,6 +120,7 @@ LAMP      = mat((0.70, 0.68, 0.62), 0.0, 0.14)
 # proud of the face and would otherwise crop 3 cm of artwork off each edge.
 SIGN_FACE  = face_decal(DEC["pump_sign"], 0.915, 2.06, 0.02, base=(0.60, 0.60, 0.59),
                         roughness=0.26)
+SIGN_FACE["emission"] = [0.16, 0.16, 0.155]   # it is a LIGHTBOX: lit from inside, not lit on
 FIREBOX_F  = face_decal(DEC["fire_cabinet"], 0.38, 0.70, 0.012, base=(0.50, 0.045, 0.030),
                         roughness=0.40)
 BUCKET_F   = face_decal(DEC["fire_bucket"], 0.28, 0.20, 0.30, centre=(0.0, 0.0, 0.175),

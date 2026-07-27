@@ -39,6 +39,12 @@ struct RenderSettings {
     double env_intensity = 1.0;
     double sun_intensity = 1.0;
     std::array<double, 3> sun_dir{0.4, 0.5, 0.8};  // sun direction (art-directable; low = long raking shadows)
+    // Sky TINT (multiplies the horizon->zenith gradient). The built-in sky is a cool
+    // blue, which is right for a clear day and wrong for the flat white overcast a lot
+    // of reference photography is shot under -- and a cool sky tints EVERY surface at
+    // once, so it reads as "my renders look CG" rather than as a colour error. 1,1,1
+    // keeps the original; warming it toward {1.15, 1.05, 0.92} gives an overcast white.
+    std::array<double, 3> sky_tint{1.0, 1.0, 1.0};
     double exposure = 1.0;    // linear stops applied before the ACES tonemap
     // Firefly clamp: cap the luminance of INDIRECT (bounce>=1) contributions so a
     // rare high-variance specular bounce can't leave a white speckle. 0 = off. The
