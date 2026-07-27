@@ -81,7 +81,10 @@ def forecourt():
     # oil/water staining all live in the map; the wet sheen is the map's low-roughness
     # pools mirroring the sky, not a flat near-black fill.
     p.place(P.box(44, 48, 0.4), at=[6, 8, -0.2], material=APRON)
-    p.place(P.box(40, 9.5, 0.03), at=[7, 16.2, 0.012], rotate=[0, 0, ANG], material=ROAD)
+    # The wet asphalt is a BAND, not the whole back of the yard: in the reference the shop
+    # apron in front of the shutters is light concrete, and paving it black is what made
+    # the whole yard read as a night scene.
+    p.place(P.box(40, 5.0, 0.03), at=[7, 15.0, 0.012], rotate=[0, 0, ANG], material=ROAD)
     # The saw-cut construction joints. A poured apron is a GRID of slabs, and those long
     # straight lines are most of what tells the eye it is looking at concrete rather than at
     # a grey plane — the texture's random cracks cannot supply them, because they are not
