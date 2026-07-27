@@ -320,7 +320,13 @@ def main():
              # +0.15 and +0.015, which no function of depth can deliver. So those four dark
              # objects were four dark albedos after all. Haze stays, at a value small enough
              # to be the real thing rather than a fudge for something else.
-             "--haze", "320",
+             # ...and 320 was still too much: the shutters went 0.361 (right) -> 0.455
+             # (too light) on it alone. Third strike. The four dark objects were dark
+             # ALBEDOS, they are fixed, and this scene at thirty metres has no visible
+             # aerial perspective to model. --haze stays in the renderer, where it is a
+             # real and useful thing; it is not needed here, and carrying it at a value
+             # tuned to hide something else is how a scene accumulates lies.
+             "--haze", "0",
              # denoise 4 at 260 spp was eating the apron's grain: the scorecard read detail
              # 0.18 and barely moved when the map got twice the staining, because the filter
              # was removing exactly what the map was adding. 2 keeps it.
