@@ -156,8 +156,13 @@ def report(rows, width=96):
                    f"  {', '.join(r['flags'])}")
     worst = [r for r in rows if r["flags"]]
     out.append("-" * width)
-    out.append(f"{len(worst)} of {len(rows)} objects flagged"
-               + (f"; worst: {worst[0]['name']} ({', '.join(worst[0]['flags'])})" if worst else ""))
+    # ONE number for the whole frame. The per-object rows say WHAT to fix; this says whether
+    # the last change helped, which is the question a loop with nobody in it has to answer
+    # for itself. Track it across iterations: 7.23 -> 4.97 is progress, and it is not a mood.
+    out.append(f"TOTAL SEVERITY {sum(r['severity'] for r in rows):.3f}"
+               f"   ({len(worst)} of {len(rows)} objects flagged"
+               + (f"; worst: {worst[0]['name']} - {', '.join(worst[0]['flags'])}" if worst else "")
+               + ")")
     return "\n".join(out)
 
 

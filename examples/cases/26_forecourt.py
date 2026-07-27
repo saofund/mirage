@@ -290,8 +290,11 @@ def main():
     # back with a cool cast, all seventeen, which is not seventeen colour errors but one —
     # the sky is the only thing lighting most of this scene, and it was blue.
     extra = ["--sun", "0.12", "--env", "0.86", "--exposure", "1.35", "--clamp", "1.5",
-             "--sun-dir", "0.25", "0.55", "0.80", "--sky-tint", "1.20", "1.06", "0.90",
-             "--denoise", "4"]
+             "--sun-dir", "0.25", "0.55", "0.80", "--sky-tint", "1.26", "1.07", "0.86",
+             # denoise 4 at 260 spp was eating the apron's grain: the scorecard read detail
+             # 0.18 and barely moved when the map got twice the staining, because the filter
+             # was removing exactly what the map was adding. 2 keeps it.
+             "--denoise", "2"]
     # The id AOV comes out of the SAME trace as the beauty pass, so the scorecard's masks
     # are the pixels it is scoring and not a re-render that drifted.
     extra += ["--ids", str(OUT / "hero_ids.pgm"), "--id-tags", ",".join(ID_TAGS)]
