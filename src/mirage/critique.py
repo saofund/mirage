@@ -58,6 +58,7 @@ __all__ = ["scorecard", "report", "plate"]
 TONE_TOL = 0.06      # sRGB luma difference that starts to read as "wrong exposure"
 DETAIL_FLOOR = 0.25  # below this an object is reading flat
 CAST_TOL = 0.020     # chromaticity (r-b) difference that starts to read as a colour cast
+FILL_FLOOR = 0.28    # below this the mask is too thin for its reference pixels to be it
 
 
 def _detail(srgb, mask, blur=1.2):
@@ -89,6 +90,24 @@ def _detail(srgb, mask, blur=1.2):
     gx[:, 1:-1] = g[:, 2:] - g[:, :-2]
     gy[1:-1, :] = g[2:, :] - g[:-2, :]
     return float(np.hypot(gx, gy)[mask].mean())
+
+
+def _fill(mask):
+    """How solidly an object fills its own bounding box.
+
+    A THIN or scattered mask — ten hose loops with sky between them, a tube hoop, a set of
+    railings — does not line up with the same object in the photograph unless the model is
+    perfect, so the reference pixels under it are a MIXTURE of the object and whatever it
+    fails to cover. Comparing medians across that mixture is not a comparison of the object.
+    It is worth naming because the metric happily drove a real regression through it: the
+    hoses' reference median is a blend of black rubber and bright forecourt, so "match it"
+    meant "turn the hoses grey", the total severity went DOWN, and the render got visibly
+    worse. Tone is dropped from the score for these, and the row says why."""
+    ys, xs = np.nonzero(mask)
+    if len(ys) == 0:
+        return 0.0
+    bbox = (ys.max() - ys.min() + 1) * (xs.max() - xs.min() + 1)
+    return float(len(ys)) / float(max(bbox, 1))
 
 
 def _cast(srgb, mask):
@@ -140,11 +159,15 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
         # severity: how wrong, weighted by how much of the frame it is. sqrt so a huge
         # background does not drown a foreground object that is completely wrong.
         area_w = (px / total) ** 0.5
-        sev = area_w * (max(abs(t_ren - t_ref) - TONE_TOL, 0.0) * 6.0
+        thin = _fill(mask) < FILL_FLOOR
+        tone_err = 0.0 if thin else max(abs(t_ren - t_ref) - TONE_TOL, 0.0)
+        sev = area_w * (tone_err * 6.0
                         + max(DETAIL_FLOOR - ratio, 0.0) * 4.0
                         + max(abs(c_ren - c_ref) - CAST_TOL, 0.0) * 20.0)
         flags = []
-        if t_ren - t_ref > TONE_TOL:
+        if thin:
+            flags.append("thin mask (tone not scored)")
+        elif t_ren - t_ref > TONE_TOL:
             flags.append("too light")
         elif t_ref - t_ren > TONE_TOL:
             flags.append("too dark")
