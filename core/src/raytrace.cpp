@@ -261,6 +261,7 @@ struct Scene {
     double env_intensity = 1.0;     // scales the sky image-based fill
     V3 sky_tint{1, 1, 1};           // per-channel multiplier on the sky gradient
     double sky_flat = 0.0;          // 0 = clear gradient, 1 = uniform dome (overcast)
+    double haze_dist = 0.0;         // aerial perspective: 1/e distance (0 = off)
     double sun_intensity = 1.0;     // scales the NEE directional key
     V3 sun_dir{0.4, 0.5, 0.8};      // the sun's direction (normalized in path_trace)
     double clamp_indirect = 12.0;   // firefly cap on indirect contributions (0 = off)
@@ -450,8 +451,11 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
     };
     bool spec_bounce = true;   // camera ray + specular bounces may see an emitter directly;
                                // after a diffuse bounce the emitter is covered by NEE (no double-count)
+    const V3 cam_d = d;        // the camera ray, kept for the aerial-perspective blend
+    double first_t = -1.0;
     for (int bounce = 0; bounce < max_bounce; ++bounce) {
         Hit h = intersect(sc, o, d);
+        if (bounce == 0) first_t = h.t;
         if (h.t > 1e29) { add(mulv(beta, sky(d, sc.sky_tint, sc.sky_flat) * sc.env_intensity), bounce); break; }  // sky fill
         if (luminance(h.emission) > 0.0 && (bounce == 0 || spec_bounce))
             add(mulv(beta, h.emission), bounce);                                          // a lamp seen directly
@@ -532,6 +536,14 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
             if (rng.next() > q) break;
             beta = beta * (1.0 / std::max(q, 1e-4));
         }
+    }
+    // Aerial perspective, on the camera ray only. Applied to the whole path's result rather
+    // than per bounce because what it models is the air between the CAMERA and the surface:
+    // an exponential mix toward the sky the camera would have seen through that surface.
+    if (sc.haze_dist > 0.0 && first_t > 0.0 && first_t < 1e29) {
+        const double f = 1.0 - std::exp(-first_t / sc.haze_dist);
+        const V3 air = sky(cam_d, sc.sky_tint, sc.sky_flat) * sc.env_intensity;
+        L = L * (1.0 - f) + air * f;
     }
     return L;
 }
@@ -638,6 +650,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     sc.env_intensity = settings.env_intensity;
     sc.sky_tint = {settings.sky_tint[0], settings.sky_tint[1], settings.sky_tint[2]};
     sc.sky_flat = settings.sky_flat;
+    sc.haze_dist = settings.haze_dist;
     sc.sun_intensity = settings.sun_intensity;
     sc.sun_dir = norm({settings.sun_dir[0], settings.sun_dir[1], settings.sun_dir[2]});
     sc.clamp_indirect = settings.clamp_indirect;

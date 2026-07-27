@@ -57,3 +57,6 @@ assets/decals/
 
 # never publish the CCTV-reference side-by-side (embeds third-party security footage)
 docs/gallery/forecourt_compare.png
+
+# a working copy that must not render locally (see capture.default_render)
+.render-remote-only

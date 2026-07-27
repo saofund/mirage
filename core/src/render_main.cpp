@@ -72,6 +72,7 @@ int main(int argc, char** argv) {
         else if (a == "--sun-dir") s.sun_dir = next3(s.sun_dir);
         else if (a == "--sky-tint") s.sky_tint = next3(s.sky_tint);   // warm/cool the sky fill
         else if (a == "--sky-flat") s.sky_flat = next(s.sky_flat);   // 1 = uniform overcast dome
+        else if (a == "--haze") s.haze_dist = next(s.haze_dist);    // aerial perspective, 1/e metres
         else if (a == "--exposure") s.exposure = next(s.exposure);
         else if (a == "--clamp") s.clamp_indirect = next(s.clamp_indirect);
         else if (a == "--threads") s.threads = unsigned(next(double(s.threads)));

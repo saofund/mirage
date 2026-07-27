@@ -59,10 +59,31 @@ def default_viewer() -> Path:
 
 
 def default_render() -> Path:
-    """Where the headless path tracer lands (cross-platform; ``MIRAGE_RENDER`` overrides)."""
+    """Where the headless path tracer lands (cross-platform; ``MIRAGE_RENDER`` overrides).
+
+    **Remote-only checkouts.** Drop a file named ``.render-remote-only`` in the repo root
+    and this raises instead of returning a binary. That exists because a workstation with a
+    render farm behind it will still get used for "just a quick preview", over and over, and
+    a note reminding you not to does not work — the pull toward the thing that is already in
+    your hand is stronger than the note. A checkout that physically cannot render locally
+    removes the decision. ``MIRAGE_ALLOW_LOCAL=1`` overrides it for the one case where you
+    genuinely mean it (debugging the renderer itself).
+
+    The marker is gitignored and carries no host details, so it stays a property of one
+    working copy and never ships.
+    """
     import os
     env = os.environ.get("MIRAGE_RENDER")
-    return Path(env) if env else _bin("mirage_render")
+    if env:
+        return Path(env)
+    marker = _repo_root() / ".render-remote-only"
+    if marker.exists() and os.environ.get("MIRAGE_ALLOW_LOCAL") != "1":
+        raise RuntimeError(
+            f"this checkout is marked render-remote-only ({marker.name}).\n"
+            f"  {marker.read_text().strip()}\n"
+            "  Render with tools/render_on_box.py, or set MIRAGE_ALLOW_LOCAL=1 if you "
+            "really mean to render here.")
+    return _bin("mirage_render")
 
 
 def _orbit_eye(cam, tgt):

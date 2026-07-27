@@ -125,7 +125,11 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
     for k in sorted(int(v) for v in np.unique(ids) if v > 0):
         mask = ids == k
         px = int(mask.sum())
-        if px < 200:                       # too few pixels for any statistic to mean anything
+        if px < 800:
+            # Too few pixels for a median or a mean gradient to mean anything. At 295 px the
+            # visible sliver of "island" posted detail 3.20 and got flagged noisy every round
+            # — a row that could only ever be read and dismissed, which is a row that trains
+            # you to skim the table.
             continue
         name = names[k - 1] if names and k - 1 < len(names) else f"id{k}"
         t_ren = float(linear_to_srgb(np.median(_luma(lin_ren)[mask])))

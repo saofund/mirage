@@ -135,14 +135,17 @@ def yard():
                 mark="shutters")
     for dx in (-6.35, 2.2, 6.65):                                 # the piers between them
         c = at(dx, -0.24)
-        p.place(P.tiled_pilaster(0.62, 4.6), at=[c[0], c[1], 0], rotate=[0, 0, ANG])
+        p.place(P.tiled_pilaster(0.62, 4.6), at=[c[0], c[1], 0], rotate=[0, 0, ANG],
+                mark="piers")
     c = at(11.6, -0.30)                                           # an open doorway
     p.place(P.box(2.1, 0.12, 2.6), at=[c[0], c[1], 1.35], rotate=[0, 0, ANG],
             material=mat((0.045, 0.048, 0.05), 0.0, 0.6))
     c = at(-2.4, -0.55)
-    p.place(P.hanging_banner(1.30, 1.76, WASH_F), at=[c[0], c[1], 3.15], rotate=[0, 0, ANG])
+    p.place(P.hanging_banner(1.30, 1.76, WASH_F), at=[c[0], c[1], 3.15], rotate=[0, 0, ANG],
+            mark="banners")
     c = at(3.9, -0.55)
-    p.place(P.hanging_banner(0.55, 2.75, PROMO_F), at=[c[0], c[1], 3.30], rotate=[0, 0, ANG])
+    p.place(P.hanging_banner(0.55, 2.75, PROMO_F), at=[c[0], c[1], 3.30], rotate=[0, 0, ANG],
+            mark="banners")
     # the vehicles and the ground clutter along the wall
     p.place(P.van(), at=[9.9, 17.4, 0], rotate=[0, 0, ANG + 4], mark="van")
     for dx, dy in [(-9.0, -1.5), (-6.1, -1.6), (-3.2, -1.7), (-0.4, -1.8), (2.4, -1.9),
@@ -158,13 +161,16 @@ def yard():
     for dx, dy, top in [(-5.2, -1.15, (0.10, 0.11, 0.13)), (0.9, -1.05, (0.30, 0.30, 0.31)),
                         (1.5, -1.15, (0.14, 0.15, 0.30))]:
         c = at(dx, dy)
-        p.place(P.person(1.70, top), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 150])
+        p.place(P.person(1.70, top), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 150],
+                mark="people")
     for k, (dx, dy) in enumerate([(-9.6, -1.05), (-9.0, -1.15)]):  # the 小心地滑 A-frames
         c = at(dx, dy)
-        p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 8 * k])
+        p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 8 * k],
+                mark="wetsign")
     p.place(P.speed_hump(3.6, 0.52), at=[11.0, 5.6, 0], rotate=[0, 0, 26], mark="hump")
     p.place(P.bollard(0.86), at=[13.6, 8.6, 0])
-    p.place(P.hanging_banner(0.60, 2.60, REPAIR_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6])
+    p.place(P.hanging_banner(0.60, 2.60, REPAIR_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6],
+            mark="banners")
     p.place(P.suv(), at=[-5.3, 4.4, 0], rotate=[0, 0, 96], mark="suv")   # half out of frame
     return p
 
@@ -211,8 +217,8 @@ CAM_EYE, CAM_TGT, CAM_FOV = [-3.1349, -12.0379, 6.0852], [-2.8408, -11.1592, 5.7
 # the island. This list is the scorecard's vocabulary: anything not named here lands in the
 # coarse bucket and cannot be blamed for anything.
 ID_TAGS = ["sign", "dispenser", "hoses", "firebox", "bucket", "plinth", "column", "rail",
-           "van", "suv", "shutters", "bollards", "hump", "facade", "island", "yard",
-           "forecourt"]
+           "van", "suv", "shutters", "bollards", "hump", "banners", "piers", "people",
+           "wetsign", "facade", "island", "yard", "forecourt"]
 
 
 def render(prog, out, spp, w, h, extra=()):
@@ -303,6 +309,11 @@ def main():
              # white, a touch warm -- and --env drops by the same luminance ratio so the
              # exposure that was already measured right does not move.
              "--sky-tint", "1.667", "1.248", "0.829", "--sky-flat", "0.80",
+             # AERIAL PERSPECTIVE. The table flagged every DISTANT DARK object as too
+             # dark -- hump, bollards, rail, hoses -- while distant BRIGHT ones (the van)
+             # were fine. That is not four wrong albedos, it is the air between: haze
+             # lifts blacks and leaves whites, and the render had none of it.
+             "--haze", "130",
              # denoise 4 at 260 spp was eating the apron's grain: the scorecard read detail
              # 0.18 and barely moved when the map got twice the staining, because the filter
              # was removing exactly what the map was adding. 2 keeps it.

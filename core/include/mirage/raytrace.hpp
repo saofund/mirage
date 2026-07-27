@@ -51,6 +51,14 @@ struct RenderSettings {
     // under a sky no tint can fix, because a tint scales the gradient without flattening
     // it. 0 = the gradient as authored, 1 = a uniform sky of its average. ~0.75 = overcast.
     double sky_flat = 0.0;
+    // AERIAL PERSPECTIVE. Air is not empty: over tens of metres it scatters sky light into
+    // the view and washes distance out, which is why a photograph's far objects are lower
+    // in contrast and LIFTED in the blacks while its far whites barely move. Without it a
+    // render's distance is as crisp and as black as its foreground, and that particular
+    // wrongness is most of "this looks like CG" on any outdoor shot deeper than a room.
+    // `haze_dist` is the distance at which roughly 63% of a surface is replaced by air
+    // (0 = off); the air's colour is the sky the camera is already using.
+    double haze_dist = 0.0;
     double exposure = 1.0;    // linear stops applied before the ACES tonemap
     // Firefly clamp: cap the luminance of INDIRECT (bounce>=1) contributions so a
     // rare high-variance specular bounce can't leave a white speckle. 0 = off. The
