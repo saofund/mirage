@@ -15,8 +15,10 @@ private machine and does not belong in a public repository:
     MIRAGE_BOX      user@host for ssh (required)
     MIRAGE_BOX_DIR  the repo's path on that host (required)
     MIRAGE_BOX_ENV  extra exports for the remote shell, e.g. "PATH=$HOME/.local/bin:$PATH"
-    MIRAGE_BOX_PULL comma-separated paths to copy back (default: docs/gallery + the case
-                    outputs directory)
+    MIRAGE_BOX_PULL comma-separated paths to copy back (default: the case outputs directory)
+
+On Windows run this from PowerShell, not Git Bash: MSYS rewrites anything shaped like a
+Unix path, so a remote target arrives at scp as C:/Program Files/Git/home/...
 
 Assets that are gitignored but must match — generated decal artwork, whose CJK text falls
 back to a bitmap font on a host without the right fonts installed — are pushed by scp, since
@@ -31,7 +33,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PULL = ["docs/gallery", "examples/cases/outputs/26_forecourt"]
+# Only the OUTPUTS by default. Pulling all of docs/gallery drags back the scripts that
+# live there too, and a Linux checkout hands them over with LF endings, so every render
+# turns into a diff full of files nothing touched.
+DEFAULT_PULL = ["examples/cases/outputs/26_forecourt"]
 PUSH_ASSETS = ["assets/decals"]
 
 
