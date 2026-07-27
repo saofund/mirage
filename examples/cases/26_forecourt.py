@@ -38,7 +38,6 @@ from mirage.capture import default_render                                 # noqa
 from mirage.meshlang import MeshProgram                                   # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-RENDER = default_render()
 OUT = Path(__file__).resolve().parent / "outputs" / "26_forecourt"
 GALLERY = ROOT / "docs" / "gallery"
 # The reference lives outside the repo (it is somebody's CCTV frame, not an asset). Override
@@ -226,7 +225,10 @@ def render(prog, out, spp, w, h, extra=()):
     js = OUT / (out + ".json")
     js.write_text(prog.to_json())
     ppm = OUT / (out + ".ppm")
-    subprocess.run([str(RENDER), "--oplog", str(js), "--out", str(ppm),
+    # Resolved HERE, not at import: scoring a render (compare/critique) needs this module
+    # but no renderer, and a remote-only checkout must not refuse to let you read a
+    # scorecard just because it will not let you make a picture.
+    subprocess.run([str(default_render()), "--oplog", str(js), "--out", str(ppm),
                     "--spp", str(spp), "--w", str(w), "--h", str(h), "--threads", THREADS,
                     "--cam-eye", *[str(v) for v in CAM_EYE],
                     "--cam-target", *[str(v) for v in CAM_TGT],
@@ -309,11 +311,16 @@ def main():
              # white, a touch warm -- and --env drops by the same luminance ratio so the
              # exposure that was already measured right does not move.
              "--sky-tint", "1.667", "1.248", "0.829", "--sky-flat", "0.80",
-             # AERIAL PERSPECTIVE. The table flagged every DISTANT DARK object as too
-             # dark -- hump, bollards, rail, hoses -- while distant BRIGHT ones (the van)
-             # were fine. That is not four wrong albedos, it is the air between: haze
-             # lifts blacks and leaves whites, and the render had none of it.
-             "--haze", "130",
+             # Aerial perspective, and a hypothesis that was HALF WRONG. The table flagged
+             # every distant DARK object as too dark while distant BRIGHT ones were fine,
+             # which looks exactly like missing haze -- so haze went in at 130 m, and total
+             # severity got WORSE (2.29 -> 2.59): the shutters, the piers and the apron all
+             # went from right to too light. The disproof is in the same table that
+             # suggested it: the facade and the shutters sit at the SAME distance and wanted
+             # +0.15 and +0.015, which no function of depth can deliver. So those four dark
+             # objects were four dark albedos after all. Haze stays, at a value small enough
+             # to be the real thing rather than a fudge for something else.
+             "--haze", "320",
              # denoise 4 at 260 spp was eating the apron's grain: the scorecard read detail
              # 0.18 and barely moved when the map got twice the staining, because the filter
              # was removing exactly what the map was adding. 2 keeps it.

@@ -22,7 +22,6 @@ from . import parts as P
 from .materials import mat
 
 OUT = Path(__file__).resolve().parents[1] / "outputs" / "26_forecourt" / "parts"
-RENDER = default_render()
 BACKDROP = mat((0.32, 0.325, 0.33), 0.0, 0.62)
 
 # name -> (builder, "how big is it", camera yaw in degrees). The yaw picks the three-quarter
@@ -77,7 +76,7 @@ def render_part(name, spp=64, w=520, h=620):
     d = size * 1.85
     a = math.radians(yaw)
     eye = [ctr[0] + d * math.sin(a) * 0.9, ctr[1] - d * math.cos(a), ctr[2] + size * 0.55]
-    subprocess.run([str(RENDER), "--oplog", str(js), "--out", str(ppm), "--spp", str(spp),
+    subprocess.run([str(default_render()), "--oplog", str(js), "--out", str(ppm), "--spp", str(spp),
                     "--w", str(w), "--h", str(h), "--threads", "14",
                     "--cam-eye", *[f"{v:.4f}" for v in eye],
                     "--cam-target", *[f"{v:.4f}" for v in ctr],

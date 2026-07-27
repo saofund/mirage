@@ -28,7 +28,7 @@ from mirage.meshlang import MeshProgram
 
 from .materials import (
     BLACK, BODY_WH, BUCKET_F, CHROME, CLAD, CONCRETE, FIREBOX_F, GALV, GLASS, HOSE, KERB,
-    LAMP, NAVY, ORANGE_S, PANEL_WH, PLATE_F, PROMO_F, PUMP_BL, PUMP_BL_D, RED, RED_D,
+    HUMP, LAMP, NAVY, ORANGE_S, PANEL_WH, PLATE_F, PROMO_F, PUMP_BL, PUMP_BL_D, RED, RED_D,
     WET_STEEL,
     REPAIR_F, RUBBER, SEAM, SHUTTER, SHUTTER_D, SIGN_FACE, STEEL, TAIL_RED, WALL_TILE,
     WASH_F, WETSIGN_F, WHITE, YELLOW, mat,
@@ -653,7 +653,7 @@ def speed_hump(length=3.6, w=0.50, h=0.075):
         x = (k - 1) * (length / 3 + 0.01)
         p.place(prism([[-length / 6, 0.0], [length / 6, 0.0], [length / 6 - 0.02, h],
                        [-length / 6 + 0.02, h]], -w / 2, w / 2),
-                at=[x, 0, 0], material=BLACK)
+                at=[x, 0, 0], material=HUMP)
     for k in range(int(length / 0.09)):                                # the checker, as paint
         for j in range(int(w / 0.09)):
             if (k + j) % 2:
