@@ -320,13 +320,15 @@ def main():
              # +0.15 and +0.015, which no function of depth can deliver. So those four dark
              # objects were four dark albedos after all. Haze stays, at a value small enough
              # to be the real thing rather than a fudge for something else.
-             # ...and 320 was still too much: the shutters went 0.361 (right) -> 0.455
-             # (too light) on it alone. Third strike. The four dark objects were dark
-             # ALBEDOS, they are fixed, and this scene at thirty metres has no visible
-             # aerial perspective to model. --haze stays in the renderer, where it is a
-             # real and useful thing; it is not needed here, and carrying it at a value
-             # tuned to hide something else is how a scene accumulates lies.
-             "--haze", "0",
+             # 320 m, and this number is MEASURED, not reasoned. The argument for deleting
+             # haze entirely was good: at 320 the shutters still drifted 0.361 -> 0.455, and
+             # the four dark objects had turned out to be dark albedos rather than distance.
+             # The A/B says otherwise -- haze off scores 2.678, haze at 320 scores 2.337 --
+             # because the albedo lift and the haze were fitted together and removing one
+             # leaves the other stranded. Twice now the table has overruled the reasoning:
+             # once killing haze at 130, once refusing to let it go at 320. Both times the
+             # render was cheaper than the argument.
+             "--haze", "320",
              # denoise 4 at 260 spp was eating the apron's grain: the scorecard read detail
              # 0.18 and barely moved when the map got twice the staining, because the filter
              # was removing exactly what the map was adding. 2 keeps it.
