@@ -35,8 +35,14 @@ DEFAULT_PULL = ["docs/gallery", "examples/cases/outputs/26_forecourt"]
 PUSH_ASSETS = ["assets/decals"]
 
 
+# Git Bash rewrites anything that looks like a Unix path in an argument into a Windows one,
+# so a perfectly good remote target becomes "C:/Program Files/Git/home/...". Turning that off
+# for our own subprocesses is the documented escape hatch, and it is a no-op everywhere else.
+_ENV = {**os.environ, "MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"}
+
+
 def sh(*args, **kw):
-    r = subprocess.run(args, cwd=str(ROOT), text=True, **kw)
+    r = subprocess.run(args, cwd=str(ROOT), text=True, env=_ENV, **kw)
     if r.returncode:
         raise SystemExit(f"failed ({r.returncode}): {' '.join(args)}")
     return r
