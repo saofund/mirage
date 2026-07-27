@@ -510,9 +510,9 @@ def island():
     p.place(pump_sign(), at=[0.02, 0.02, Z + 2.34], mark="sign")
     p.place(dispenser(), at=[0, 0.06, Z], mark="dispenser")
     for s in (-1, 1):
-        p.place(hose_tangle(s), at=[0, 0.06, Z])
+        p.place(hose_tangle(s), at=[0, 0.06, Z], mark="hoses")
     p.place(fire_cabinet(), at=[0.02, -0.44, Z], mark="firebox")
-    p.place(fire_bucket(), at=[0.52, -0.46, Z])
+    p.place(fire_bucket(), at=[0.52, -0.46, Z], mark="bucket")
     p.place(bottle(0.115, 0.032, (0.34, 0.20, 0.05)), at=[-0.34, -0.48, Z])
     p.place(bottle(0.105, 0.030, (0.72, 0.72, 0.70)), at=[-0.20, -0.49, Z])
     p.place(bottle(0.098, 0.028, (0.20, 0.42, 0.16)), at=[-0.27, -0.42, Z])

@@ -131,7 +131,8 @@ def yard():
     p.place(P.facade(24.0, 5.2), at=[8.5, 20.2, 0], rotate=[0, 0, ANG], mark="facade")
     for dx in (-8.4, -4.3, -0.2, 4.6, 8.7):                       # the workshop bays
         c = at(dx, -0.22)
-        p.place(P.roller_shutter(3.4, 3.2), at=[c[0], c[1], 0], rotate=[0, 0, ANG])
+        p.place(P.roller_shutter(3.4, 3.2), at=[c[0], c[1], 0], rotate=[0, 0, ANG],
+                mark="shutters")
     for dx in (-6.35, 2.2, 6.65):                                 # the piers between them
         c = at(dx, -0.24)
         p.place(P.tiled_pilaster(0.62, 4.6), at=[c[0], c[1], 0], rotate=[0, 0, ANG])
@@ -147,7 +148,7 @@ def yard():
     for dx, dy in [(-9.0, -1.5), (-6.1, -1.6), (-3.2, -1.7), (-0.4, -1.8), (2.4, -1.9),
                    (5.2, -2.0)]:
         c = at(dx, dy)
-        p.place(P.bollard(), at=[c[0], c[1], 0])
+        p.place(P.bollard(), at=[c[0], c[1], 0], mark="bollards")
     for dx, dy, kind in [(-7.6, -0.95, "bin"), (-7.0, -0.9, "broom"), (-6.8, -0.85, "broom")]:
         c = at(dx, dy)
         if kind == "bin":
@@ -161,10 +162,10 @@ def yard():
     for k, (dx, dy) in enumerate([(-9.6, -1.05), (-9.0, -1.15)]):  # the 小心地滑 A-frames
         c = at(dx, dy)
         p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 8 * k])
-    p.place(P.speed_hump(3.6, 0.52), at=[11.0, 5.6, 0], rotate=[0, 0, 26])
+    p.place(P.speed_hump(3.6, 0.52), at=[11.0, 5.6, 0], rotate=[0, 0, 26], mark="hump")
     p.place(P.bollard(0.86), at=[13.6, 8.6, 0])
     p.place(P.hanging_banner(0.60, 2.60, REPAIR_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6])
-    p.place(P.suv(), at=[-5.3, 4.4, 0], rotate=[0, 0, 96])         # far left, half out of frame
+    p.place(P.suv(), at=[-5.3, 4.4, 0], rotate=[0, 0, 96], mark="suv")   # half out of frame
     return p
 
 
@@ -205,6 +206,14 @@ def scene():
 # the per-object chamfer loss is what polishes inside it. (solve.camera_from_vanishing_points.)
 CAM_EYE, CAM_TGT, CAM_FOV = [-3.1349, -12.0379, 6.0852], [-2.8408, -11.1592, 5.7095], 0.5054
 
+# The scene's parts, FINEST FIRST — a face takes the first of these tags it carries, so
+# listing "sign" before "island" scores the sign on its own instead of dissolving it into
+# the island. This list is the scorecard's vocabulary: anything not named here lands in the
+# coarse bucket and cannot be blamed for anything.
+ID_TAGS = ["sign", "dispenser", "hoses", "firebox", "bucket", "plinth", "column", "rail",
+           "van", "suv", "shutters", "bollards", "hump", "facade", "island", "yard",
+           "forecourt"]
+
 
 def render(prog, out, spp, w, h, extra=()):
     OUT.mkdir(parents=True, exist_ok=True)
@@ -242,6 +251,30 @@ def compare(png):
     return p
 
 
+def critique(png):
+    """Score the render against the photograph, per object, worst first.
+
+    This is the answer to a question that kept being asked by a human: "which bit is wrong?"
+    A render is re-rendered dozens of times and the eye adapts to it after the third — every
+    fault this scene has shipped with (an apron twice as light as the photo, a yard paved
+    black, a van that was the wrong kind of van, ten objects that were painted boxes) was
+    visible in the picture the whole time and still needed somebody to say so. The
+    scorecard says so instead, in a table sorted by how much it matters.
+    """
+    from mirage import critique as C
+    from mirage.photomatch import read_ids
+    ids_path = OUT / "hero_ids.pgm"
+    if not ids_path.exists():
+        print("(no ids AOV — run without --preview, or with --critique, to write one)")
+        return
+    ren, ref = C.load_pair(png, REF)
+    rows = C.scorecard(ren, ref, read_ids(ids_path), names=ID_TAGS)
+    print()
+    print(C.report(rows))
+    print("wrote", C.plate(ren, read_ids(ids_path), rows, OUT / "scorecard.png", names=ID_TAGS))
+    return rows
+
+
 def main():
     preview = "--preview" in sys.argv
     p = scene()
@@ -253,12 +286,16 @@ def main():
     # the floor -- the wet materials are near-black diffuse and read only through what they
     # reflect. Exposure 1.35 sits the concrete where the reference's is; --clamp stops a hot
     # specular sample on the near-mirror puddles from leaving a firefly the denoiser can't fix.
-    png = render(p, "hero", spp, 1600, 900,
-                 extra=["--sun", "0.12", "--env", "0.86", "--exposure", "1.35", "--clamp", "1.5",
-                        "--sun-dir", "0.25", "0.55", "0.80", "--denoise", "4"])
+    extra = ["--sun", "0.12", "--env", "0.86", "--exposure", "1.35", "--clamp", "1.5",
+             "--sun-dir", "0.25", "0.55", "0.80", "--denoise", "4"]
+    # The id AOV comes out of the SAME trace as the beauty pass, so the scorecard's masks
+    # are the pixels it is scoring and not a re-render that drifted.
+    extra += ["--ids", str(OUT / "hero_ids.pgm"), "--id-tags", ",".join(ID_TAGS)]
+    png = render(p, "hero", spp, 1600, 900, extra=extra)
     print("wrote", png)
     if REF.exists():
         print("wrote", compare(png))
+        critique(png)
     else:
         print(f"(no reference at {REF} — skipping the side-by-side; set MIRAGE_REF)")
     if not preview:
