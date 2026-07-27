@@ -473,12 +473,33 @@ def hazard_rail(width=1.83, height=0.72, r=0.045):
 
 
 def clad_column(w=1.16, d=0.88, h=8.0):
-    """The canopy column: clad panels with a shadow-line seam every 1.2 m and broken
-    corners, so the biggest flat object in frame stops being a flat object."""
+    """The canopy column — the largest single object in the frame, and the last one that
+    was still a painted box.
+
+    Cladding is PANELS, and panels have joints in both directions: a recessed shadow line
+    every 1.2 m up and every 0.55 m across, plus a corner reveal down each arris and a
+    bolted access hatch at working height. The scorecard put it at 0.20 of the photograph's
+    structure while every hand-detailed part in the scene sat near 0.9 — which is the number
+    saying "this is a big smooth rectangle", and it was."""
     p = MeshProgram()
     p.place(cbox(w, d, h, 0.022), at=[0, 0, h / 2], material=CLAD)
-    for k in range(1, int(h / 1.2) + 1):                               # panel joints
-        p.place(box(w + 0.006, d + 0.006, 0.012), at=[0, 0, k * 1.2], material=SEAM)
+    for k in range(1, int(h / 1.2) + 1):                               # horizontal joints
+        p.place(box(w + 0.008, d + 0.008, 0.016), at=[0, 0, k * 1.2], material=SEAM)
+        p.place(box(w + 0.014, d + 0.014, 0.006), at=[0, 0, k * 1.2 + 0.012], material=CLAD)
+    for t in (-1, 1):                                                  # vertical joints
+        for u in (-1, 0, 1):
+            p.place(box(0.012, d + 0.008, h), at=[u * w * 0.30, 0, h / 2], material=SEAM)
+            p.place(box(w + 0.008, 0.012, h), at=[0, u * d * 0.30, h / 2], material=SEAM)
+        p.place(cbox(0.030, 0.030, h - 0.1, 0.008), at=[t * (w / 2 - 0.004), 0, h / 2],
+                material=SEAM)                                          # corner reveals
+        p.place(cbox(0.030, 0.030, h - 0.1, 0.008), at=[0, t * (d / 2 - 0.004), h / 2],
+                material=SEAM)
+    p.place(cbox(0.34, 0.02, 0.44, 0.008), at=[-0.24, -d / 2 - 0.006, 1.05], material=SEAM)
+    p.place(cbox(0.30, 0.02, 0.40, 0.006), at=[-0.24, -d / 2 - 0.012, 1.05], material=CLAD)
+    for z in (0.88, 1.22):                                             # the hatch's fixings
+        for x in (-0.36, -0.12):
+            p.place(cyl(0.011, 0.014, 8), at=[x, -d / 2 - 0.016, z], rotate=[90, 0, 0],
+                    material=STEEL)
     p.place(cbox(w + 0.05, d + 0.05, 0.09, 0.014), at=[0, 0, 0.045], material=SEAM)  # base
     return p
 
@@ -543,12 +564,30 @@ def roller_shutter(w=3.0, h=3.1):
 
 
 def facade(length=24.0, h=5.2):
-    """The workshop frontage: a tiled wall, a plinth, a lintel band and a parapet."""
+    """The workshop frontage.
+
+    Was a tiled slab with three bands on it and scored 0.17 of the photograph's structure.
+    A real shop front carries the things nobody models and everybody sees: a lintel with a
+    shadow gap over the openings, split air-conditioners bracketed above them, downpipes
+    running the full height into the kerb, and a fascia the signage hangs off."""
     p = MeshProgram()
     p.place(cbox(length, 0.40, h, 0.03), at=[0, 0, h / 2], material=WALL_TILE)
     p.place(cbox(length + 0.10, 0.52, 0.30, 0.02), at=[0, -0.04, 0.15], material=SEAM)
-    p.place(cbox(length + 0.06, 0.50, 0.22, 0.02), at=[0, -0.05, 3.55], material=SEAM)
+    p.place(cbox(length + 0.06, 0.54, 0.26, 0.02), at=[0, -0.07, 3.42], material=SEAM)
+    p.place(cbox(length + 0.02, 0.46, 0.09, 0.012), at=[0, -0.03, 3.60], material=WALL_TILE)
     p.place(cbox(length + 0.14, 0.56, 0.34, 0.03), at=[0, -0.06, h + 0.10], material=WALL_TILE)
+    for dx in (-9.6, -3.4, 3.0, 8.4):                                  # split air-con units
+        p.place(cbox(0.86, 0.34, 0.58, 0.014), at=[dx, -0.34, 4.10],
+                material=mat((0.58, 0.585, 0.58), 0.0, 0.45))
+        p.place(cbox(0.74, 0.03, 0.44, 0.008), at=[dx, -0.52, 4.10],
+                material=mat((0.30, 0.305, 0.30), 0.0, 0.55))          # the grille
+        p.place(cbox(0.94, 0.30, 0.05, 0.010), at=[dx, -0.32, 3.78], material=SEAM)
+    for dx in (-11.2, -5.0, 1.4, 7.2, 11.4):                           # downpipes
+        p.place(cyl(0.058, h - 0.1, 12), at=[dx, -0.24, (h - 0.1) / 2],
+                material=mat((0.42, 0.425, 0.42), 0.0, 0.5))
+        for z in (1.1, 2.6, 4.1):
+            p.place(cyl(0.072, 0.05, 12), at=[dx, -0.24, z],
+                    material=mat((0.34, 0.345, 0.34), 0.0, 0.5))
     return p
 
 

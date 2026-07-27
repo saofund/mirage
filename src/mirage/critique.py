@@ -60,7 +60,7 @@ DETAIL_FLOOR = 0.25  # below this an object is reading flat
 CAST_TOL = 0.020     # chromaticity (r-b) difference that starts to read as a colour cast
 
 
-def _detail(srgb, mask):
+def _detail(srgb, mask, blur=1.2):
     """Mean |grad| of DISPLAY luma over a mask — how much visible structure is here.
 
     Measured on the sRGB-encoded image on purpose, which is the one place in this codebase
@@ -69,8 +69,21 @@ def _detail(srgb, mask):
     near-black tubes against a bright floor — scored 4.06 and got flagged as *noisy*, and
     the tiny sliver of visible island scored 3.57. A ratio whose denominator goes to zero
     tells you about its denominator. Display luma is bounded, is what the eye is looking
-    at, and makes a flat panel read low whether it is lit or shadowed."""
+    at, and makes a flat panel read low whether it is lit or shadowed.
+
+    Both images are lightly BLURRED first, and the reason matters more than it sounds. A
+    CCTV frame carries sensor noise and compression mush over every square inch; a path
+    traced image is clean. Unblurred, a big smooth region scores the photograph's NOISE as
+    detail the render is missing, so the apron's ratio sat at 0.18 and would not move for
+    twice the staining, a tile half the size, or turning the denoiser down — none of which
+    were the reason. A 1.2 px blur removes what no render should imitate and leaves the
+    stains, cracks, kerbs and tyre marks, which are the structure actually being asked
+    about."""
     g = _luma(srgb)
+    if blur:
+        from PIL import ImageFilter
+        im = Image.fromarray((np.clip(g, 0, 1) * 255).astype(np.uint8))
+        g = np.asarray(im.filter(ImageFilter.GaussianBlur(radius=blur)), float) / 255.0
     gx = np.zeros_like(g)
     gy = np.zeros_like(g)
     gx[:, 1:-1] = g[:, 2:] - g[:, :-2]

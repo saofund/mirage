@@ -84,14 +84,14 @@ YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
 CONCRETE = mat((0.17, 0.175, 0.170), 0.0, 0.72)
 
 # ---- structure ------------------------------------------------------------------ #
-CLAD      = mat((0.455, 0.457, 0.453), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
-WALL_TILE = mat((0.72, 0.725, 0.71), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.15)
+CLAD      = mat((0.415, 0.417, 0.413), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
+WALL_TILE = mat((0.86, 0.865, 0.85), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.15)
 SEAM      = mat((0.24, 0.24, 0.24), 0.0, 0.45)      # the shadow line between clad panels
 KERB      = mat((0.24, 0.24, 0.235), 0.0, 0.66)
 
 # ---- painted metal and plastic --------------------------------------------------- #
-PUMP_BL   = mat((0.045, 0.085, 0.40), 0.0, 0.30)    # the dispenser's blue
-PUMP_BL_D = mat((0.028, 0.052, 0.26), 0.0, 0.34)
+PUMP_BL   = mat((0.070, 0.105, 0.315), 0.0, 0.30)   # the dispenser's blue
+PUMP_BL_D = mat((0.046, 0.068, 0.205), 0.0, 0.34)
 PANEL_WH  = mat((0.80, 0.80, 0.79), 0.0, 0.34)
 RED       = mat((0.50, 0.045, 0.030), 0.0, 0.40)
 RED_D     = mat((0.30, 0.028, 0.020), 0.0, 0.44)
@@ -103,7 +103,7 @@ HOSE      = mat((0.080, 0.080, 0.084), 0.0, 0.55)
 STEEL     = mat((0.52, 0.52, 0.53), 1.0, 0.36)
 # The island's grating stands in the rain. Bright dry steel turned it into a chrome
 # serving tray; wet steel is darker and glossier, and reads as the thing in the photo.
-WET_STEEL = mat((0.52, 0.525, 0.53), 1.0, 0.28)
+WET_STEEL = mat((0.60, 0.605, 0.60), 1.0, 0.30)
 GALV      = mat((0.46, 0.47, 0.48), 1.0, 0.44)      # galvanised: duller than bright steel
 CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.18)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.42)
@@ -111,7 +111,7 @@ BODY_WH   = mat((0.83, 0.835, 0.84), 0.0, 0.22)     # vehicle paint: brighter an
 GLASS     = mat((0.05, 0.06, 0.07), 0.0, 0.07)
 SHUTTER   = mat((0.42, 0.43, 0.435), 0.35, 0.40)
 SHUTTER_D = mat((0.24, 0.245, 0.255), 0.35, 0.46)
-NAVY      = mat((0.10, 0.135, 0.34), 0.0, 0.44)
+NAVY      = mat((0.155, 0.185, 0.38), 0.0, 0.44)
 TAIL_RED  = mat((0.42, 0.03, 0.02), 0.0, 0.22)
 LAMP      = mat((0.70, 0.68, 0.62), 0.0, 0.14)
 
