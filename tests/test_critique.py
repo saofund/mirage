@@ -93,8 +93,10 @@ def test_ranking_is_area_weighted_and_reported():
     ref = _noise(100, 200, 5, amp=0.16)
     ren = ref.copy()
     ren[5:95, 5:105] = 0.5                              # big flat region
-    ren[5:25, 150:170] = 0.5                            # small flat region, same fault
-    ids = _ids(100, 200, {1: (5, 95, 5, 105), 2: (5, 25, 150, 170)})
+    ren[5:50, 140:180] = 0.5                            # smaller flat region, same fault
+    # both regions must clear the 800 px floor, or this stops testing the ranking and
+    # starts testing the floor — which is how it broke when the floor was introduced.
+    ids = _ids(100, 200, {1: (5, 95, 5, 105), 2: (5, 50, 140, 180)})
     rows = scorecard(ren, ref, ids, names=["big", "small"], chamfer=False)
     assert [r["name"] for r in rows] == ["big", "small"]
     text = report(rows)
