@@ -87,8 +87,14 @@ def main():
 
     # A render writes into docs/gallery, so the box's copy is always locally modified;
     # discard it rather than letting the pull abort on a file we are about to overwrite.
-    steps = [f"cd {box_dir}", "git checkout -- docs/gallery 2>/dev/null || true",
-             "git pull --ff-only -q", f"export {env} MIRAGE_THREADS={args.threads}"]
+    # Export FIRST: a box that reaches github through a proxy needs it set before the pull,
+    # and a non-interactive ssh does not read the shell profile that normally provides it.
+    # Also retry the pull once — a transient "flush packet" from the remote should not cost a
+    # whole render, and worse, should not leave a STALE image on disk for the next step to
+    # score and report as if it were new.
+    steps = [f"cd {box_dir}", f"export {env} MIRAGE_THREADS={args.threads}",
+             "git checkout -- docs/gallery 2>/dev/null || true",
+             "git pull --ff-only -q || (sleep 3 && git pull --ff-only -q)"]
     if not args.no_build:
         steps.append("cmake --build core/build -j >/dev/null")
     run = " ".join(args.command)
