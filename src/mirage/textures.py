@@ -367,6 +367,7 @@ _LIBRARY = {
     "asphalt_wet":        lambda: _asphalt(RES, 107, (0.095, 0.100, 0.110)),
     "bay_blue":           lambda: _painted_bay(RES, 113, (0.052, 0.070, 0.128), (0.105, 0.110, 0.115), wet=0.85, wear_amt=0.45),
     "bay_orange":         lambda: _painted_bay(RES, 127, (0.300, 0.122, 0.050), (0.185, 0.165, 0.145), wet=0.45, faded=0.35, wear_amt=0.35),
+    "bay_slate":          lambda: _painted_bay(RES, 131, (0.085, 0.095, 0.112), (0.105, 0.110, 0.115), wet=0.70, wear_amt=0.50),
     # painted metal cladding for the canopy column: light cool grey, semi-gloss, streaked
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
     "clad_panel":         lambda: _painted_metal(RES, 137, (0.55, 0.555, 0.56), dirt=0.70, rough_base=0.36),

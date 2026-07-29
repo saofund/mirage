@@ -31,8 +31,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # so `forecourt` imports as a kit
 
 from forecourt import parts as P                                          # noqa: E402
-from forecourt.materials import (APRON, BAY_BLUE, BAY_ORNG, BLACK, CONCRETE,  # noqa: E402
-                                 LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
+from forecourt.materials import (APRON, BAY_BLUE, BAY_ORNG, BAY_SLATE, BLACK,  # noqa: E402
+                                 CONCRETE, LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
                                  WASH_F, WHITE, YELLOW, YELLOWP, mat)
 from mirage.capture import default_render                                 # noqa: E402
 from mirage.meshlang import MeshProgram                                   # noqa: E402
@@ -97,8 +97,25 @@ def forecourt():
     # the painted bays, each ONE textured slab: the worn paint, the fine cracks and the
     # organic standing water are baked into the bay maps, so there are no stacked overlay
     # rectangles (which read as a dartboard) and no overlapping top faces to z-fight.
-    bays = [(0, 3.47, 0, 6, BAY_BLUE), (3.62, 7.5, -3.4, 6.0, BAY_ORNG),
-            (0, 3.47, 6.2, 9.7, BAY_ORNG)]
+    # MEASURED, not placed. The painted regions were segmented out of the photograph by
+    # colour and their corners unprojected through the solved camera (forecourt/place.py
+    # and the notes in docs), which found that the layout had been wrong in a way no render
+    # was ever going to reveal: the big terracotta bay is not to the RIGHT of the blue one,
+    # it is IN FRONT of it, in the same lane, filling the bottom of the frame. What sat to
+    # the right was bare concrete, and a bay had been painted over it for weeks.
+    #
+    #   blue     x[0.11, 3.36]  y[0.09, 5.89]   <- the solve's own bay, reproduced exactly
+    #   near     x[0.13, 3.42]  y[<-5.5, -0.04] <- clipped by the frame; runs to about -6.6
+    #   near-r   x[3.59, 4.05+] y[<-5.4, -0.11] <- its neighbour, mostly off-frame right
+    #   far      x[0, 3.47]     y[6.2, 7.9]     <- scanned up a column: orange 6.47..7.63
+    #   slate    x[-1.16,-0.11] y[-2.28, 3.29]  <- a strip left of the blue bay, unmodelled
+    #   left-t   x[-1.15,-0.10] y[-4.4, -2.4]   <- the same strip, terracotta nearer in
+    bays = [(0, 3.47, 0, 6, BAY_BLUE),
+            (0, 3.47, -6.6, -0.12, BAY_ORNG),
+            (3.62, 7.5, -6.6, -0.12, BAY_ORNG),
+            (0, 3.47, 6.2, 7.9, BAY_ORNG),
+            (-1.20, -0.12, -2.4, 3.35, BAY_SLATE),
+            (-1.20, -0.12, -4.6, -2.45, BAY_ORNG)]
     for x0, x1, y0, y1, m in bays:
         slab(p, x0, x1, y0, y1, 0.004, 0.006, m)
         for lx in (x0 - LW, x1):
@@ -118,7 +135,9 @@ def forecourt():
         p.place(P.box(0.15, 0.95, 0.006), at=[9.0 + s * 0.28, 8.55, 0.004],
                 rotate=[0, 0, ANG + s * 40], material=YELLOWP)
     p.place(P.box(14, 0.14, 0.006), at=[8, 12.6, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
-    p.place(P.drain_channel(13.0), at=[7.0, 11.3, 0], rotate=[0, 0, ANG])
+    # Scanning a column up the photograph put the drain at world y = 8.0 (black at 8.04,
+    # concrete again by 8.47). It had been sitting at 11.3, three metres into the road.
+    p.place(P.drain_channel(15.0), at=[6.0, 8.05, 0], rotate=[0, 0, ANG])
     return p
 
 
@@ -166,7 +185,7 @@ def yard():
         c = at(dx, dy)
         p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 8 * k],
                 mark="wetsign")
-    p.place(P.speed_hump(3.6, 0.52), at=[11.0, 5.6, 0], rotate=[0, 0, 26], mark="hump")
+    p.place(P.speed_hump(3.6, 0.52), at=[12.6, 5.0, 0], rotate=[0, 0, 26], mark="hump")
     p.place(P.bollard(0.86), at=[13.6, 8.6, 0])
     p.place(P.hanging_banner(0.60, 2.60, REPAIR_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6],
             mark="banners")

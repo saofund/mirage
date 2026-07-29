@@ -70,7 +70,7 @@ def top_decal(art, w, d, height, base=(0.3, 0.3, 0.3), metallic=0.0, roughness=0
 
 
 TEX = ensure_textures(["forecourt_concrete", "asphalt_wet", "bay_blue", "bay_orange",
-                       "clad_panel", "shop_tile"])
+                       "bay_slate", "clad_panel", "shop_tile"])
 DEC = ensure_decals(["pump_sign", "fire_cabinet", "fire_bucket", "wet_floor", "wash_banner",
                      "promo_banner", "repair_sign", "plate", "shutter_slat"])
 
@@ -79,6 +79,7 @@ APRON    = mat((0.20, 0.205, 0.208), 0.0, 0.6, maps=TEX["forecourt_concrete"], u
 ROAD     = mat((0.095, 0.10, 0.11), 0.0, 0.25, maps=TEX["asphalt_wet"], uv_scale=4.0)
 BAY_BLUE = mat((0.06, 0.08, 0.14), 0.0, 0.5, maps=TEX["bay_blue"], uv_scale=5.5)
 BAY_ORNG = mat((0.32, 0.13, 0.05), 0.0, 0.5, maps=TEX["bay_orange"], uv_scale=6.0)
+BAY_SLATE = mat((0.09, 0.10, 0.115), 0.0, 0.5, maps=TEX["bay_slate"], uv_scale=4.5)
 LINE_W   = mat((0.40, 0.405, 0.40), 0.0, 0.60)      # damp, grimy paint — never bright white
 YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
 CONCRETE = mat((0.17, 0.175, 0.170), 0.0, 0.72)
