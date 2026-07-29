@@ -50,7 +50,25 @@ THREADS = os.environ.get("MIRAGE_THREADS", "14")
 # The scene's forward axis (the bay's long edge, world +y) is not square to the building
 # line behind it; the yard and road sit at this yaw.
 ANG = -15.0
-ISLAND_AT = [-3.12, -1.05]   # where the pump island stands, unprojected from its footprint
+# WHERE THINGS STAND. One dict, read by `scene()` and by `forecourt.place` alike — the audit
+# tool used to restate these numbers and therefore audited a scene that did not exist: the
+# speed hump had already been moved and the fit was still searching around its old spot,
+# reporting "no better than where it is" about a place it no longer was.
+#   name: (build, [x, y, z], yaw)
+def PLACEMENTS():
+    return {
+        "island":  (P.island, [-4.62, -0.15, 0], ANG + 6.0),
+        # RIGIDLY tied to the island: in the photograph the hoop stands 1.25 m in front of
+        # the plinth and always will. fit_ground moved it 2.5 m the other way and improved
+        # its chamfer doing it, because it landed in the hose tangle -- exactly the failure
+        # photomatch.chamfer_per_object documents ("an object sitting in clutter is near
+        # SOMETHING no matter where you put it"). The overlay caught it; the number did not.
+        "rail":    (lambda: P.hazard_rail(1.88, 0.74), [-4.66, -1.40, 0], ANG - 1),
+        "van":     (P.van, [9.9, 17.4, 0], ANG + 4),
+        "suv":     (P.suv, [-5.3, 4.4, 0], 96),
+        "hump":    (lambda: P.speed_hump(3.6, 0.52), [12.6, 5.0, 0], 26),
+        "facade":  (lambda: P.facade(24.0, 5.2), [8.5, 20.2, 0], ANG),
+    }
 
 
 def at(dx, dy, ang=ANG, base=(8.5, 20.2)):
@@ -129,7 +147,9 @@ def forecourt():
     ring = MeshProgram()
     ring.place(MeshProgram().cylinder(sides=72, radius=1.03, height=0.006), material=LINE_W)
     ring.place(MeshProgram().cylinder(sides=72, radius=0.90, height=0.014), material=APRON)
-    p.place(ring, at=[-3.20, -2.44, 0.004])
+    # the ring is painted around the island, so it moves with it
+    p.place(ring, at=[PLACEMENTS()['island'][1][0] - 0.08,
+                      PLACEMENTS()['island'][1][1] - 1.39, 0.004])
     p.place(P.box(0.15, 2.0, 0.006), at=[9.0, 9.4, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
     for s in (-1, 1):
         p.place(P.box(0.15, 0.95, 0.006), at=[9.0 + s * 0.28, 8.55, 0.004],
@@ -146,7 +166,8 @@ def yard():
     """The building line across the back and its clutter, placed by unprojecting the
     building base line (world y ~ 20, yawed by ANG) and the road front."""
     p = MeshProgram()
-    p.place(P.facade(24.0, 5.2), at=[8.5, 20.2, 0], rotate=[0, 0, ANG], mark="facade")
+    fb, fat, fyaw = PLACEMENTS()["facade"]
+    p.place(fb(), at=fat, rotate=[0, 0, fyaw], mark="facade")
     for dx in (-8.4, -4.3, -0.2, 4.6, 8.7):                       # the workshop bays
         c = at(dx, -0.22)
         p.place(P.roller_shutter(3.4, 3.2), at=[c[0], c[1], 0], rotate=[0, 0, ANG],
@@ -165,7 +186,10 @@ def yard():
     p.place(P.hanging_banner(0.55, 2.75, PROMO_F), at=[c[0], c[1], 3.30], rotate=[0, 0, ANG],
             mark="banners")
     # the vehicles and the ground clutter along the wall
-    p.place(P.van(), at=[9.9, 17.4, 0], rotate=[0, 0, ANG + 4], mark="van")
+    L = PLACEMENTS()
+    for name in ("van", "hump", "suv"):
+        build, at, yaw = L[name]
+        p.place(build(), at=at, rotate=[0, 0, yaw], mark=name)
     for dx, dy in [(-9.0, -1.5), (-6.1, -1.6), (-3.2, -1.7), (-0.4, -1.8), (2.4, -1.9),
                    (5.2, -2.0)]:
         c = at(dx, dy)
@@ -185,11 +209,9 @@ def yard():
         c = at(dx, dy)
         p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 8 * k],
                 mark="wetsign")
-    p.place(P.speed_hump(3.6, 0.52), at=[12.6, 5.0, 0], rotate=[0, 0, 26], mark="hump")
     p.place(P.bollard(0.86), at=[13.6, 8.6, 0])
     p.place(P.hanging_banner(0.60, 2.60, REPAIR_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6],
             mark="banners")
-    p.place(P.suv(), at=[-5.3, 4.4, 0], rotate=[0, 0, 96], mark="suv")   # half out of frame
     return p
 
 
@@ -202,11 +224,12 @@ def scene():
     # camera and the unprojected layout -- is what landed it in the basin first, which no
     # loss could do: eleven cameras once all scored 14-15 px because nothing downhill led
     # to the true camera, 22 deg of yaw and half the fov away.
+    L = PLACEMENTS()
     p.place(forecourt(), mark="forecourt")
-    p.place(P.island(), at=[ISLAND_AT[0], ISLAND_AT[1], 0], rotate=[0, 0, ANG], mark="island")
-    p.place(P.hazard_rail(1.88, 0.74), at=[-3.16, -2.30, 0], rotate=[0, 0, ANG - 1],
-            mark="rail")
-    p.place(P.jerrycan(), at=[-3.92, -3.00, 0])
+    for name in ("island", "rail"):
+        build, at, yaw = L[name]
+        p.place(build(), at=at, rotate=[0, 0, yaw], mark=name)
+    p.place(P.jerrycan(), at=[L["island"][1][0] - 0.80, L["island"][1][1] - 1.95, 0])
     p.place(yard(), mark="yard")
     return p
 

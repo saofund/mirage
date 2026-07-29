@@ -62,20 +62,30 @@ def ground_rects(c):
 
 
 def placements(c):
-    return {
-        "island":  (P.island, [c.ISLAND_AT[0], c.ISLAND_AT[1], 0], c.ANG),
-        "rail":    (lambda: P.hazard_rail(1.88, 0.74), [-3.16, -2.30, 0], c.ANG - 1),
-        "van":     (P.van, [9.9, 17.4, 0], c.ANG + 4),
-        "suv":     (P.suv, [-5.3, 4.4, 0], 96),
-        "hump":    (lambda: P.speed_hump(3.6, 0.52), [11.0, 5.6, 0], 26),
-        "facade":  (lambda: P.facade(24.0, 5.2), [8.5, 20.2, 0], c.ANG),
-    }
+    """Straight from the case. Never restate a layout in the tool that audits it."""
+    return c.PLACEMENTS()
 
 
-def world(build, at, yaw, dx=0.0, dy=0.0, dyaw=0.0):
-    p = MeshProgram().place(build(), at=[at[0] + dx, at[1] + dy, at[2]],
-                            rotate=[0, 0, yaw + dyaw])
-    return _mesh(p)
+_CACHE = {}
+
+
+def world(build, at, yaw, dx=0.0, dy=0.0, dyaw=0.0, key=None):
+    """The object's world geometry at an offset from where the layout puts it.
+
+    The part is built ONCE and its vertices are then transformed in numpy. Rebuilding a
+    5,700-face island through the op-log for each of 375 search trials is ten minutes of
+    kernel work to answer a question about two translations and an angle, and a fit that
+    takes ten minutes is a fit nobody runs."""
+    if key not in _CACHE:
+        _CACHE[key] = _mesh(build())
+    v0, faces = _CACHE[key]
+    a = np.radians(yaw + dyaw)
+    ca, sa = np.cos(a), np.sin(a)
+    v = np.empty_like(v0)
+    v[:, 0] = v0[:, 0] * ca - v0[:, 1] * sa + at[0] + dx
+    v[:, 1] = v0[:, 0] * sa + v0[:, 1] * ca + at[1] + dy
+    v[:, 2] = v0[:, 2] + at[2]
+    return v, faces
 
 
 def main():
@@ -96,7 +106,7 @@ def main():
             build, at, yaw = items[name]
             print(f"{name}:")
             best, s, s0 = fit_ground(
-                lambda a, b, g, _b=build, _at=at, _y=yaw: world(_b, _at, _y, a, b, g),
+                lambda a, b, g, _b=build, _at=at, _y=yaw, _k=name: world(_b, _at, _y, a, b, g, _k),
                 cam, field, W, H, log=lambda t: print(t))
             gain = s0 - s
             print(f"  {s0:6.2f} -> {s:6.2f} px  ({gain:+.2f})   "
@@ -106,7 +116,7 @@ def main():
 
     draw, rows = list(ground_rects(c)), []
     for name, (build, at, yaw) in items.items():
-        v, f = world(build, at, yaw)
+        v, f = world(build, at, yaw, key=name)
         draw.append((name, v))
         s, n = score(field, silhouette(v, f, cam, W, H))
         rows.append((s, n, name))
