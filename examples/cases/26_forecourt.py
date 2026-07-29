@@ -57,13 +57,20 @@ ANG = -15.0
 #   name: (build, [x, y, z], yaw)
 def PLACEMENTS():
     return {
-        "island":  (P.island, [-4.62, -0.15, 0], ANG + 6.0),
+        # Back at the position unprojected from its FOOTPRINT. fit_ground offered
+        # [-4.62, -0.15] and halved the chamfer getting there (8.87 -> 3.37) -- and the
+        # render shows it pushed half out of frame. Same failure as the rail, one object
+        # later: an outline in clutter finds support wherever you put it. Two for two, so
+        # the rule is now explicit -- fit_ground is a HINT, and the overlay and the render
+        # are the verdict. It earns its keep on isolated objects (the speed hump, alone on
+        # bare concrete, went 10.78 -> 2.47 and was right).
+        "island":  (P.island, [-3.12, -1.05, 0], ANG),
         # RIGIDLY tied to the island: in the photograph the hoop stands 1.25 m in front of
         # the plinth and always will. fit_ground moved it 2.5 m the other way and improved
         # its chamfer doing it, because it landed in the hose tangle -- exactly the failure
         # photomatch.chamfer_per_object documents ("an object sitting in clutter is near
         # SOMETHING no matter where you put it"). The overlay caught it; the number did not.
-        "rail":    (lambda: P.hazard_rail(1.88, 0.74), [-4.66, -1.40, 0], ANG - 1),
+        "rail":    (lambda: P.hazard_rail(1.88, 0.74), [-3.16, -2.30, 0], ANG - 1),
         "van":     (P.van, [9.9, 17.4, 0], ANG + 4),
         "suv":     (P.suv, [-5.3, 4.4, 0], 96),
         "hump":    (lambda: P.speed_hump(3.6, 0.52), [12.6, 5.0, 0], 26),
