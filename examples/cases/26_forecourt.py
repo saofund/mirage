@@ -166,8 +166,8 @@ def yard():
     """The building line across the back and its clutter, placed by unprojecting the
     building base line (world y ~ 20, yawed by ANG) and the road front."""
     p = MeshProgram()
-    fb, fat, fyaw = PLACEMENTS()["facade"]
-    p.place(fb(), at=fat, rotate=[0, 0, fyaw], mark="facade")
+    fb, fpos, fyaw = PLACEMENTS()["facade"]
+    p.place(fb(), at=fpos, rotate=[0, 0, fyaw], mark="facade")
     for dx in (-8.4, -4.3, -0.2, 4.6, 8.7):                       # the workshop bays
         c = at(dx, -0.22)
         p.place(P.roller_shutter(3.4, 3.2), at=[c[0], c[1], 0], rotate=[0, 0, ANG],
@@ -188,8 +188,8 @@ def yard():
     # the vehicles and the ground clutter along the wall
     L = PLACEMENTS()
     for name in ("van", "hump", "suv"):
-        build, at, yaw = L[name]
-        p.place(build(), at=at, rotate=[0, 0, yaw], mark=name)
+        build, pos, yaw = L[name]          # not `at`: that is this module's yard-coord helper
+        p.place(build(), at=pos, rotate=[0, 0, yaw], mark=name)
     for dx, dy in [(-9.0, -1.5), (-6.1, -1.6), (-3.2, -1.7), (-0.4, -1.8), (2.4, -1.9),
                    (5.2, -2.0)]:
         c = at(dx, dy)
@@ -227,8 +227,8 @@ def scene():
     L = PLACEMENTS()
     p.place(forecourt(), mark="forecourt")
     for name in ("island", "rail"):
-        build, at, yaw = L[name]
-        p.place(build(), at=at, rotate=[0, 0, yaw], mark=name)
+        build, pos, yaw = L[name]
+        p.place(build(), at=pos, rotate=[0, 0, yaw], mark=name)
     p.place(P.jerrycan(), at=[L["island"][1][0] - 0.80, L["island"][1][1] - 1.95, 0])
     p.place(yard(), mark="yard")
     return p
