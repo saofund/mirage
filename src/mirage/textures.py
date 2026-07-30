@@ -260,8 +260,14 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     base = base * (1 - 0.22 * stain * wet_patch[..., None])
     base = base * (1 - 0.50 * cracks[..., None])              # joints/cracks darkest
     albedo = np.clip(base, 0, 1)
-    rough = (rough_base - 0.10 * (mott - 0.5) - 0.16 * (patch - 0.5)
-             - wet * 0.50 * wet_patch + 0.06 * cracks)
+    # MOST OF THE VARIATION LIVES HERE, not in the albedo. On a wet apron under an overcast
+    # dome the specular term is large and — if the roughness is uniform — the SAME everywhere,
+    # so it adds a constant that dilutes whatever contrast the albedo has. Measured: the map
+    # carried 12% relative spread in albedo and the render showed 4% on screen. What makes a
+    # real wet forecourt blotchy is that some of it is wetter than the rest, which is a
+    # roughness field, and it modulates the big term instead of the small one.
+    rough = (rough_base - 0.10 * (mott - 0.5) - 0.34 * (patch - 0.5)
+             - wet * 0.55 * wet_patch + 0.06 * cracks)
     rough = np.clip(rough, 0.10, 0.98)
     height = mott * 0.18 + fine * 0.16 - cracks * 0.8
     normal = _normal_from_height(height, strength=0.9)
@@ -324,7 +330,8 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     col = col * (1 - faded * 0.28)
     col = col * (1 - 0.42 * cracks[..., None])
     albedo = np.clip(col, 0, 1)
-    rough = 0.60 + 0.18 * wear - 0.14 * (mott - 0.5) + 0.10 * ruts  # matte paint, rougher where worn
+    rough = (0.60 + 0.18 * wear - 0.14 * (mott - 0.5) - 0.30 * (patch - 0.5)
+             + 0.10 * ruts)                                     # matte paint, rougher where worn
     rough = _lerp(rough, np.full_like(rough, 0.09), wet * wet_mask)  # near-mirror wet sheet
     rough = np.clip(rough, 0.07, 0.92)
     height = mott * 0.20 + fine * 0.15 - cracks * 0.6 - wet_mask * 0.30 - wear * 0.10 - ruts * 0.12
