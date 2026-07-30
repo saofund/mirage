@@ -674,10 +674,13 @@ def drain_channel(length=13.0, w=0.28):
     for s in (-1, 1):
         p.place(cbox(length, 0.055, 0.045, 0.008), at=[0, s * (w / 2 + 0.028), 0.020],
                 material=CONCRETE)
-    p.place(box(length, w, 0.03), at=[0, 0, 0.006], material=BLACK)
+    # A drain is a HOLE. The photograph reads 0.025 there — near black, the darkest thing
+    # in the frame — and this was rendering 0.32 because a grey trough with steel bars over
+    # it is not dark, it is a grey trough with steel bars over it.
+    p.place(box(length, w, 0.24), at=[0, 0, -0.10], material=mat((0.008, 0.008, 0.009), 0.0, 0.9))
     for k in range(int(length / 0.075)):
-        p.place(box(0.048, w, 0.020), at=[-length / 2 + 0.037 + k * 0.075, 0, 0.028],
-                material=STEEL)
+        p.place(box(0.040, w, 0.018), at=[-length / 2 + 0.037 + k * 0.075, 0, 0.026],
+                material=mat((0.16, 0.162, 0.165), 1.0, 0.42))
     return p
 
 
