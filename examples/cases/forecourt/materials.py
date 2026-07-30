@@ -77,9 +77,9 @@ DEC = ensure_decals(["pump_sign", "fire_cabinet", "fire_bucket", "wet_floor", "w
 # ---- ground (tiled) ------------------------------------------------------------- #
 APRON    = mat((0.20, 0.205, 0.208), 0.0, 0.6, maps=TEX["forecourt_concrete"], uv_scale=5.5)
 ROAD     = mat((0.095, 0.10, 0.11), 0.0, 0.25, maps=TEX["asphalt_wet"], uv_scale=4.0)
-APRON_LT = mat((0.36, 0.365, 0.368), 0.0, 0.55, maps=TEX["apron_light"], uv_scale=7.0)
-BAY_BLUE = mat((0.06, 0.08, 0.14), 0.0, 0.5, maps=TEX["bay_blue"], uv_scale=5.5)
-BAY_ORNG = mat((0.32, 0.13, 0.05), 0.0, 0.5, maps=TEX["bay_orange"], uv_scale=6.0)
+APRON_LT = mat((0.36, 0.365, 0.368), 0.0, 0.55, maps=TEX["apron_light"], uv_scale=5.0)
+BAY_BLUE = mat((0.06, 0.08, 0.14), 0.0, 0.5, maps=TEX["bay_blue"], uv_scale=4.0)
+BAY_ORNG = mat((0.32, 0.13, 0.05), 0.0, 0.5, maps=TEX["bay_orange"], uv_scale=4.5)
 BAY_SLATE = mat((0.09, 0.10, 0.115), 0.0, 0.5, maps=TEX["bay_slate"], uv_scale=4.5)
 LINE_W   = mat((0.40, 0.405, 0.40), 0.0, 0.60)      # damp, grimy paint — never bright white
 YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)

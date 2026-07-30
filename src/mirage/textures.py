@@ -241,20 +241,27 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     slabs poured on different days, staining and traffic over the top of that, and aggregate
     under both. `wet` still drops roughness inside the damp areas so they read as sky
     mirrored rather than as grey paint — that part was always right."""
+    # Four bands, and the MIDDLE one does the visible work. A map's own standard deviation
+    # is measured over its whole tile; what reaches the screen over a three-metre patch is
+    # only the part of it whose features are smaller than three metres. Turning up a period-3
+    # term (three-metre blotches at this uv_scale) barely moved the render at all.
     pour = _fbm(res, 3, 2, seed + 31)                  # slab-to-slab: different days, different mixes
     mott = _fbm(res, 9, 4, seed)                       # staining and traffic
+    patch = _fbm(res, 26, 3, seed + 53)                # repairs, spills, scuffs: ~20 cm
     fine = _fbm(res, 150, 3, seed + 5)                 # aggregate speckle
     cracks = _crack_net(res, seed + 9, period=5, thresh=0.91) * crack
     st = _fbm(res, 4, 4, seed + 17)                    # damp areas
     wet_patch = np.clip((0.44 - st) * 1.8, 0, 1) ** 1.5
-    tone = (1.0 + contrast * (0.30 * (pour - 0.5)
+    tone = (1.0 + contrast * (0.26 * (pour - 0.5)
                               + 0.34 * stain * (mott - 0.5)
-                              + 0.10 * (fine - 0.5)))
+                              + 0.40 * stain * (patch - 0.5)
+                              + 0.14 * (fine - 0.5)))
     base = np.stack(col, -1)[None, None] * np.clip(tone, 0.35, 1.9)[..., None]
     base = base * (1 - 0.22 * stain * wet_patch[..., None])
     base = base * (1 - 0.50 * cracks[..., None])              # joints/cracks darkest
     albedo = np.clip(base, 0, 1)
-    rough = rough_base - 0.10 * (mott - 0.5) - wet * 0.50 * wet_patch + 0.06 * cracks
+    rough = (rough_base - 0.10 * (mott - 0.5) - 0.16 * (patch - 0.5)
+             - wet * 0.50 * wet_patch + 0.06 * cracks)
     rough = np.clip(rough, 0.10, 0.98)
     height = mott * 0.18 + fine * 0.16 - cracks * 0.8
     normal = _normal_from_height(height, strength=0.9)
@@ -283,6 +290,7 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     rectangle nested inside a rectangle. `wet` sets how glossy the pools are, `faded` dulls the
     dry paint. All the weathering lives here so the scene can lay ONE slab, not a stack."""
     mott = _fbm(res, 12, 4, seed)                      # paint laid unevenly
+    patch = _fbm(res, 30, 3, seed + 53)                # scuffs and spills, ~20 cm across
     fine = _fbm(res, 150, 3, seed + 5)
     # rubbed through to concrete. `wear_amt` matters more than it looks: the pale patches it
     # leaves catch the sky at low roughness and read as light BLUE flecks, so a bay with the
@@ -309,7 +317,8 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     # Three scales, not one. Measured against the reference the old single mottle carried
     # 13% of the photograph's tonal variation over the same patch of bay — the right colour
     # spread across a plane with nothing on it.
-    col = col * (1.0 + 0.34 * (mott[..., None] - 0.5) + 0.12 * (fine[..., None] - 0.5))
+    col = col * (1.0 + 0.30 * (mott[..., None] - 0.5) + 0.42 * (patch[..., None] - 0.5)
+                 + 0.14 * (fine[..., None] - 0.5))
     col = col * (1 - 0.26 * ruts[..., None])                        # the ruts
     col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
     col = col * (1 - faded * 0.28)
