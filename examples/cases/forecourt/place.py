@@ -2,6 +2,7 @@
 
     uv run python -m forecourt.place            # draw the overlay, report per-object chamfer
     uv run python -m forecourt.place --fit van suv hump   # search x/y/yaw for those objects
+    uv run python -m forecourt.place --measure           # measure the photograph itself
 
 The overlay is the thing to look at after moving anything: every object's ground footprint
 and bounding box drawn on the reference frame, in milliseconds, with no lighting or
@@ -101,6 +102,15 @@ def main():
     want = [a for a in sys.argv[1:] if not a.startswith("-")]
     OUT.mkdir(parents=True, exist_ok=True)
 
+    if "--measure" in sys.argv:
+        from PIL import Image as _I
+        ren = np.asarray(_I.open(OUT / "hero.png").convert("RGB"), float) / 255             if (OUT / "hero.png").exists() else None
+        print("== painted regions ==");    measure_paint(c, cam, ref)
+        print("== the building line =="); measure_yard_line(c, cam, ref)
+        if ren is not None:
+            print("== ground luminance, photo vs render =="); measure_profile(c, cam, ref, ren)
+        return
+
     if "--fit" in sys.argv:
         for name in (want or list(items)):
             build, at, yaw = items[name]
@@ -126,6 +136,111 @@ def main():
         print(f"{name:<10}{s:9.2f}{n:12,d}")
     print("wrote", p)
 
+
+
+
+# --------------------------------------------------------------------------- #
+# measuring the photograph
+# --------------------------------------------------------------------------- #
+# Everything in this scene that is RIGHT is right because it was measured here rather than
+# adjusted until it looked better. These three ran as throwaway scripts and found, in one
+# afternoon: a painted bay in the wrong lane, a drain three metres out into the road, an
+# 8.5-degree error in the whole yard's direction, and a van pushed four metres too far away
+# by unprojecting its sill as though it lay on the ground. That is too good a hit rate to
+# leave in a shell history.
+def measure_paint(c, cam, ref):
+    """Segment the painted regions by colour and unproject their corners. Answers 'where is
+    the paint', which is the question the bays, the strips and the lines all turned on."""
+    R, B, L = ref[..., 0], ref[..., 2], ref.mean(-1)
+    for name, m in (("ORANGE", (R - B > 0.10) & (R > 0.18) & (L > 0.10)),
+                    ("BLUE", (B - R > 0.035) & (L > 0.10) & (L < 0.62))):
+        for i, pix in enumerate(_blobs(m)[:3]):
+            ys, xs = pix[:, 0], pix[:, 1]
+            s, d = xs + ys, xs - ys
+            print(f"  {name} blob {i}  {len(pix):7,d} px")
+            for px, py in [(xs[s.argmin()], ys[s.argmin()]), (xs[d.argmax()], ys[d.argmax()]),
+                           (xs[s.argmax()], ys[s.argmax()]), (xs[d.argmin()], ys[d.argmin()])]:
+                w = _gp(cam, px, py)
+                print(f"      px({px:4d},{py:4d}) -> world ({w[0]:7.2f}, {w[1]:7.2f})")
+
+
+def measure_yard_line(c, cam, ref):
+    """Fit the BUILDING line off the bollard row. Two directions run through this scene —
+    the forecourt's paint and the shop's frontage — and they are not parallel."""
+    R, B, L = ref[..., 0], ref[..., 2], ref.mean(-1)
+    m = (B - R > 0.055) & (L < 0.42) & (B > 0.13)
+    band = np.zeros_like(m); band[30:130, 200:1600] = True
+    ys, xs = np.nonzero(m & band)
+    order = np.argsort(xs); xs, ys = xs[order], ys[order]
+    groups, cur = [], [0]
+    for i in range(1, len(xs)):
+        if xs[i] - xs[i - 1] > 12:
+            groups.append(cur); cur = []
+        cur.append(i)
+    groups.append(cur)
+    pts = []
+    for g in groups:
+        if len(g) < 40:
+            continue
+        w = _gp(cam, float(xs[g].mean()), float(ys[g].max()))   # lowest pixel = ground contact
+        if 8 < w[1] < 45:
+            pts.append(w)
+            print(f"  bollard -> world ({w[0]:6.2f}, {w[1]:6.2f})")
+    if len(pts) >= 3:
+        P = np.array(pts); A = np.polyfit(P[:, 0], P[:, 1], 1)
+        print(f"  fit y = {A[0]:.4f}x + {A[1]:.2f}   YAW {np.degrees(np.arctan(A[0])):+.2f} deg "
+              f"(case YARD_ANG = {c.YARD_ANG:+.1f})")
+
+
+def measure_profile(c, cam, ref, ren, x=6.0):
+    """Ground luminance into the distance, photo against render. Catches whole materials
+    that are the wrong brightness — a tarmac band that is not there, a lighter pour that is.
+
+    KNOW WHERE TO STOP. Past about y=13 the reference sits at 0.68..0.97 where the render
+    sits at 0.27..0.44, and that gap is NOT a material. It is four metres from a five-metre
+    wall: an overcast dome is most of this scene's light, and a wall that close takes fifty
+    degrees of it away. The render is doing the right thing. The reference is a security
+    camera with wide-dynamic-range processing, which lifts exactly those shadows on purpose,
+    and matching it there would mean lying about the geometry to imitate somebody's tone
+    curve. Read this profile for the NEAR ground, where both images are describing the same
+    physics, and read the far end as a reminder that the reference is not a light meter."""
+    from mirage.solve import project
+    ys = np.arange(4.0, 18.1, 1.0)
+    pts = project(cam, np.array([[x, y, 0.0] for y in ys]), W, H)
+    tot = n = 0
+    for y, (px, py) in zip(ys, pts):
+        if not np.isfinite([px, py]).all():
+            continue
+        a, b = int(round(px)), int(round(py))
+        if not (0 <= a < W and 0 <= b < H):
+            continue
+        u, v = float(ref[b, a].mean()), float(ren[b, a].mean())
+        tot += abs(u - v); n += 1
+        print(f"  y={y:5.1f}  photo {u:.3f}   render {v:.3f}   {v - u:+.3f}")
+    print(f"  mean |delta| = {tot / max(n, 1):.3f}")
+
+
+def _gp(cam, px, py, z=0.0):
+    from mirage.solve import ground_point
+    return np.asarray(ground_point(cam, [float(px), float(py)], W, H, z=z), float).ravel()[:2]
+
+
+def _blobs(mask, min_px=6000):
+    seen = np.zeros(mask.shape, bool); out = []
+    for y0, x0 in zip(*np.nonzero(mask)):
+        if seen[y0, x0]:
+            continue
+        st = [(y0, x0)]; seen[y0, x0] = True; pix = []
+        while st:
+            y, x = st.pop(); pix.append((y, x))
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                ny, nx = y + dy, x + dx
+                if (0 <= ny < mask.shape[0] and 0 <= nx < mask.shape[1]
+                        and mask[ny, nx] and not seen[ny, nx]):
+                    seen[ny, nx] = True; st.append((ny, nx))
+        if len(pix) >= min_px:
+            out.append(np.array(pix))
+    return sorted(out, key=len, reverse=True)
 
 if __name__ == "__main__":
     main()
