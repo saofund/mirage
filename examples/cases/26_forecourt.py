@@ -200,6 +200,26 @@ def yard():
                    (5.2, -2.0)]:
         c = at(dx, dy)
         p.place(P.bollard(), at=[c[0], c[1], 0], mark="bollards")
+    # The clutter a working yard accumulates. Placed in the facade's own coordinates (dx
+    # along the wall, dy off it) so it sits ON the wall rather than near it, and grouped
+    # around the open bays the way it is in the photograph — around the doors people
+    # actually use, not spread evenly along the frontage.
+    for dx, dy, rot in [(9.6, -1.30, 12), (10.3, -1.15, -40), (10.1, -1.75, 70),
+                        (3.1, -1.20, 25), (12.2, -1.35, -8)]:
+        q = at(dx, dy)
+        p.place(P.carton(0.52 + 0.10 * (dx % 3), 0.40, 0.34 + 0.05 * (dx % 2)),
+                at=[q[0], q[1], 0], rotate=[0, 0, ANG + rot])
+    for dx, dy in [(10.0, -1.55), (9.7, -2.05)]:
+        q = at(dx, dy)
+        p.place(P.carton(0.46, 0.36, 0.30), at=[q[0], q[1], 0.34], rotate=[0, 0, ANG - 18])
+    q = at(6.4, -1.55)
+    p.place(P.scooter(), at=[q[0], q[1], 0], rotate=[0, 0, ANG + 96])
+    q = at(12.9, -1.15)
+    p.place(P.tyre_stack(3), at=[q[0], q[1], 0])
+    # the hazard tape strung along the bollard line
+    tape = [at(dx, dy) for dx, dy in [(-9.0, -1.5), (-6.1, -1.6), (-3.2, -1.7),
+                                      (-0.4, -1.8), (2.4, -1.9), (5.2, -2.0)]]
+    p.place(P.tape_run([[a0, b0, 0.62] for a0, b0 in tape]))
     for dx, dy, kind in [(-7.6, -0.95, "bin"), (-7.0, -0.9, "broom"), (-6.8, -0.85, "broom")]:
         c = at(dx, dy)
         if kind == "bin":

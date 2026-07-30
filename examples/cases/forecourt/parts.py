@@ -843,3 +843,54 @@ def suv():
         for s in (-1, 1):
             p.place(wheel(WR, 0.24), at=[x, s * (Y - 0.12), WR])
     return p
+
+
+# --------------------------------------------------------------------------- #
+# yard clutter — the things a working forecourt accumulates
+# --------------------------------------------------------------------------- #
+def carton(w=0.52, d=0.40, h=0.36):
+    """A cardboard box, taped. Nobody models these and every yard is full of them."""
+    p = MeshProgram()
+    p.place(cbox(w, d, h, 0.012), at=[0, 0, h / 2], material=mat((0.34, 0.25, 0.15), 0.0, 0.72))
+    p.place(cbox(0.06, d + 0.004, 0.004, 0.001), at=[0, 0, h + 0.001],
+            material=mat((0.55, 0.52, 0.46), 0.0, 0.55))          # the tape down the middle
+    p.place(cbox(w + 0.004, 0.05, 0.004, 0.001), at=[0, 0, h * 0.55],
+            material=mat((0.28, 0.20, 0.12), 0.0, 0.72))          # the flap seam
+    return p
+
+
+def tyre_stack(n=3, r=0.33, t=0.20):
+    p = MeshProgram()
+    for k in range(n):
+        p.place(MeshProgram().torus(major_segments=20, minor_segments=8,
+                                    major_radius=r * 0.72, minor_radius=t * 0.48),
+                at=[0, 0, t * (k + 0.5)], material=RUBBER)
+    return p
+
+
+def scooter(length=1.72):
+    """A delivery scooter: two wheels, a deck, a column and a seat. Small, and the yard
+    reads as abandoned without one."""
+    p = MeshProgram()
+    body = mat((0.10, 0.11, 0.13), 0.0, 0.40)
+    for x, r in ((length * 0.42, 0.21), (-length * 0.40, 0.21)):
+        p.place(cyl(r, 0.09, 20), at=[x, 0, r], rotate=[90, 0, 0], material=RUBBER)
+        p.place(cyl(r * 0.42, 0.10, 14), at=[x, 0, r], rotate=[90, 0, 0], material=CHROME)
+    p.place(cbox(length * 0.62, 0.30, 0.16, 0.02), at=[0, 0, 0.34], material=body)
+    p.place(cbox(0.42, 0.26, 0.14, 0.02), at=[-length * 0.20, 0, 0.56], material=body)  # seat
+    p.place(cbox(0.30, 0.24, 0.34, 0.02), at=[length * 0.34, 0, 0.52], rotate=[0, -14, 0],
+            material=body)                                        # the front apron
+    p.place(cyl(0.030, 0.52, 10), at=[length * 0.36, 0, 0.78], rotate=[0, -14, 0],
+            material=CHROME)                                      # the steering column
+    p.place(cyl(0.022, 0.56, 10), at=[length * 0.30, 0, 1.02], rotate=[0, 90, 0],
+            material=BLACK)                                       # handlebars
+    p.place(cbox(0.34, 0.36, 0.28, 0.02), at=[-length * 0.46, 0, 0.66],
+            material=mat((0.42, 0.10, 0.08), 0.0, 0.45))          # the delivery box
+    return p
+
+
+def tape_run(points, r=0.018):
+    """Red-and-white hazard tape strung between posts — banded, like the rail, because the
+    bands have to BE geometry before a colour can land on only some of them."""
+    return banded_tube(points, r, [mat((0.52, 0.06, 0.05), 0.0, 0.55), WHITE], band=0.22,
+                       sides=6)
