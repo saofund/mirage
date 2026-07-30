@@ -105,10 +105,13 @@ def forecourt():
     # oil/water staining all live in the map; the wet sheen is the map's low-roughness
     # pools mirroring the sky, not a flat near-black fill.
     p.place(P.box(44, 48, 0.4), at=[6, 8, -0.2], material=APRON)
-    # The wet asphalt is a BAND, not the whole back of the yard: in the reference the shop
-    # apron in front of the shutters is light concrete, and paving it black is what made
-    # the whole yard read as a night scene.
-    p.place(P.box(40, 5.0, 0.03), at=[7, 15.0, 0.012], rotate=[0, 0, ANG], material=ROAD)
+    # There is no asphalt band. A luminance profile along world y (photo against render, at
+    # x=6) settles it: the photograph runs 0.60, 0.68, 0.81, 0.66 out to y=12 and 0.67, 0.62,
+    # 0.76, 0.73 beyond it — bright wet CONCRETE the whole way. The only dark things are two
+    # thin lines, the drain at y=8.0 (0.025) and a gutter at y=12.8 (0.227). A five-metre
+    # slab of tarmac had been laid across the middle of it, which is why the render's
+    # distance went dark exactly where the photograph's goes bright.
+    p.place(P.box(40, 0.55, 0.02), at=[7, 12.8, 0.008], rotate=[0, 0, ANG], material=ROAD)
     # Saw-cut joints, but ONE way only. A poured apron is cast in STRIPS and the joints run
     # with them; a scan across the bare concrete right of the bays found no periodic
     # structure crossing it at all — the dips there are stains, not joints — and the full
