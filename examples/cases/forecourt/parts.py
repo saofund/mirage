@@ -680,7 +680,7 @@ def drain_channel(length=13.0, w=0.28):
     p.place(box(length, w, 0.24), at=[0, 0, -0.10], material=mat((0.008, 0.008, 0.009), 0.0, 0.9))
     for k in range(int(length / 0.075)):
         p.place(box(0.040, w, 0.018), at=[-length / 2 + 0.037 + k * 0.075, 0, 0.026],
-                material=mat((0.16, 0.162, 0.165), 1.0, 0.42))
+                material=mat((0.055, 0.056, 0.058), 1.0, 0.42))
     return p
 
 

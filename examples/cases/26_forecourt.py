@@ -31,8 +31,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # so `forecourt` imports as a kit
 
 from forecourt import parts as P                                          # noqa: E402
-from forecourt.materials import (APRON, BAY_BLUE, BAY_ORNG, BAY_SLATE, BLACK,  # noqa: E402
-                                 CONCRETE, LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
+from forecourt.materials import (APRON, APRON_LT, BAY_BLUE, BAY_ORNG, BAY_SLATE,  # noqa: E402
+                                 BLACK, CONCRETE, LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
                                  WASH_F, WHITE, YELLOW, YELLOWP, mat)
 from mirage.capture import default_render                                 # noqa: E402
 from mirage.meshlang import MeshProgram                                   # noqa: E402
@@ -111,7 +111,9 @@ def forecourt():
     # thin lines, the drain at y=8.0 (0.025) and a gutter at y=12.8 (0.227). A five-metre
     # slab of tarmac had been laid across the middle of it, which is why the render's
     # distance went dark exactly where the photograph's goes bright.
-    p.place(P.box(40, 0.55, 0.02), at=[7, 12.8, 0.008], rotate=[0, 0, ANG], material=ROAD)
+    # the shop frontage: a separate, lighter pour, starting just beyond the gutter
+    p.place(P.box(42, 8.0, 0.02), at=[7, 17.2, 0.007], rotate=[0, 0, ANG], material=APRON_LT)
+    p.place(P.box(40, 0.55, 0.02), at=[7, 12.9, 0.011], rotate=[0, 0, ANG], material=ROAD)
     # Saw-cut joints, but ONE way only. A poured apron is cast in STRIPS and the joints run
     # with them; a scan across the bare concrete right of the bays found no periodic
     # structure crossing it at all — the dips there are stains, not joints — and the full
