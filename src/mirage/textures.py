@@ -227,24 +227,34 @@ def _crack_net(res: int, seed: int, period: int, thresh: float, sharp: float = 1
     return np.clip((ridged - thresh) * sharp, 0, 1)
 
 
-def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_base=0.72):
-    """Damp concrete apron: broad tonal mottle, fine aggregate, a web of hairline cracks and
-    dark oil/water staining pooled in the low spots. `wet` drops roughness inside the stains so
-    they read as a wet sheen rather than more grey paint — the contrast is the wetness.
-    `rough_base` sets the dry matte level: ~0.72 for concrete, lower for painted cladding."""
-    mott = _fbm(res, 6, 4, seed)                       # slab-scale tone variation (gentle)
+def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_base=0.72,
+              contrast=1.0):
+    """Damp concrete apron: pour-to-pour patchiness, staining, aggregate, hairline cracks.
+
+    `contrast` scales the whole tonal spread, and it exists because the first version of
+    this generator had almost none. Measured against the reference over the same patch of
+    ground, the render carried 13% of the photograph's tonal VARIATION — mean 0.558 against
+    0.518, which is right, on a standard deviation of 0.013 against 0.101, which is a flat
+    plane. Nothing about the colour was wrong. There simply was not any.
+
+    Real ground varies at three scales and the old `0.92 + 0.13*mott` had only one: whole
+    slabs poured on different days, staining and traffic over the top of that, and aggregate
+    under both. `wet` still drops roughness inside the damp areas so they read as sky
+    mirrored rather than as grey paint — that part was always right."""
+    pour = _fbm(res, 3, 2, seed + 31)                  # slab-to-slab: different days, different mixes
+    mott = _fbm(res, 9, 4, seed)                       # staining and traffic
     fine = _fbm(res, 150, 3, seed + 5)                 # aggregate speckle
     cracks = _crack_net(res, seed + 9, period=5, thresh=0.91) * crack
     st = _fbm(res, 4, 4, seed + 17)                    # damp areas
-    # A real wet-concrete apron is nearly uniform grey: the variation you see is the SKY
-    # mirrored in the damp patches, i.e. a roughness cue, not a dark-blob albedo camo.
     wet_patch = np.clip((0.44 - st) * 1.8, 0, 1) ** 1.5
-    tone = 0.92 + 0.13 * mott + 0.06 * (fine - 0.5)
-    base = np.stack(col, -1)[None, None] * tone[..., None]
-    base = base * (1 - 0.14 * stain * wet_patch[..., None])   # damp only slightly darker in albedo
+    tone = (1.0 + contrast * (0.30 * (pour - 0.5)
+                              + 0.34 * stain * (mott - 0.5)
+                              + 0.10 * (fine - 0.5)))
+    base = np.stack(col, -1)[None, None] * np.clip(tone, 0.35, 1.9)[..., None]
+    base = base * (1 - 0.22 * stain * wet_patch[..., None])
     base = base * (1 - 0.50 * cracks[..., None])              # joints/cracks darkest
     albedo = np.clip(base, 0, 1)
-    rough = rough_base - 0.06 * (mott - 0.5) - wet * 0.50 * wet_patch + 0.06 * cracks
+    rough = rough_base - 0.10 * (mott - 0.5) - wet * 0.50 * wet_patch + 0.06 * cracks
     rough = np.clip(rough, 0.10, 0.98)
     height = mott * 0.18 + fine * 0.16 - cracks * 0.8
     normal = _normal_from_height(height, strength=0.9)
@@ -288,16 +298,27 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     cracks = _crack_net(res, seed + 23, period=8, thresh=0.91) * 0.55
     paint_c = np.stack(paint, -1)[None, None]
     conc_c = np.stack(concrete, -1)[None, None]
+    # TYRE TRACKS. Cars enter a bay along its length and always in the same two ruts, so a
+    # painted bay is darker in two broad bands and cleaner between them. Nothing stochastic
+    # produces that, and its absence is a large part of why a bay reads as a coloured
+    # rectangle: the wear on a real one has a DIRECTION.
+    u = np.linspace(0.0, 1.0, res)[None, :] * np.ones((res, 1))
+    ruts = (np.exp(-((u - 0.30) / 0.085) ** 2) + np.exp(-((u - 0.68) / 0.085) ** 2))
+    ruts = ruts * (0.55 + 0.45 * _fbm(res, 5, 3, seed + 41))       # they fade in and out
     col = _lerp(paint_c, conc_c, wear[..., None])                   # worn paint -> concrete
-    col = col * (0.86 + 0.28 * mott[..., None]) * (0.94 + 0.12 * (fine[..., None] - 0.5))
+    # Three scales, not one. Measured against the reference the old single mottle carried
+    # 13% of the photograph's tonal variation over the same patch of bay — the right colour
+    # spread across a plane with nothing on it.
+    col = col * (1.0 + 0.34 * (mott[..., None] - 0.5) + 0.12 * (fine[..., None] - 0.5))
+    col = col * (1 - 0.26 * ruts[..., None])                        # the ruts
     col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
     col = col * (1 - faded * 0.28)
     col = col * (1 - 0.42 * cracks[..., None])
     albedo = np.clip(col, 0, 1)
-    rough = 0.60 + 0.18 * wear - 0.10 * (mott - 0.5)               # matte paint, rougher where worn
+    rough = 0.60 + 0.18 * wear - 0.14 * (mott - 0.5) + 0.10 * ruts  # matte paint, rougher where worn
     rough = _lerp(rough, np.full_like(rough, 0.09), wet * wet_mask)  # near-mirror wet sheet
     rough = np.clip(rough, 0.07, 0.92)
-    height = mott * 0.20 + fine * 0.15 - cracks * 0.6 - wet_mask * 0.30 - wear * 0.10
+    height = mott * 0.20 + fine * 0.15 - cracks * 0.6 - wet_mask * 0.30 - wear * 0.10 - ruts * 0.12
     normal = _normal_from_height(height, strength=1.0)
     return albedo, rough, normal
 
@@ -369,14 +390,14 @@ _LIBRARY = {
     # brightens into the distance because Fresnel climbs steeply at grazing angles — which
     # is exactly what the photograph does (0.53 near, 0.80 at fifteen metres) and exactly
     # what a matte 0.72 cannot do, however dark or light its albedo is set.
-    "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.22, stain=0.95, wet=0.90, rough_base=0.46),
+    "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.22, stain=0.95, wet=0.90, rough_base=0.46, contrast=1.5),
     "asphalt_wet":        lambda: _asphalt(RES, 107, (0.095, 0.100, 0.110)),
     "bay_blue":           lambda: _painted_bay(RES, 113, (0.052, 0.070, 0.128), (0.105, 0.110, 0.115), wet=0.85, wear_amt=0.45),
     "bay_orange":         lambda: _painted_bay(RES, 127, (0.300, 0.122, 0.050), (0.185, 0.165, 0.145), wet=0.45, faded=0.35, wear_amt=0.35),
     # The shop frontage is a DIFFERENT SLAB, poured lighter. The photograph runs 0.68 to
     # 0.97 there against 0.53 near the bays, and that gap is albedo, not reflection: no
     # roughness makes a mid-grey pour read as white concrete at fifteen metres.
-    "apron_light":        lambda: _concrete(RES, 103, (0.360, 0.365, 0.368), crack=0.16, stain=0.55, wet=0.80, rough_base=0.44),
+    "apron_light":        lambda: _concrete(RES, 103, (0.360, 0.365, 0.368), crack=0.16, stain=0.75, wet=0.80, rough_base=0.44, contrast=1.3),
     "bay_slate":          lambda: _painted_bay(RES, 131, (0.085, 0.095, 0.112), (0.105, 0.110, 0.115), wet=0.70, wear_amt=0.50),
     # painted metal cladding for the canopy column: light cool grey, semi-gloss, streaked
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
