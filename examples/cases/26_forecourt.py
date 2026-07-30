@@ -47,9 +47,20 @@ REF = Path(os.environ.get("MIRAGE_REF", "D:/dRepo_26/frame_2026-5-9_09-28-55.png
 # Don't hardcode the machine you happen to be sitting at.
 THREADS = os.environ.get("MIRAGE_THREADS", "14")
 
-# The scene's forward axis (the bay's long edge, world +y) is not square to the building
-# line behind it; the yard and road sit at this yaw.
-ANG = -15.0
+# TWO directions, and conflating them was an 8.5-degree error across the whole back of the
+# scene — the thing that reads as "the layout is facing the wrong way" without any single
+# object looking wrong. Both are now measured off the photograph rather than asserted:
+#
+#   ANG      the forecourt's own painted edge. Segmenting the yellow road line and
+#            unprojecting 6,525 pixels fits y = -0.3635x + 16.61, i.e. -19.98 deg.
+#   YARD_ANG the BUILDING line. Two independent fits agree and both disagree with the
+#            above: the bollard row (eight bollards, segmented by their blue, contact
+#            point = the lowest pixel of each) gives -6.36 deg through y = 18.09 - 0.111x,
+#            and the shutter bases give -6.72. A forecourt's paint does not have to be
+#            parallel to the shop it is painted in front of, and here it is not.
+ANG = -20.0
+YARD_ANG = -6.4
+YARD_BASE = (8.5, 19.13)
 # WHERE THINGS STAND. One dict, read by `scene()` and by `forecourt.place` alike — the audit
 # tool used to restate these numbers and therefore audited a scene that did not exist: the
 # speed hump had already been moved and the fit was still searching around its old spot,
@@ -71,14 +82,17 @@ def PLACEMENTS():
         # photomatch.chamfer_per_object documents ("an object sitting in clutter is near
         # SOMETHING no matter where you put it"). The overlay caught it; the number did not.
         "rail":    (lambda: P.hazard_rail(1.88, 0.74), [-3.16, -2.30, 0], ANG - 1),
-        "van":     (P.van, [9.9, 17.4, 0], ANG + 4),
+        # Measured off its SILL, unprojected at the sill's own height rather than onto
+        # z=0 — which stretched a 5.95 m van to 9.3 m and pushed it four metres too far
+        # away, because an elevated point read as ground always lands beyond itself.
+        "van":     (P.van, [7.9, 14.6, 0], -14.5),
         "suv":     (P.suv, [-5.3, 4.4, 0], 96),
         "hump":    (lambda: P.speed_hump(3.6, 0.52), [12.6, 5.0, 0], 26),
-        "facade":  (lambda: P.facade(24.0, 5.2), [8.5, 20.2, 0], ANG),
+        "facade":  (lambda: P.facade(24.0, 5.2), [8.5, 19.13, 0], YARD_ANG),
     }
 
 
-def at(dx, dy, ang=ANG, base=(8.5, 20.2)):
+def at(dx, dy, ang=YARD_ANG, base=YARD_BASE):
     """A point `dx` along the building line and `dy` off it — the yard's own coordinates.
     The facade runs at ANG, so laying its clutter out in world x/y by hand is a way to get
     everything subtly off the wall."""
@@ -112,7 +126,8 @@ def forecourt():
     # slab of tarmac had been laid across the middle of it, which is why the render's
     # distance went dark exactly where the photograph's goes bright.
     # the shop frontage: a separate, lighter pour, starting just beyond the gutter
-    p.place(P.box(42, 8.0, 0.02), at=[7, 17.2, 0.007], rotate=[0, 0, ANG], material=APRON_LT)
+    p.place(P.box(42, 8.0, 0.02), at=[8.5, 16.6, 0.007], rotate=[0, 0, YARD_ANG],
+            material=APRON_LT)
     p.place(P.box(40, 0.55, 0.02), at=[7, 12.9, 0.011], rotate=[0, 0, ANG], material=ROAD)
     # Saw-cut joints, but ONE way only. A poured apron is cast in STRIPS and the joints run
     # with them; a scan across the bare concrete right of the bays found no periodic
@@ -165,7 +180,8 @@ def forecourt():
     for s in (-1, 1):
         p.place(P.box(0.15, 0.95, 0.006), at=[9.0 + s * 0.28, 8.55, 0.004],
                 rotate=[0, 0, ANG + s * 40], material=YELLOWP)
-    p.place(P.box(14, 0.14, 0.006), at=[8, 12.6, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
+    p.place(P.box(20, 0.14, 0.006), at=[8.0, 13.70, 0.004], rotate=[0, 0, ANG],
+            material=YELLOWP)
     # Scanning a column up the photograph put the drain at world y = 8.0 (black at 8.04,
     # concrete again by 8.47). It had been sitting at 11.3, three metres into the road.
     p.place(P.drain_channel(15.0), at=[6.0, 8.05, 0], rotate=[0, 0, ANG])
@@ -181,28 +197,29 @@ def yard():
     p.place(fb(), at=fpos, rotate=[0, 0, fyaw], mark="facade")
     for dx in (-8.4, -4.3, -0.2, 4.6, 8.7):                       # the workshop bays
         c = at(dx, -0.22)
-        p.place(P.roller_shutter(3.4, 3.2), at=[c[0], c[1], 0], rotate=[0, 0, ANG],
+        p.place(P.roller_shutter(3.4, 3.2), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG],
                 mark="shutters")
     for dx in (-6.35, 2.2, 6.65):                                 # the piers between them
         c = at(dx, -0.24)
-        p.place(P.tiled_pilaster(0.62, 4.6), at=[c[0], c[1], 0], rotate=[0, 0, ANG],
+        p.place(P.tiled_pilaster(0.62, 4.6), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG],
                 mark="piers")
     c = at(11.6, -0.30)                                           # an open doorway
-    p.place(P.box(2.1, 0.12, 2.6), at=[c[0], c[1], 1.35], rotate=[0, 0, ANG],
+    p.place(P.box(2.1, 0.12, 2.6), at=[c[0], c[1], 1.35], rotate=[0, 0, YARD_ANG],
             material=mat((0.045, 0.048, 0.05), 0.0, 0.6))
     c = at(-2.4, -0.55)
-    p.place(P.hanging_banner(1.30, 1.76, WASH_F), at=[c[0], c[1], 3.15], rotate=[0, 0, ANG],
+    p.place(P.hanging_banner(1.30, 1.76, WASH_F), at=[c[0], c[1], 3.15], rotate=[0, 0, YARD_ANG],
             mark="banners")
     c = at(3.9, -0.55)
-    p.place(P.hanging_banner(0.55, 2.75, PROMO_F), at=[c[0], c[1], 3.30], rotate=[0, 0, ANG],
+    p.place(P.hanging_banner(0.55, 2.75, PROMO_F), at=[c[0], c[1], 3.30], rotate=[0, 0, YARD_ANG],
             mark="banners")
     # the vehicles and the ground clutter along the wall
     L = PLACEMENTS()
     for name in ("van", "hump", "suv"):
         build, pos, yaw = L[name]          # not `at`: that is this module's yard-coord helper
         p.place(build(), at=pos, rotate=[0, 0, yaw], mark=name)
-    for dx, dy in [(-9.0, -1.5), (-6.1, -1.6), (-3.2, -1.7), (-0.4, -1.8), (2.4, -1.9),
-                   (5.2, -2.0)]:
+    # measured: eight bollards from world x 0.3 to 22.2, all about 1.5 m off the wall
+    for dx, dy in [(-8.0, -2.05), (-4.7, -1.85), (-1.6, -1.55), (4.5, -1.35),
+                   (6.6, -1.25), (9.4, -1.15), (10.3, -1.10), (13.9, -1.07)]:
         c = at(dx, dy)
         p.place(P.bollard(), at=[c[0], c[1], 0], mark="bollards")
     # The clutter a working yard accumulates. Placed in the facade's own coordinates (dx
@@ -213,32 +230,32 @@ def yard():
                         (3.1, -1.20, 25), (12.2, -1.35, -8)]:
         q = at(dx, dy)
         p.place(P.carton(0.52 + 0.10 * (dx % 3), 0.40, 0.34 + 0.05 * (dx % 2)),
-                at=[q[0], q[1], 0], rotate=[0, 0, ANG + rot])
+                at=[q[0], q[1], 0], rotate=[0, 0, YARD_ANG + rot])
     for dx, dy in [(10.0, -1.55), (9.7, -2.05)]:
         q = at(dx, dy)
-        p.place(P.carton(0.46, 0.36, 0.30), at=[q[0], q[1], 0.34], rotate=[0, 0, ANG - 18])
+        p.place(P.carton(0.46, 0.36, 0.30), at=[q[0], q[1], 0.34], rotate=[0, 0, YARD_ANG - 18])
     q = at(6.4, -1.55)
-    p.place(P.scooter(), at=[q[0], q[1], 0], rotate=[0, 0, ANG + 96])
+    p.place(P.scooter(), at=[q[0], q[1], 0], rotate=[0, 0, YARD_ANG + 96])
     q = at(12.9, -1.15)
     p.place(P.tyre_stack(3), at=[q[0], q[1], 0])
     # the hazard tape strung along the bollard line
-    tape = [at(dx, dy) for dx, dy in [(-9.0, -1.5), (-6.1, -1.6), (-3.2, -1.7),
-                                      (-0.4, -1.8), (2.4, -1.9), (5.2, -2.0)]]
+    tape = [at(dx, dy) for dx, dy in [(-8.0, -2.05), (-4.7, -1.85), (-1.6, -1.55),
+                                      (4.5, -1.35), (6.6, -1.25), (9.4, -1.15)]]
     p.place(P.tape_run([[a0, b0, 0.62] for a0, b0 in tape]))
     for dx, dy, kind in [(-7.6, -0.95, "bin"), (-7.0, -0.9, "broom"), (-6.8, -0.85, "broom")]:
         c = at(dx, dy)
         if kind == "bin":
-            p.place(P.bin_(), at=[c[0], c[1], 0], rotate=[0, 0, ANG])
+            p.place(P.bin_(), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG])
         else:
-            p.place(P.broom(1.4), at=[c[0], c[1], 0], rotate=[0, 9, ANG])
+            p.place(P.broom(1.4), at=[c[0], c[1], 0], rotate=[0, 9, YARD_ANG])
     for dx, dy, top in [(-5.2, -1.15, (0.10, 0.11, 0.13)), (0.9, -1.05, (0.30, 0.30, 0.31)),
                         (1.5, -1.15, (0.14, 0.15, 0.30))]:
         c = at(dx, dy)
-        p.place(P.person(1.70, top), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 150],
+        p.place(P.person(1.70, top), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG + 150],
                 mark="people")
     for k, (dx, dy) in enumerate([(-9.6, -1.05), (-9.0, -1.15)]):  # the 小心地滑 A-frames
         c = at(dx, dy)
-        p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, ANG + 8 * k],
+        p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG + 8 * k],
                 mark="wetsign")
     p.place(P.bollard(0.86), at=[13.6, 8.6, 0])
     p.place(P.hanging_banner(0.60, 2.60, REPAIR_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6],
