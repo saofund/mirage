@@ -109,25 +109,19 @@ def forecourt():
     # apron in front of the shutters is light concrete, and paving it black is what made
     # the whole yard read as a night scene.
     p.place(P.box(40, 5.0, 0.03), at=[7, 15.0, 0.012], rotate=[0, 0, ANG], material=ROAD)
-    # The saw-cut construction joints. A poured apron is a GRID of slabs, and those long
-    # straight lines are most of what tells the eye it is looking at concrete rather than at
-    # a grey plane — the texture's random cracks cannot supply them, because they are not
-    # random. Laid below the bays (z 0.001..0.005) so the paint covers them, as it does.
-    JOINT = mat((0.115, 0.118, 0.120), 0.0, 0.58)
+    # Saw-cut joints, but ONE way only. A poured apron is cast in STRIPS and the joints run
+    # with them; a scan across the bare concrete right of the bays found no periodic
+    # structure crossing it at all — the dips there are stains, not joints — and the full
+    # grid that used to be here was reading as floor tiles. Laid below the bays (z
+    # 0.001..0.005) so the paint covers them, as it does.
+    JOINT = mat((0.128, 0.131, 0.133), 0.0, 0.58)
     for k in range(-2, 7):
-        p.place(P.box(0.022, 46, 0.004), at=[-7.6 + k * 5.4, 8, 0.003], material=JOINT)
-    for k in range(-2, 6):
-        p.place(P.box(42, 0.022, 0.004), at=[6, -8.1 + k * 5.4, 0.003], material=JOINT)
-    LW = 0.11
-    # the painted bays, each ONE textured slab: the worn paint, the fine cracks and the
-    # organic standing water are baked into the bay maps, so there are no stacked overlay
-    # rectangles (which read as a dartboard) and no overlapping top faces to z-fight.
+        p.place(P.box(0.020, 46, 0.004), at=[-7.6 + k * 5.4, 8, 0.003], material=JOINT)
     # MEASURED, not placed. The painted regions were segmented out of the photograph by
-    # colour and their corners unprojected through the solved camera (forecourt/place.py
-    # and the notes in docs), which found that the layout had been wrong in a way no render
-    # was ever going to reveal: the big terracotta bay is not to the RIGHT of the blue one,
-    # it is IN FRONT of it, in the same lane, filling the bottom of the frame. What sat to
-    # the right was bare concrete, and a bay had been painted over it for weeks.
+    # colour and their corners unprojected through the solved camera (forecourt/place.py),
+    # which found the layout wrong in a way no render was going to reveal: the big
+    # terracotta bay is not to the RIGHT of the blue one, it is IN FRONT of it, in the same
+    # lane, filling the bottom of the frame. What sat to the right was bare concrete.
     #
     #   blue     x[0.11, 3.36]  y[0.09, 5.89]   <- the solve's own bay, reproduced exactly
     #   near     x[0.13, 3.42]  y[<-5.5, -0.04] <- clipped by the frame; runs to about -6.6
@@ -141,12 +135,17 @@ def forecourt():
             (0, 3.47, 6.2, 7.9, BAY_ORNG),
             (-1.20, -0.12, -2.4, 3.35, BAY_SLATE),
             (-1.20, -0.12, -4.6, -2.45, BAY_ORNG)]
+    LW = 0.18
     for x0, x1, y0, y1, m in bays:
         slab(p, x0, x1, y0, y1, 0.004, 0.006, m)
-        for lx in (x0 - LW, x1):
-            slab(p, lx, lx + LW, y0 - LW, y1 + LW, 0.006, 0.006, LINE_W)
-        for ly in (y0 - LW, y1):
-            slab(p, x0 - LW, x1 + LW, ly, ly + LW, 0.006, 0.006, LINE_W)
+    # each boundary once: (x, y0, y1) for the lines running away from the camera, and
+    # (y, x0, x1) for the ones running across it
+    for x, y0, y1 in [(-1.20, -4.6, 3.35), (-0.06, -6.6, 7.9), (3.55, -6.6, 7.9),
+                      (7.50, -6.6, -0.12)]:
+        slab(p, x - LW / 2, x + LW / 2, y0, y1, 0.006, 0.006, LINE_W)
+    for y, x0, x1 in [(0.015, -0.06, 7.5), (6.05, -0.06, 3.55), (7.90, -0.06, 3.55),
+                      (-2.42, -1.20, -0.06), (-4.60, -1.20, -0.06)]:
+        slab(p, x0, x1, y - LW / 2, y + LW / 2, 0.006, 0.006, LINE_W)
     # The white RING painted around the island. Both discs are painted INSIDE the
     # sub-program: a material on the outer `place` would repaint every face it carries,
     # including the concrete infill, and the ring would come out as a solid white pancake —

@@ -281,14 +281,16 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     # ONE big soft pool per tile, like the photo's dark wet SHEET across the blue bay -- not a
     # scatter of little puddles. Low frequency (period 2) gives a single dominant lobe.
     st = _fbm(res, 2, 4, seed + 17)
-    wet_mask = np.clip((0.55 - st) * 2.1, 0, 1) ** 1.2
+    # Softer and less contrasty than it was: at (0.55-st)*2.1 darkening to 26%% the lobes
+    # read as marbling — tie-dye — rather than as water lying on paint.
+    wet_mask = np.clip((0.52 - st) * 1.5, 0, 1) ** 1.4
     # only a few hairline cracks on a bay — the WET SHEET is the story, not a mud-crack web
     cracks = _crack_net(res, seed + 23, period=8, thresh=0.91) * 0.55
     paint_c = np.stack(paint, -1)[None, None]
     conc_c = np.stack(concrete, -1)[None, None]
     col = _lerp(paint_c, conc_c, wear[..., None])                   # worn paint -> concrete
     col = col * (0.86 + 0.28 * mott[..., None]) * (0.94 + 0.12 * (fine[..., None] - 0.5))
-    col = _lerp(col, col * 0.26, wet_mask[..., None])              # the dark wet sheet
+    col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
     col = col * (1 - faded * 0.28)
     col = col * (1 - 0.42 * cracks[..., None])
     albedo = np.clip(col, 0, 1)
