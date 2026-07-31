@@ -344,7 +344,11 @@ def render(prog, out, spp, w, h, extra=()):
     # deviation: on a textured photograph the detail dominates the sd, and matching that
     # buries the image in film grain, which the first attempt duly did.
     img = sensor.apply(np.asarray(Image.open(ppm).convert("RGB"), float) / 255.0,
-                       grain=0.0267, chroma_blur=1.0)
+                       # re-solved after the hard-edged stains went in: the maps now
+                       # supply detail the grain used to be standing in for, so it
+                       # comes down (floor was overshooting 0.0356 against 0.0289),
+                       # and the chroma blur was over-correcting past the photograph.
+                       grain=0.0195, chroma_blur=0.6)
     Image.fromarray((img * 255 + 0.5).astype(np.uint8)).save(png)
     return png
 
