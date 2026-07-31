@@ -324,8 +324,22 @@ def render(prog, out, spp, w, h, extra=()):
                     "--cam-target", *[str(v) for v in CAM_TGT],
                     "--cam-fov", str(CAM_FOV), *extra], check=True)
     from PIL import Image
+    import numpy as np
+    from mirage import sensor
     png = OUT / (out + ".png")
-    Image.open(ppm).save(png)
+    # THE CAMERA THAT TOOK THE PICTURE. A path tracer hands back an image with no sensor in
+    # front of it, and measured against the reference that shows up twice: the render's
+    # noise floor is 0.011 against the photograph's 0.029 (too clean), and its CHROMA
+    # high-frequency is three times the photograph's, because a path tracer's sampling noise
+    # is coloured and no camera's is — every camera resolves colour far more coarsely than
+    # luma. Both numbers were solved with sensor.match against this reference (see
+    # forecourt/place.py --measure) and are pinned here so the render is reproducible
+    # without it. Grain is calibrated on a MEDIAN ABSOLUTE DEVIATION, not a standard
+    # deviation: on a textured photograph the detail dominates the sd, and matching that
+    # buries the image in film grain, which the first attempt duly did.
+    img = sensor.apply(np.asarray(Image.open(ppm).convert("RGB"), float) / 255.0,
+                       grain=0.0267, chroma_blur=1.0)
+    Image.fromarray((img * 255 + 0.5).astype(np.uint8)).save(png)
     return png
 
 
