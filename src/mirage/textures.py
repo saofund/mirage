@@ -323,8 +323,15 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     # Three scales, not one. Measured against the reference the old single mottle carried
     # 13% of the photograph's tonal variation over the same patch of bay — the right colour
     # spread across a plane with nothing on it.
-    col = col * (1.0 + 0.30 * (mott[..., None] - 0.5) + 0.42 * (patch[..., None] - 0.5)
-                 + 0.14 * (fine[..., None] - 0.5))
+    # A map's contrast is roughly HALVED on its way to the screen: the ACES curve compresses
+    # around mid grey, and a uniform sky specular adds a constant on top that dilutes what is
+    # left. Measured end to end, an 11.5% relative spread in the map arrived as 4.6% in the
+    # render. So the map has to be authored louder than the answer, and the factor is about
+    # 2.5. (The denoiser was the obvious suspect and was innocent: rendered at 900 spp with
+    # the filter OFF the ground's spread was 0.0201 against 0.0238 with it ON — slightly
+    # LOWER, because demodulate/remodulate sharpens albedo edges rather than blurring them.)
+    col = col * (1.0 + 0.52 * (mott[..., None] - 0.5) + 0.78 * (patch[..., None] - 0.5)
+                 + 0.20 * (fine[..., None] - 0.5))
     col = col * (1 - 0.26 * ruts[..., None])                        # the ruts
     col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
     col = col * (1 - faded * 0.28)
@@ -406,14 +413,14 @@ _LIBRARY = {
     # brightens into the distance because Fresnel climbs steeply at grazing angles — which
     # is exactly what the photograph does (0.53 near, 0.80 at fifteen metres) and exactly
     # what a matte 0.72 cannot do, however dark or light its albedo is set.
-    "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.22, stain=0.95, wet=0.90, rough_base=0.46, contrast=1.5),
+    "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.22, stain=0.95, wet=0.90, rough_base=0.46, contrast=2.6),
     "asphalt_wet":        lambda: _asphalt(RES, 107, (0.095, 0.100, 0.110)),
     "bay_blue":           lambda: _painted_bay(RES, 113, (0.052, 0.070, 0.128), (0.105, 0.110, 0.115), wet=0.85, wear_amt=0.45),
     "bay_orange":         lambda: _painted_bay(RES, 127, (0.300, 0.122, 0.050), (0.185, 0.165, 0.145), wet=0.45, faded=0.35, wear_amt=0.35),
     # The shop frontage is a DIFFERENT SLAB, poured lighter. The photograph runs 0.68 to
     # 0.97 there against 0.53 near the bays, and that gap is albedo, not reflection: no
     # roughness makes a mid-grey pour read as white concrete at fifteen metres.
-    "apron_light":        lambda: _concrete(RES, 103, (0.360, 0.365, 0.368), crack=0.16, stain=0.75, wet=0.80, rough_base=0.44, contrast=1.3),
+    "apron_light":        lambda: _concrete(RES, 103, (0.360, 0.365, 0.368), crack=0.16, stain=0.75, wet=0.80, rough_base=0.44, contrast=2.2),
     "bay_slate":          lambda: _painted_bay(RES, 131, (0.085, 0.095, 0.112), (0.105, 0.110, 0.115), wet=0.70, wear_amt=0.50),
     # painted metal cladding for the canopy column: light cool grey, semi-gloss, streaked
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
