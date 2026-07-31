@@ -194,7 +194,7 @@ def _interp(pts, x):
     return pts[-1][1]
 
 
-def loft_grid(lower, upper, hw, nx=44, nz=9, n_smooth=1, crease_angle=26.0):
+def loft_grid(lower, upper, hw, nx=90, nz=11, n_smooth=1, crease_angle=15.0):
     """A body as an ALL-QUAD grid: for each x, the shell spans `lower(x)` to `upper(x)`.
 
     This is the cage a lofted, subdivided body needs. The obvious construction — extrude a
@@ -207,7 +207,12 @@ def loft_grid(lower, upper, hw, nx=44, nz=9, n_smooth=1, crease_angle=26.0):
     Parameterising by x instead removes the problem: a vehicle's silhouette is single-valued
     in x — one bottom edge and one top edge at every station, wheel arches included — so the
     surface is a regular (nx x nz) grid on each flank plus a rim of quads joining them, and
-    every face is a quad. Subdivision then does what it is for."""
+    every face is a quad. Subdivision then does what it is for.
+
+    `nx` and `crease_angle` are set for WHEEL ARCHES, which are the one place a car body
+    turns hard. At 44 stations over six metres the arch is sampled every 13 cm and its
+    corners fall between samples; at a 26-degree crease the opening then rounds away and the
+    body hangs over the tyre like a skirt. 90 stations and 15 degrees hold it."""
     xs = [lower[0][0] + (lower[-1][0] - lower[0][0]) * i / (nx - 1) for i in range(nx)]
     verts, idx = [], {}
     for side in (0, 1):
@@ -889,7 +894,7 @@ def van():
                 material=trim)
         p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * flank(-0.70, 1.60, 0.004), 1.60],
                 material=trim)
-        p.place(cbox(5.05, 0.07, 0.26, 0.014), at=[-0.30, s * flank(-0.30, 0.655, 0.004), 0.655],
+        p.place(cbox(5.05, 0.05, 0.20, 0.012), at=[-0.30, s * flank(-0.30, 0.655, -0.004), 0.66],
                 material=body)
         p.place(cbox(4.40, 0.03, 0.022, 0.008), at=[-0.30, s * flank(-0.30, 1.14, 0.006), 1.14],
                 material=mat((0.60, 0.605, 0.61), 0.0, 0.30))
