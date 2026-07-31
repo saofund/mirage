@@ -158,11 +158,12 @@ def loft(poly, half_width, n_smooth=0, crease_angle=20.0):
     wheel-arch openings all melted into the body and it came out looking poured rather than
     pressed. What should round is the cross-section, not the profile.
 
-    One level, not two. The side caps are ear-clipped TRIANGLES and Catmull-Clark wants
-    quads: a second level spreads the triangulation's unevenness into visible diagonal
-    banding across a flat flank. One level rounds the arrises and leaves the panels alone,
-    which is all that was wanted. The proper fix is an all-quad lofted tube, and that is a
-    bigger change than this scene needs."""
+    `n_smooth` DEFAULTS OFF, and the vehicles use it that way. The side caps are ear-clipped
+    TRIANGLES and Catmull-Clark wants quads: subdividing them spreads the triangulation's
+    unevenness into diagonal banding straight across a flat flank, at one level as much as
+    at two. The loft's tumblehome plus the tracer's --smooth-angle shading gives the rounded
+    READ without inventing geometry that is not there, which is the honest trade until the
+    cage is rebuilt as an all-quad tube."""
     poly = [list(q) for q in poly]
     area = sum((poly[(i + 1) % len(poly)][0] - poly[i][0]) *
                (poly[(i + 1) % len(poly)][1] + poly[i][1]) for i in range(len(poly)))
@@ -804,7 +805,7 @@ def van():
         return w * (1.0 - 0.36 * max(0.0, (x - 2.05) / 0.95) ** 2)   # the nose draws in
 
     p = MeshProgram()
-    p.place(loft(side, hw, n_smooth=1), material=BODY_WH)
+    p.place(loft(side, hw), material=BODY_WH)
     body = mat((0.235, 0.24, 0.25), 0.0, 0.42)
     trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
     # Everything on the flank rides ON the loft. A constant offset leaves the glass hanging
@@ -892,7 +893,7 @@ def suv():
         return w * (1.0 - 0.30 * max(0.0, (x - 1.5) / 0.9) ** 2
                     - 0.22 * max(0.0, (-1.4 - x) / 0.9) ** 2)
     p = MeshProgram()
-    p.place(loft(side, hw, n_smooth=1), material=BODY_WH)
+    p.place(loft(side, hw), material=BODY_WH)
     trim = mat((0.45, 0.455, 0.46), 0.0, 0.35)
 
     def flank(x, z, out=0.0):
