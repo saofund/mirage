@@ -144,6 +144,35 @@ def prism(poly, y0, y1):
     return MeshProgram().mesh(verts=verts, faces=faces)
 
 
+def loft(poly, half_width, n_smooth=0, crease_angle=52.0):
+    """A silhouette extruded with a VARYING half-width — the prism a vehicle actually needs.
+
+    `half_width(x, z)` returns the body's half-width at each point of the outline, so the
+    shell can be narrower at the roof and at the sill and fullest through the middle. That
+    single change is most of what separates a car from a slab with wheels: a real body has
+    tumblehome, and a constant-width extrusion cannot have any.
+
+    `n_smooth` rounds it with Catmull-Clark, holding edges sharper than `crease_angle` — so
+    the wheel arch openings and the window apertures stay crisp while the panels bow."""
+    poly = [list(q) for q in poly]
+    area = sum((poly[(i + 1) % len(poly)][0] - poly[i][0]) *
+               (poly[(i + 1) % len(poly)][1] + poly[i][1]) for i in range(len(poly)))
+    if area > 0:
+        poly = poly[::-1]
+    n = len(poly)
+    hw = [float(half_width(x, z)) for x, z in poly]
+    verts = ([[x, -w, z] for (x, z), w in zip(poly, hw)]
+             + [[x, w, z] for (x, z), w in zip(poly, hw)])
+    tris = _ear_clip(poly)
+    faces = [list(reversed(t)) for t in tris] + [[n + i for i in t] for t in tris]
+    faces += [[i, (i + 1) % n, n + (i + 1) % n, n + i] for i in range(n)]
+    p = MeshProgram().mesh(verts=verts, faces=faces)
+    if n_smooth:
+        p.crease({"by": "sharp", "angle": crease_angle}, weight=float(n_smooth))
+        p.subdivide(levels=int(n_smooth))
+    return p
+
+
 def arch(cx, r, z0, n=9):
     """The wheel-arch notch in a body's side outline: an arc from (cx-r, z0) up over the
     wheel and back down to (cx+r, z0), in the direction a CCW bottom edge runs."""
@@ -737,15 +766,21 @@ def wheel(r=0.36, width=0.24, hub=(0.56, 0.56, 0.57)):
 
 
 def van():
-    """The white passenger van across the yard.
+    """The white passenger van across the yard, as a LOFTED and SMOOTHED body.
 
-    Read off the reference rather than off a mental image of "a van": it is a long
-    semi-bonneted MINIBUS — a continuous dark window band the whole length of the body, a
-    heavy grey rocker strip under it, a short sloped nose, and vertical tail-light columns
-    either side of the rear doors. The first version of this part was a cargo box: solid
-    sides, tall, stubby. Nothing else about it could be right while its type was wrong."""
-    FA, RA, WR = 1.92, -1.58, 0.36                            # axles and wheel radius
-    Y = 0.98
+    The reference is a long semi-bonneted minibus: a continuous dark window band the whole
+    length, a heavy grey rocker under it, a short sloped nose, vertical tail-light columns
+    either side of the rear doors. It was previously a constant-width extrusion, which is a
+    slab with wheels — a real body has tumblehome, narrower at the roof and at the sill and
+    fullest through the middle, and it is ROUND. The cage below carries that width profile
+    and is then Catmull-Clarked twice with the sharp edges creased, so the wheel arches and
+    the nose stay crisp while the panels bow.
+
+    The small hardware is inferred rather than measured — at thirty metres the photograph
+    cannot show a door handle, but a van without one is a toy, and a plausible handle in a
+    plausible place is nearer the truth than nothing at all."""
+    FA, RA, WR = 1.92, -1.58, 0.36
+    Y = 0.99
     side = ([[-2.95, 0.64], [-2.90, 0.50], [-2.30, 0.47]]
             + arch(RA, 0.50, 0.47)
             + [[-0.30, 0.47]]
@@ -753,60 +788,69 @@ def van():
             + [[2.52, 0.48], [2.74, 0.56], [2.86, 0.78], [2.88, 1.06], [2.72, 1.26],
                [2.36, 1.40], [2.16, 1.52], [1.58, 2.14], [1.30, 2.26], [-2.76, 2.28],
                [-2.95, 2.10]])
+
+    def hw(x, z):
+        t = max(0.0, min(1.0, (z - 0.45) / 1.85))          # 0 at the sill, 1 at the roof
+        w = Y - 0.46 * (t - 0.42) ** 2 / 0.34 - 0.15 * max(0.0, t - 0.72) / 0.28
+        return w * (1.0 - 0.36 * max(0.0, (x - 2.05) / 0.95) ** 2)   # the nose draws in
+
     p = MeshProgram()
-    # NOT edge-bevelled: the cap is a triangle fan now, and bevelling "all" would chamfer
-    # its internal triangulation edges too, creasing a flat panel. At thirty metres a 3 cm
-    # chamfer is sub-pixel anyway — the small hardware below carries the highlights.
-    p.place(prism(side, -Y, Y), material=BODY_WH)
-    # the window band: one dark run from the cab door to the rear pillar, with the pillars
-    # left in body colour standing proud of it
+    p.place(loft(side, hw, n_smooth=2), material=BODY_WH)
+    body = mat((0.235, 0.24, 0.25), 0.0, 0.42)
+    trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
     for s in (-1, 1):
-        p.place(cbox(3.86, 0.03, 0.50, 0.012), at=[-0.70, s * (Y - 0.012), 1.86],
-                material=GLASS)
-        p.place(cbox(0.86, 0.03, 0.52, 0.012), at=[1.42, s * (Y - 0.012), 1.82],
-                material=GLASS)                                        # the cab door glass
-        for x in (0.86, -0.02, -0.98, -1.96):                          # B/C/D pillars
-            p.place(cbox(0.10, 0.05, 0.54, 0.012), at=[x, s * (Y - 0.006), 1.86],
-                    material=BODY_WH)
-        p.place(cbox(5.05, 0.07, 0.26, 0.014), at=[-0.30, s * (Y - 0.005), 0.655],
-                material=mat((0.125, 0.13, 0.14), 0.0, 0.45))          # the rocker strip
-        p.place(cbox(4.4, 0.03, 0.022, 0.008), at=[-0.30, s * (Y - 0.004), 1.14],
-                material=mat((0.55, 0.555, 0.56), 0.0, 0.30))          # the body crease
-        p.place(cbox(0.05, 0.10, 0.62, 0.012), at=[0.88, s * (Y - 0.02), 1.30],
-                material=mat((0.45, 0.455, 0.46), 0.0, 0.35))          # door shut lines
-        p.place(cbox(0.05, 0.10, 0.62, 0.012), at=[-1.98, s * (Y - 0.02), 1.30],
-                material=mat((0.45, 0.455, 0.46), 0.0, 0.35))
-        p.place(cbox(0.20, 0.11, 0.13, 0.014), at=[1.98, s * (Y + 0.10), 1.72],
-                material=mat((0.30, 0.31, 0.32), 0.0, 0.35))           # door mirrors
+        # the window band: one dark run from the cab door back, with body-colour pillars
+        p.place(cbox(3.86, 0.03, 0.50, 0.012), at=[-0.70, s * (Y - 0.055), 1.86], material=GLASS)
+        p.place(cbox(0.86, 0.03, 0.52, 0.012), at=[1.42, s * (Y - 0.075), 1.82], material=GLASS)
+        for x in (0.86, -0.02, -0.98, -1.96):
+            p.place(cbox(0.10, 0.05, 0.54, 0.012), at=[x, s * (Y - 0.05), 1.86], material=BODY_WH)
+        p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * (Y - 0.045), 2.11], material=trim)
+        p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * (Y - 0.045), 1.60], material=trim)
+        p.place(cbox(5.05, 0.07, 0.26, 0.014), at=[-0.30, s * (Y - 0.03), 0.655], material=body)
+        p.place(cbox(4.40, 0.03, 0.022, 0.008), at=[-0.30, s * (Y - 0.02), 1.14],
+                material=mat((0.60, 0.605, 0.61), 0.0, 0.30))
+        for x in (0.88, -1.98):                                  # door shut lines
+            p.place(cbox(0.04, 0.06, 0.62, 0.010), at=[x, s * (Y - 0.03), 1.30], material=trim)
+        for x in (0.62, -1.70):                                  # door handles
+            p.place(cbox(0.17, 0.05, 0.045, 0.010), at=[x, s * (Y + 0.005), 1.42],
+                    material=mat((0.62, 0.625, 0.63), 0.5, 0.30))
+        # the mirror: an arm and a head, not a slab
+        p.place(cyl(0.022, 0.17, 8), at=[1.98, s * (Y + 0.06), 1.74], rotate=[90, 0, 0],
+                material=BLACK)
+        p.place(cbox(0.13, 0.07, 0.20, 0.016), at=[1.98, s * (Y + 0.15), 1.76], material=BLACK)
+        p.place(cbox(0.02, 0.05, 0.16, 0.006), at=[1.94, s * (Y + 0.16), 1.76], material=GLASS)
         p.place(cbox(0.13, 0.30, 0.10, 0.012), at=[-2.96, s * 0.74, 1.44], material=TAIL_RED)
         p.place(cbox(0.10, 0.13, 0.56, 0.012), at=[-2.96, s * 0.72, 1.72], material=TAIL_RED)
         p.place(cbox(0.12, 0.36, 0.16, 0.014), at=[2.86, s * 0.66, 0.94], material=LAMP)
-    p.place(pane([2.16, 1.54], [1.62, 2.12], 0.02, -0.88, 0.88), material=GLASS)  # windscreen
-    p.place(cbox(0.03, 1.42, 0.44, 0.010), at=[-2.955, 0, 1.92], material=GLASS)  # rear doors
-    p.place(cbox(0.05, 0.05, 1.40, 0.012), at=[-2.95, 0, 1.55],
-            material=mat((0.50, 0.505, 0.51), 0.0, 0.35))              # the rear door split
-    p.place(cbox(0.16, 1.86, 0.24, 0.02), at=[-2.98, 0, 0.72], material=BODY_WH)  # rear bumper
-    p.place(cbox(0.10, 1.30, 0.10, 0.014), at=[-3.02, 0, 0.56],
-            material=mat((0.22, 0.225, 0.23), 0.0, 0.45))              # the step
+        p.place(cbox(0.06, 0.16, 0.09, 0.010), at=[2.88, s * 0.80, 0.74],
+                material=mat((0.62, 0.42, 0.05), 0.0, 0.25))       # indicator
+    p.place(pane([2.16, 1.54], [1.62, 2.12], 0.02, -0.86, 0.86), material=GLASS)
+    p.place(cbox(0.03, 1.42, 0.44, 0.010), at=[-2.955, 0, 1.92], material=GLASS)
+    p.place(cbox(0.05, 0.05, 1.40, 0.012), at=[-2.95, 0, 1.55], material=trim)
+    p.place(cbox(0.16, 1.86, 0.24, 0.02), at=[-2.98, 0, 0.72], material=BODY_WH)
+    p.place(cbox(0.10, 1.30, 0.10, 0.014), at=[-3.02, 0, 0.56], material=body)
     p.place(cbox(0.14, 1.30, 0.30, 0.02), at=[2.90, 0, 0.66],
-            material=mat((0.26, 0.27, 0.28), 0.0, 0.40))               # front bumper
-    p.place(cbox(0.05, 1.10, 0.18, 0.012), at=[2.88, 0, 1.18],
-            material=mat((0.10, 0.105, 0.11), 0.0, 0.35))              # the grille
+            material=mat((0.26, 0.27, 0.28), 0.0, 0.40))
+    for k in range(4):                                            # the grille's slats
+        p.place(cbox(0.04, 1.02, 0.028, 0.006), at=[2.89, 0, 1.10 + k * 0.045],
+                material=mat((0.08, 0.085, 0.09), 0.0, 0.35))
     p.place(cbox(0.03, 0.44, 0.15, 0.006), at=[-3.09, 0.28, 1.02], material=PLATE_F)
+    p.place(cyl(0.030, 0.16, 10), at=[-2.40, -Y + 0.10, 0.30], rotate=[0, 90, 0],
+            material=mat((0.30, 0.30, 0.31), 0.6, 0.5))           # exhaust
     for x in (FA, RA):
         for s in (-1, 1):
-            p.place(wheel(WR, 0.26), at=[x, s * (Y - 0.13), WR])
+            p.place(wheel(WR, 0.26), at=[x, s * (Y - 0.14), WR])
     return p
 
 
 def suv():
-    """The white crossover at the frame's left edge.
+    """The crossover at the frame's left edge, lofted and smoothed the same way.
 
-    The camera sees its BACK, so that is where the modelling went: wrap-around tail lights
+    The camera sees its BACK, so that is where the detail went: wrap-around tail lights
     climbing off the tailgate onto the quarter panel, a tailgate window under a small roof
-    spoiler, roof rails, and the blue plate low in the middle."""
+    spoiler, roof rails, a wiper, and the blue plate low in the middle."""
     FA, RA, WR = 1.40, -1.42, 0.34
-    Y = 0.92
+    Y = 0.93
     side = ([[-2.26, 0.56], [-2.20, 0.40], [-1.98, 0.36]]
             + arch(RA, 0.46, 0.36)
             + [[-0.20, 0.36]]
@@ -814,37 +858,45 @@ def suv():
             + [[2.08, 0.38], [2.26, 0.52], [2.32, 0.82], [2.18, 1.02], [1.52, 1.14],
                [1.10, 1.26], [0.30, 1.64], [-0.90, 1.72], [-1.70, 1.64], [-2.02, 1.30],
                [-2.24, 0.92]])
+
+    def hw(x, z):
+        t = max(0.0, min(1.0, (z - 0.36) / 1.36))
+        w = Y - 0.40 * (t - 0.38) ** 2 / 0.30 - 0.19 * max(0.0, t - 0.66) / 0.34
+        return w * (1.0 - 0.30 * max(0.0, (x - 1.5) / 0.9) ** 2
+                    - 0.22 * max(0.0, (-1.4 - x) / 0.9) ** 2)
     p = MeshProgram()
-    p.place(prism(side, -Y, Y), material=BODY_WH)
+    p.place(loft(side, hw, n_smooth=2), material=BODY_WH)
+    trim = mat((0.45, 0.455, 0.46), 0.0, 0.35)
     for s in (-1, 1):
-        for x, w in ((0.34, 0.82), (-0.60, 0.80), (-1.44, 0.44)):      # door glass per door
-            p.place(cbox(w, 0.03, 0.34, 0.010), at=[x, s * (Y - 0.010), 1.46], material=GLASS)
-        p.place(cbox(0.07, 0.05, 0.30, 0.010), at=[-0.14, s * (Y - 0.004), 1.46],
-                material=BODY_WH)
-        p.place(cbox(1.34, 0.07, 0.035, 0.010), at=[-0.55, s * (Y - 0.20), 1.725],
-                material=mat((0.38, 0.385, 0.39), 0.7, 0.30))          # roof rails
-        p.place(cbox(0.05, 0.09, 0.50, 0.012), at=[-0.14, s * (Y - 0.02), 1.02],
-                material=mat((0.45, 0.455, 0.46), 0.0, 0.35))          # door shut line
-        p.place(cbox(0.16, 0.10, 0.05, 0.010), at=[0.10, s * (Y + 0.01), 1.16], material=CHROME)
-        p.place(cbox(0.16, 0.10, 0.05, 0.010), at=[-0.84, s * (Y + 0.01), 1.16], material=CHROME)
-        p.place(cbox(0.20, 0.13, 0.12, 0.014), at=[0.98, s * (Y + 0.10), 1.32],
-                material=mat((0.16, 0.165, 0.17), 0.0, 0.35))          # door mirrors
-        # the tail lights: a cluster on the tailgate that WRAPS onto the quarter panel
+        for x, w in ((0.34, 0.82), (-0.60, 0.80), (-1.44, 0.44)):
+            p.place(cbox(w, 0.03, 0.34, 0.010), at=[x, s * (Y - 0.055), 1.46], material=GLASS)
+        p.place(cbox(0.07, 0.05, 0.30, 0.010), at=[-0.14, s * (Y - 0.05), 1.46], material=BODY_WH)
+        p.place(cbox(1.34, 0.07, 0.035, 0.010), at=[-0.55, s * (Y - 0.24), 1.715],
+                material=mat((0.38, 0.385, 0.39), 0.7, 0.30))
+        p.place(cbox(0.05, 0.06, 0.50, 0.010), at=[-0.14, s * (Y - 0.03), 1.02], material=trim)
+        for x in (0.10, -0.84):
+            p.place(cbox(0.16, 0.05, 0.045, 0.008), at=[x, s * (Y + 0.005), 1.16],
+                    material=mat((0.62, 0.625, 0.63), 0.5, 0.30))
+        p.place(cyl(0.020, 0.13, 8), at=[0.98, s * (Y + 0.05), 1.32], rotate=[90, 0, 0],
+                material=mat((0.16, 0.165, 0.17), 0.0, 0.35))
+        p.place(cbox(0.19, 0.08, 0.12, 0.014), at=[0.98, s * (Y + 0.12), 1.33],
+                material=mat((0.16, 0.165, 0.17), 0.0, 0.35))
         p.place(cbox(0.06, 0.30, 0.32, 0.010), at=[-2.24, s * 0.58, 1.04], material=TAIL_RED)
-        p.place(cbox(0.30, 0.05, 0.24, 0.010), at=[-2.03, s * (Y - 0.012), 1.08],
+        p.place(cbox(0.30, 0.05, 0.24, 0.010), at=[-2.03, s * (Y - 0.05), 1.08],
                 material=TAIL_RED)
         p.place(cbox(0.10, 0.30, 0.12, 0.012), at=[2.28, s * 0.62, 0.92], material=LAMP)
-    p.place(pane([1.10, 1.28], [0.34, 1.62], 0.02, -0.84, 0.84), material=GLASS)  # windscreen
-    p.place(pane([-1.72, 1.62], [-2.04, 1.30], 0.02, -0.80, 0.80), material=GLASS)  # tailgate
-    p.place(cbox(0.24, 1.54, 0.09, 0.016), at=[-1.76, 0, 1.74], material=BODY_WH)  # spoiler
+    p.place(pane([1.10, 1.28], [0.34, 1.62], 0.02, -0.82, 0.82), material=GLASS)
+    p.place(pane([-1.72, 1.62], [-2.04, 1.30], 0.02, -0.78, 0.78), material=GLASS)
+    p.place(cbox(0.24, 1.54, 0.09, 0.016), at=[-1.76, 0, 1.74], material=BODY_WH)
+    p.place(cyl(0.012, 0.44, 8), at=[-1.92, 0.10, 1.42], rotate=[0, 62, 0], material=BLACK)
     p.place(cbox(0.16, 1.74, 0.30, 0.02), at=[-2.28, 0, 0.62],
-            material=mat((0.30, 0.305, 0.31), 0.0, 0.42))              # rear bumper
+            material=mat((0.30, 0.305, 0.31), 0.0, 0.42))
     p.place(cbox(0.03, 0.44, 0.15, 0.006), at=[-2.36, -0.06, 0.86], material=PLATE_F)
     p.place(cbox(0.16, 1.66, 0.24, 0.02), at=[2.30, 0, 0.58],
             material=mat((0.30, 0.305, 0.31), 0.0, 0.42))
     for x in (FA, RA):
         for s in (-1, 1):
-            p.place(wheel(WR, 0.24), at=[x, s * (Y - 0.12), WR])
+            p.place(wheel(WR, 0.24), at=[x, s * (Y - 0.13), WR])
     return p
 
 
