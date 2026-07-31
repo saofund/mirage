@@ -378,7 +378,7 @@ def main():
     p = scene()
     m = p.build()
     print(f"forecourt: {len(m.verts):,} verts  {len(m.faces):,} faces  ({len(p.ops)} top-level ops)")
-    spp = 40 if preview else 260
+    spp = 40 if preview else int(os.environ.get("MIRAGE_SPP", "260"))
     # An overcast wet morning: soft high sun, a bright sky fill for the wet surfaces to mirror,
     # no hard key. Env is turned up (0.86) because on this shot the reflected sky IS the light on
     # the floor -- the wet materials are near-black diffuse and read only through what they
@@ -422,7 +422,10 @@ def main():
              # denoise 4 at 260 spp was eating the apron's grain: the scorecard read detail
              # 0.18 and barely moved when the map got twice the staining, because the filter
              # was removing exactly what the map was adding. 2 keeps it.
-             "--denoise", "2"]
+             # MIRAGE_DENOISE overrides so the filter can be A/B'd without editing the case.
+             # It is a real suspect for the ground's missing contrast: an edge-avoiding filter
+             # keeps EDGES, and low-amplitude texture is exactly what it cannot tell from noise.
+             "--denoise", os.environ.get("MIRAGE_DENOISE", "2")]
     # The id AOV comes out of the SAME trace as the beauty pass, so the scorecard's masks
     # are the pixels it is scoring and not a re-render that drifted.
     extra += ["--ids", str(OUT / "hero_ids.pgm"), "--id-tags", ",".join(ID_TAGS)]
