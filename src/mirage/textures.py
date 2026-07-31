@@ -425,13 +425,13 @@ _LIBRARY = {
     # what a matte 0.72 cannot do, however dark or light its albedo is set.
     "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.22, stain=0.95, wet=0.90, rough_base=0.46, contrast=2.6),
     "asphalt_wet":        lambda: _asphalt(RES, 107, (0.095, 0.100, 0.110)),
-    "bay_blue":           lambda: _painted_bay(RES, 113, (0.052, 0.070, 0.128), (0.105, 0.110, 0.115), wet=0.85, wear_amt=0.45),
-    "bay_orange":         lambda: _painted_bay(RES, 127, (0.300, 0.122, 0.050), (0.185, 0.165, 0.145), wet=0.45, faded=0.35, wear_amt=0.35),
+    "bay_blue":           lambda: _painted_bay(RES, 113, (0.030, 0.058, 0.150), (0.098, 0.104, 0.112), wet=0.85, wear_amt=0.45),
+    "bay_orange":         lambda: _painted_bay(RES, 127, (0.395, 0.108, 0.034), (0.185, 0.160, 0.135), wet=0.45, faded=0.22, wear_amt=0.35),
     # The shop frontage is a DIFFERENT SLAB, poured lighter. The photograph runs 0.68 to
     # 0.97 there against 0.53 near the bays, and that gap is albedo, not reflection: no
     # roughness makes a mid-grey pour read as white concrete at fifteen metres.
     "apron_light":        lambda: _concrete(RES, 103, (0.360, 0.365, 0.368), crack=0.16, stain=0.75, wet=0.80, rough_base=0.44, contrast=2.2),
-    "bay_slate":          lambda: _painted_bay(RES, 131, (0.085, 0.095, 0.112), (0.105, 0.110, 0.115), wet=0.70, wear_amt=0.50),
+    "bay_slate":          lambda: _painted_bay(RES, 131, (0.062, 0.080, 0.122), (0.100, 0.106, 0.112), wet=0.70, wear_amt=0.50),
     # painted metal cladding for the canopy column: light cool grey, semi-gloss, streaked
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
     "clad_panel":         lambda: _painted_metal(RES, 137, (0.55, 0.555, 0.56), dirt=0.70, rough_base=0.36),

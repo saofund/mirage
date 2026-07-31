@@ -204,8 +204,15 @@ def yard():
         p.place(P.tiled_pilaster(0.62, 4.6), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG],
                 mark="piers")
     c = at(11.6, -0.30)                                           # an open doorway
-    p.place(P.box(2.1, 0.12, 2.6), at=[c[0], c[1], 1.35], rotate=[0, 0, YARD_ANG],
-            material=mat((0.045, 0.048, 0.05), 0.0, 0.6))
+    # An open doorway is a HOLE into an unlit room, and it has to be modelled as one: a dark
+    # PANEL on a wall still faces the sky and still comes back at 0.25. A recess three
+    # metres deep occludes itself and lands where the photograph's does, near black. The
+    # photograph puts 4.7% of its pixels below 0.10; this render had 0.1%, and the missing
+    # blacks are all openings like this one.
+    for dxx, hh in ((11.6, 2.6), (5.6, 2.2)):
+        cc = at(dxx, 1.30)
+        p.place(P.box(2.1, 3.0, hh), at=[cc[0], cc[1], hh / 2], rotate=[0, 0, YARD_ANG],
+                material=mat((0.012, 0.013, 0.014), 0.0, 0.8))
     c = at(-2.4, -0.55)
     p.place(P.hanging_banner(1.30, 1.76, WASH_F), at=[c[0], c[1], 3.15], rotate=[0, 0, YARD_ANG],
             mark="banners")
@@ -411,7 +418,14 @@ def main():
     # --sky-tint warms the sky fill. The scorecard is what found this: EVERY object came
     # back with a cool cast, all seventeen, which is not seventeen colour errors but one —
     # the sky is the only thing lighting most of this scene, and it was blue.
-    extra = ["--sun", "0.12", "--env", "0.74", "--exposure", "1.35", "--clamp", "1.5",
+    extra = ["--sun", "0.12", "--env", "0.74", "--exposure", "1.35",
+             # --clamp 1.5 was capping the picture. It exists to stop a rare hot
+             # specular sample leaving a firefly, but on a WET scene the bright
+             # speculars are not fireflies, they are the subject: the photograph puts
+             # 3.4% of its pixels above 0.90 and this render put 0.0% there, because
+             # every one of them was clipped on the way out. At 260 spp with the
+             # denoiser on, 6.0 is enough guard.
+             "--clamp", "6.0",
              "--sun-dir", "0.25", "0.55", "0.80",
              # An OVERCAST dome, not a clear-day gradient. --sky-flat was added for this
              # scene: the residual colour error after tinting sat entirely on the METALS
