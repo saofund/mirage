@@ -871,7 +871,8 @@ def van():
 
     p = MeshProgram()
     p.place(loft_grid(lower, upper, hw, n_smooth=2), material=BODY_WH)
-    body = mat((0.235, 0.24, 0.25), 0.0, 0.42)
+    # the rocker in the photograph is nearly black against the white body, not grey
+    body = mat((0.105, 0.108, 0.115), 0.0, 0.45)
     trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
 
     def flank(x, z, out=0.0):
