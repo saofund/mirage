@@ -249,6 +249,11 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     mott = _fbm(res, 9, 4, seed)                       # staining and traffic
     patch = _fbm(res, 26, 3, seed + 53)                # repairs, spills, scuffs: ~20 cm
     fine = _fbm(res, 150, 3, seed + 5)                 # aggregate speckle
+    # SPILLS have edges. Smooth noise, however much of it, reads as cloud or marble — a
+    # real oil stain has a boundary where the liquid stopped, and thresholding a noise field
+    # is what puts one there. Two scales: big spills and a scatter of drips.
+    spill = np.clip((_fbm(res, 7, 3, seed + 71) - 0.60) * 9.0, 0, 1)
+    drips = np.clip((_fbm(res, 40, 2, seed + 89) - 0.68) * 12.0, 0, 1)
     cracks = _crack_net(res, seed + 9, period=5, thresh=0.91) * crack
     st = _fbm(res, 4, 4, seed + 17)                    # damp areas
     wet_patch = np.clip((0.44 - st) * 1.8, 0, 1) ** 1.5
@@ -258,6 +263,8 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
                               + 0.14 * (fine - 0.5)))
     base = np.stack(col, -1)[None, None] * np.clip(tone, 0.35, 1.9)[..., None]
     base = base * (1 - 0.22 * stain * wet_patch[..., None])
+    base = base * (1 - 0.46 * stain * spill[..., None])       # oil, with an edge
+    base = base * (1 - 0.30 * drips[..., None])
     base = base * (1 - 0.50 * cracks[..., None])              # joints/cracks darkest
     albedo = np.clip(base, 0, 1)
     # MOST OF THE VARIATION LIVES HERE, not in the albedo. On a wet apron under an overcast
@@ -267,7 +274,7 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     # real wet forecourt blotchy is that some of it is wetter than the rest, which is a
     # roughness field, and it modulates the big term instead of the small one.
     rough = (rough_base - 0.10 * (mott - 0.5) - 0.34 * (patch - 0.5)
-             - wet * 0.55 * wet_patch + 0.06 * cracks)
+             - wet * 0.55 * wet_patch - 0.28 * spill - 0.16 * drips + 0.06 * cracks)
     rough = np.clip(rough, 0.10, 0.98)
     height = mott * 0.18 + fine * 0.16 - cracks * 0.8
     normal = _normal_from_height(height, strength=0.9)
@@ -310,6 +317,8 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     wet_mask = np.clip((0.52 - st) * 1.5, 0, 1) ** 1.4
     # only a few hairline cracks on a bay — the WET SHEET is the story, not a mud-crack web
     cracks = _crack_net(res, seed + 23, period=8, thresh=0.91) * 0.55
+    # hard-edged marks: a tyre scuff and a spill both END somewhere
+    marks = np.clip((_fbm(res, 16, 3, seed + 67) - 0.62) * 10.0, 0, 1)
     paint_c = np.stack(paint, -1)[None, None]
     conc_c = np.stack(concrete, -1)[None, None]
     # TYRE TRACKS. Cars enter a bay along its length and always in the same two ruts, so a
@@ -333,6 +342,7 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     col = col * (1.0 + 0.52 * (mott[..., None] - 0.5) + 0.78 * (patch[..., None] - 0.5)
                  + 0.20 * (fine[..., None] - 0.5))
     col = col * (1 - 0.26 * ruts[..., None])                        # the ruts
+    col = col * (1 - 0.34 * marks[..., None])                       # scuffs, with edges
     col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
     col = col * (1 - faded * 0.28)
     col = col * (1 - 0.42 * cracks[..., None])

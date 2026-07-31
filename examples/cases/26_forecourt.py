@@ -227,7 +227,9 @@ def yard():
     # around the open bays the way it is in the photograph — around the doors people
     # actually use, not spread evenly along the frontage.
     for dx, dy, rot in [(9.6, -1.30, 12), (10.3, -1.15, -40), (10.1, -1.75, 70),
-                        (3.1, -1.20, 25), (12.2, -1.35, -8)]:
+                        (3.1, -1.20, 25), (12.2, -1.35, -8), (9.2, -1.05, -22),
+                        (11.4, -1.20, 48), (11.8, -1.60, -15), (2.6, -1.55, -34),
+                        (13.0, -1.10, 20)]:
         q = at(dx, dy)
         p.place(P.carton(0.52 + 0.10 * (dx % 3), 0.40, 0.34 + 0.05 * (dx % 2)),
                 at=[q[0], q[1], 0], rotate=[0, 0, YARD_ANG + rot])
@@ -236,8 +238,12 @@ def yard():
         p.place(P.carton(0.46, 0.36, 0.30), at=[q[0], q[1], 0.34], rotate=[0, 0, YARD_ANG - 18])
     q = at(6.4, -1.55)
     p.place(P.scooter(), at=[q[0], q[1], 0], rotate=[0, 0, YARD_ANG + 96])
-    q = at(12.9, -1.15)
-    p.place(P.tyre_stack(3), at=[q[0], q[1], 0])
+    for dx, dy, n in [(12.9, -1.15, 3), (13.6, -1.45, 2), (6.9, -1.20, 4)]:
+        q = at(dx, dy)
+        p.place(P.tyre_stack(n), at=[q[0], q[1], 0])
+    for dx, dy in [(1.4, -1.35), (7.8, -1.10)]:                # more bins along the wall
+        q = at(dx, dy)
+        p.place(P.bin_(0.46, 0.40, 0.66), at=[q[0], q[1], 0], rotate=[0, 0, YARD_ANG + 14])
     # the hazard tape strung along the bollard line
     tape = [at(dx, dy) for dx, dy in [(-8.0, -2.05), (-4.7, -1.85), (-1.6, -1.55),
                                       (4.5, -1.35), (6.6, -1.25), (9.4, -1.15)]]

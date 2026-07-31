@@ -1045,8 +1045,15 @@ def scooter(length=1.72):
     return p
 
 
-def tape_run(points, r=0.018):
-    """Red-and-white hazard tape strung between posts — banded, like the rail, because the
-    bands have to BE geometry before a colour can land on only some of them."""
-    return banded_tube(points, r, [mat((0.52, 0.06, 0.05), 0.0, 0.55), WHITE], band=0.22,
+def tape_run(points, r=0.018, sag=0.09):
+    """Red-and-white hazard tape strung between posts.
+
+    Banded, like the rail, because the bands have to BE geometry before a colour can land
+    on only some of them — and SAGGING, because tape strung between two posts is the one
+    thing in a yard that cannot be straight. A dead-level run reads as a laser."""
+    out = []
+    for a0, b0 in zip(points, points[1:]):
+        out.extend(drape(a0, b0, sag=sag, n=6)[:-1])
+    out.append(list(points[-1]))
+    return banded_tube(out, r, [mat((0.52, 0.06, 0.05), 0.0, 0.55), WHITE], band=0.22,
                        sides=6)
