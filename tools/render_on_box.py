@@ -65,6 +65,8 @@ def main():
     ap.add_argument("--no-build", action="store_true", help="skip the remote cmake build")
     ap.add_argument("--threads", default="140")
     args = ap.parse_args()
+    if args.command and args.command[0] == "--":
+        args.command = args.command[1:]     # argparse keeps the separator in a REMAINDER
     if not args.command:
         ap.error("nothing to run")
 
