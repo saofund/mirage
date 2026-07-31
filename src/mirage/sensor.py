@@ -135,8 +135,13 @@ def tone_curve(rgb, black=0.0, white=1.0, gamma=1.0):
     stop being able to say so. A three-parameter curve can only do what a camera does."""
     img = np.asarray(rgb, float)
     img = img / 255.0 if img.max() > 1.5 else img
-    u = np.clip((img - black) / max(white - black, 1e-6), 0, 1)
-    return u ** gamma
+    # On LUMA, with the colour carried through as a ratio. Applying the curve per channel
+    # instead re-weights the channels against each other, which is a hue shift: it took this
+    # scene's scorecard from 2.1 to 4.4 and flagged every single object as warm. A camera's
+    # tone curve is a brightness transfer, not a colour transform.
+    y = np.maximum(img @ _W, 1e-6)
+    u = np.clip((y - black) / max(white - black, 1e-6), 0, 1)
+    return np.clip(img * ((u ** gamma) / y)[..., None], 0, 1)
 
 
 def fit_tone(render, reference, lo=1, mid=50, hi=99):

@@ -360,7 +360,7 @@ def render(prog, out, spp, w, h, extra=()):
     # together and leaves their RATIO, which is what sets the spread, exactly where it was.
     # The reference is a security camera whose auto-exposure is set for its shadows — it
     # lifts the low end and lets the high end clip. Fitted: p1 0.039, p50 0.468, p99 0.966.
-    raw = sensor.tone_curve(raw, black=0.1299, white=0.7944, gamma=1.1793)
+    raw = sensor.tone_curve(raw, black=0.1331, white=0.7880, gamma=1.1918)
     img = sensor.apply(raw,
                        # re-solved after the hard-edged stains went in: the maps now
                        # supply detail the grain used to be standing in for, so it
