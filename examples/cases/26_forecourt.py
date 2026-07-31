@@ -350,7 +350,18 @@ def render(prog, out, spp, w, h, extra=()):
     # without it. Grain is calibrated on a MEDIAN ABSOLUTE DEVIATION, not a standard
     # deviation: on a textured photograph the detail dominates the sd, and matching that
     # buries the image in film grain, which the first attempt duly did.
-    img = sensor.apply(np.asarray(Image.open(ppm).convert("RGB"), float) / 255.0,
+    raw = np.asarray(Image.open(ppm).convert("RGB"), float) / 255.0
+    # THE CAMERA'S TRANSFER CURVE, fitted to the reference with sensor.fit_tone: a black
+    # point, a white point and a gamma, three numbers, no lookup table. The render had no
+    # blacks and no highlights (p1 0.171 and p99 0.780 against the photograph's 0.038 and
+    # 0.980; 0.1% of pixels at each end against 4.7% and 3.4%) and NONE of that is a scene
+    # property. Raising the firefly clamp helped a little, and nothing else in the renderer
+    # could: brightening the sky or opening the exposure scales diffuse and specular
+    # together and leaves their RATIO, which is what sets the spread, exactly where it was.
+    # The reference is a security camera whose auto-exposure is set for its shadows — it
+    # lifts the low end and lets the high end clip. Fitted: p1 0.039, p50 0.468, p99 0.966.
+    raw = sensor.tone_curve(raw, black=0.1299, white=0.7944, gamma=1.1793)
+    img = sensor.apply(raw,
                        # re-solved after the hard-edged stains went in: the maps now
                        # supply detail the grain used to be standing in for, so it
                        # comes down (floor was overshooting 0.0356 against 0.0289),

@@ -30,7 +30,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image, ImageFilter
 
-__all__ = ["apply", "measure", "match", "noise_floor"]
+__all__ = ["apply", "measure", "match", "noise_floor", "tone_curve", "fit_tone"]
 
 # Rec.709 luma, the same weights photomatch and critique use.
 _W = np.array([0.2126, 0.7152, 0.0722])
@@ -124,6 +124,53 @@ def apply(rgb, grain=0.0, chroma_blur=0.0, shadow_grain=1.8, sharpen=0.0, vignet
         r = np.hypot((xx - w / 2) / (w / 2), (yy - h / 2) / (h / 2)) / np.sqrt(2.0)
         img = np.clip(img * (2.0 ** (-vignette * r ** 2))[..., None], 0, 1)
     return img
+
+
+def tone_curve(rgb, black=0.0, white=1.0, gamma=1.0):
+    """A camera's transfer curve: a black point, a white point and a gamma. Three numbers.
+
+    Deliberately THREE and not a lookup table. Histogram-matching a render onto a photograph
+    would land every percentile exactly and would also hide every real error underneath it —
+    a bay the wrong brightness would come out the right brightness and the scorecard would
+    stop being able to say so. A three-parameter curve can only do what a camera does."""
+    img = np.asarray(rgb, float)
+    img = img / 255.0 if img.max() > 1.5 else img
+    u = np.clip((img - black) / max(white - black, 1e-6), 0, 1)
+    return u ** gamma
+
+
+def fit_tone(render, reference, lo=1, mid=50, hi=99):
+    """Solve that curve so the render's low, middle and high percentiles land on the
+    photograph's.
+
+    The dynamic range gap on case 26 is not a scene property and cannot be fixed in the
+    scene. Photograph: p1 0.038, p99 0.980, with 4.7% of pixels below 0.10 and 3.4% above
+    0.90. Render: p1 0.171, p99 0.780, with 0.1% at each end. Chasing it through the
+    renderer means raising the clamp (which helped, a little), brightening the sky, opening
+    the exposure — and none of that changes the RATIO between a diffuse surface and a
+    specular reflection of the same dome, which is what sets the spread. The reference is a
+    security camera whose auto-exposure is set for its shadows: it lifts the low end and
+    lets the high end clip. That is a curve, and this fits it."""
+    a = np.asarray(reference, float); a = a / 255.0 if a.max() > 1.5 else a
+    b = np.asarray(render, float); b = b / 255.0 if b.max() > 1.5 else b
+    ta = [float(np.percentile(a.mean(-1), p)) for p in (lo, mid, hi)]
+    tb = [float(np.percentile(b.mean(-1), p)) for p in (lo, mid, hi)]
+    best, err = (0.0, 1.0, 1.0), 1e9
+    for blk in np.linspace(-0.05, tb[0] - 0.002, 40):
+        for wht in np.linspace(tb[2] + 0.002, 1.25, 40):
+            u = [(t - blk) / (wht - blk) for t in tb]
+            if min(u) <= 1e-4 or max(u) >= 1.0:
+                continue
+            # gamma by least squares in LOG space over all three points. Solving it from the
+            # top percentile alone is degenerate: the search then runs the black point to its
+            # bound and buys the ends with a gamma that crushes the middle — measured, it put
+            # the median at 0.264 against the photograph's 0.459 and called that a fit.
+            lu = np.log(np.array(u)); la = np.log(np.clip(ta, 1e-6, None))
+            g = float((lu @ la) / max(lu @ lu, 1e-12))
+            e = sum((uu ** g - t) ** 2 for uu, t in zip(u, ta))
+            if e < err:
+                err, best = e, (float(blk), float(wht), float(g))
+    return {"black": round(best[0], 4), "white": round(best[1], 4), "gamma": round(best[2], 4)}
 
 
 def match(render, reference, mask=None, radius=1.6, max_grain=0.14):

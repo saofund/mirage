@@ -74,3 +74,36 @@ def test_vignette_darkens_corners_not_the_centre():
     h, w = img.shape[:2]
     assert out[h // 2, w // 2, 0] > 0.69
     assert out[2, 2, 0] < 0.55
+
+
+def test_tone_curve_is_monotone_and_bounded():
+    from mirage.sensor import tone_curve
+    x = np.linspace(0, 1, 256)[None, :, None] * np.ones((1, 1, 3))
+    y = tone_curve(x, black=0.12, white=0.80, gamma=1.2)[0, :, 0]
+    assert np.all(np.diff(y) >= -1e-12), "a transfer curve must not fold"
+    assert y.min() >= 0.0 and y.max() <= 1.0
+
+
+def test_fit_tone_lands_the_percentiles():
+    # a render-like image (compressed range) against a photo-like one (full range)
+    rng = np.random.default_rng(11)
+    photo = np.clip(rng.normal(0.46, 0.20, (200, 300, 3)), 0, 1)
+    render = np.clip(photo * 0.62 + 0.17, 0, 1)          # squashed toward the middle
+    from mirage.sensor import fit_tone, tone_curve
+    par = fit_tone(render, photo)
+    out = tone_curve(render, **par)
+    for p in (1, 50, 99):
+        a = np.percentile(photo.mean(-1), p)
+        b = np.percentile(out.mean(-1), p)
+        assert abs(a - b) < 0.06, f"p{p}: {b:.3f} vs {a:.3f}"
+
+
+def test_fit_tone_does_not_crush_the_middle_to_buy_the_ends():
+    # the degenerate fit this guards against solved gamma from the top percentile alone and
+    # put the median at 0.264 against a target of 0.459
+    rng = np.random.default_rng(12)
+    photo = np.clip(rng.normal(0.46, 0.20, (200, 300, 3)), 0, 1)
+    render = np.clip(photo * 0.62 + 0.17, 0, 1)
+    from mirage.sensor import fit_tone, tone_curve
+    out = tone_curve(render, **fit_tone(render, photo))
+    assert abs(np.percentile(out.mean(-1), 50) - np.percentile(photo.mean(-1), 50)) < 0.05
