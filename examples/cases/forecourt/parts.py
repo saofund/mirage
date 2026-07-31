@@ -144,7 +144,7 @@ def prism(poly, y0, y1):
     return MeshProgram().mesh(verts=verts, faces=faces)
 
 
-def loft(poly, half_width, n_smooth=0, crease_angle=52.0):
+def loft(poly, half_width, n_smooth=0, crease_angle=20.0):
     """A silhouette extruded with a VARYING half-width — the prism a vehicle actually needs.
 
     `half_width(x, z)` returns the body's half-width at each point of the outline, so the
@@ -152,8 +152,11 @@ def loft(poly, half_width, n_smooth=0, crease_angle=52.0):
     single change is most of what separates a car from a slab with wheels: a real body has
     tumblehome, and a constant-width extrusion cannot have any.
 
-    `n_smooth` rounds it with Catmull-Clark, holding edges sharper than `crease_angle` — so
-    the wheel arch openings and the window apertures stay crisp while the panels bow."""
+    `n_smooth` rounds it with Catmull-Clark, holding edges sharper than `crease_angle`. The
+    threshold has to be LOW — 20 degrees, not 50. A vehicle's silhouette is mostly gentle
+    turns, and at 50 only the few sharpest corners were held: the sill, the nose and the
+    wheel-arch openings all melted into the body and it came out looking poured rather than
+    pressed. What should round is the cross-section, not the profile."""
     poly = [list(q) for q in poly]
     area = sum((poly[(i + 1) % len(poly)][0] - poly[i][0]) *
                (poly[(i + 1) % len(poly)][1] + poly[i][1]) for i in range(len(poly)))
@@ -798,27 +801,40 @@ def van():
     p.place(loft(side, hw, n_smooth=2), material=BODY_WH)
     body = mat((0.235, 0.24, 0.25), 0.0, 0.42)
     trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
+    # Everything on the flank rides ON the loft. A constant offset leaves the glass hanging
+    # in the air wherever the body draws in, which at the window line here is 18 cm.
+    def flank(x, z, out=0.0):
+        return hw(x, z) + out
     for s in (-1, 1):
         # the window band: one dark run from the cab door back, with body-colour pillars
-        p.place(cbox(3.86, 0.03, 0.50, 0.012), at=[-0.70, s * (Y - 0.055), 1.86], material=GLASS)
-        p.place(cbox(0.86, 0.03, 0.52, 0.012), at=[1.42, s * (Y - 0.075), 1.82], material=GLASS)
+        p.place(cbox(3.86, 0.03, 0.50, 0.012), at=[-0.70, s * flank(-0.70, 1.86, -0.012), 1.86],
+                material=GLASS)
+        p.place(cbox(0.86, 0.03, 0.52, 0.012), at=[1.42, s * flank(1.42, 1.82, -0.012), 1.82],
+                material=GLASS)
         for x in (0.86, -0.02, -0.98, -1.96):
-            p.place(cbox(0.10, 0.05, 0.54, 0.012), at=[x, s * (Y - 0.05), 1.86], material=BODY_WH)
-        p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * (Y - 0.045), 2.11], material=trim)
-        p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * (Y - 0.045), 1.60], material=trim)
-        p.place(cbox(5.05, 0.07, 0.26, 0.014), at=[-0.30, s * (Y - 0.03), 0.655], material=body)
-        p.place(cbox(4.40, 0.03, 0.022, 0.008), at=[-0.30, s * (Y - 0.02), 1.14],
+            p.place(cbox(0.10, 0.05, 0.54, 0.012), at=[x, s * flank(x, 1.86, -0.004), 1.86],
+                    material=BODY_WH)
+        p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * flank(-0.70, 2.11, 0.004), 2.11],
+                material=trim)
+        p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * flank(-0.70, 1.60, 0.004), 1.60],
+                material=trim)
+        p.place(cbox(5.05, 0.07, 0.26, 0.014), at=[-0.30, s * flank(-0.30, 0.655, 0.004), 0.655],
+                material=body)
+        p.place(cbox(4.40, 0.03, 0.022, 0.008), at=[-0.30, s * flank(-0.30, 1.14, 0.006), 1.14],
                 material=mat((0.60, 0.605, 0.61), 0.0, 0.30))
         for x in (0.88, -1.98):                                  # door shut lines
-            p.place(cbox(0.04, 0.06, 0.62, 0.010), at=[x, s * (Y - 0.03), 1.30], material=trim)
+            p.place(cbox(0.04, 0.06, 0.62, 0.010), at=[x, s * flank(x, 1.30, 0.002), 1.30],
+                    material=trim)
         for x in (0.62, -1.70):                                  # door handles
-            p.place(cbox(0.17, 0.05, 0.045, 0.010), at=[x, s * (Y + 0.005), 1.42],
+            p.place(cbox(0.17, 0.05, 0.045, 0.010), at=[x, s * flank(x, 1.42, 0.020), 1.42],
                     material=mat((0.62, 0.625, 0.63), 0.5, 0.30))
         # the mirror: an arm and a head, not a slab
-        p.place(cyl(0.022, 0.17, 8), at=[1.98, s * (Y + 0.06), 1.74], rotate=[90, 0, 0],
+        p.place(cyl(0.022, 0.17, 8), at=[1.98, s * flank(1.98, 1.74, 0.07), 1.74], rotate=[90, 0, 0],
                 material=BLACK)
-        p.place(cbox(0.13, 0.07, 0.20, 0.016), at=[1.98, s * (Y + 0.15), 1.76], material=BLACK)
-        p.place(cbox(0.02, 0.05, 0.16, 0.006), at=[1.94, s * (Y + 0.16), 1.76], material=GLASS)
+        p.place(cbox(0.13, 0.07, 0.20, 0.016), at=[1.98, s * flank(1.98, 1.76, 0.16), 1.76],
+                material=BLACK)
+        p.place(cbox(0.02, 0.05, 0.16, 0.006), at=[1.94, s * flank(1.98, 1.76, 0.17), 1.76],
+                material=GLASS)
         p.place(cbox(0.13, 0.30, 0.10, 0.012), at=[-2.96, s * 0.74, 1.44], material=TAIL_RED)
         p.place(cbox(0.10, 0.13, 0.56, 0.012), at=[-2.96, s * 0.72, 1.72], material=TAIL_RED)
         p.place(cbox(0.12, 0.36, 0.16, 0.014), at=[2.86, s * 0.66, 0.94], material=LAMP)
@@ -839,7 +855,7 @@ def van():
             material=mat((0.30, 0.30, 0.31), 0.6, 0.5))           # exhaust
     for x in (FA, RA):
         for s in (-1, 1):
-            p.place(wheel(WR, 0.26), at=[x, s * (Y - 0.14), WR])
+            p.place(wheel(WR, 0.26), at=[x, s * flank(x, WR + 0.30, -0.14), WR])
     return p
 
 
@@ -867,22 +883,28 @@ def suv():
     p = MeshProgram()
     p.place(loft(side, hw, n_smooth=2), material=BODY_WH)
     trim = mat((0.45, 0.455, 0.46), 0.0, 0.35)
+
+    def flank(x, z, out=0.0):
+        return hw(x, z) + out
     for s in (-1, 1):
         for x, w in ((0.34, 0.82), (-0.60, 0.80), (-1.44, 0.44)):
-            p.place(cbox(w, 0.03, 0.34, 0.010), at=[x, s * (Y - 0.055), 1.46], material=GLASS)
-        p.place(cbox(0.07, 0.05, 0.30, 0.010), at=[-0.14, s * (Y - 0.05), 1.46], material=BODY_WH)
-        p.place(cbox(1.34, 0.07, 0.035, 0.010), at=[-0.55, s * (Y - 0.24), 1.715],
+            p.place(cbox(w, 0.03, 0.34, 0.010), at=[x, s * flank(x, 1.46, -0.010), 1.46],
+                    material=GLASS)
+        p.place(cbox(0.07, 0.05, 0.30, 0.010), at=[-0.14, s * flank(-0.14, 1.46, -0.002), 1.46],
+                material=BODY_WH)
+        p.place(cbox(1.34, 0.07, 0.035, 0.010), at=[-0.55, s * flank(-0.55, 1.70, -0.10), 1.715],
                 material=mat((0.38, 0.385, 0.39), 0.7, 0.30))
-        p.place(cbox(0.05, 0.06, 0.50, 0.010), at=[-0.14, s * (Y - 0.03), 1.02], material=trim)
+        p.place(cbox(0.05, 0.06, 0.50, 0.010), at=[-0.14, s * flank(-0.14, 1.02, 0.004), 1.02],
+                material=trim)
         for x in (0.10, -0.84):
-            p.place(cbox(0.16, 0.05, 0.045, 0.008), at=[x, s * (Y + 0.005), 1.16],
+            p.place(cbox(0.16, 0.05, 0.045, 0.008), at=[x, s * flank(x, 1.16, 0.018), 1.16],
                     material=mat((0.62, 0.625, 0.63), 0.5, 0.30))
-        p.place(cyl(0.020, 0.13, 8), at=[0.98, s * (Y + 0.05), 1.32], rotate=[90, 0, 0],
+        p.place(cyl(0.020, 0.13, 8), at=[0.98, s * flank(0.98, 1.32, 0.06), 1.32], rotate=[90, 0, 0],
                 material=mat((0.16, 0.165, 0.17), 0.0, 0.35))
-        p.place(cbox(0.19, 0.08, 0.12, 0.014), at=[0.98, s * (Y + 0.12), 1.33],
+        p.place(cbox(0.19, 0.08, 0.12, 0.014), at=[0.98, s * flank(0.98, 1.33, 0.13), 1.33],
                 material=mat((0.16, 0.165, 0.17), 0.0, 0.35))
         p.place(cbox(0.06, 0.30, 0.32, 0.010), at=[-2.24, s * 0.58, 1.04], material=TAIL_RED)
-        p.place(cbox(0.30, 0.05, 0.24, 0.010), at=[-2.03, s * (Y - 0.05), 1.08],
+        p.place(cbox(0.30, 0.05, 0.24, 0.010), at=[-2.03, s * flank(-2.03, 1.08, -0.010), 1.08],
                 material=TAIL_RED)
         p.place(cbox(0.10, 0.30, 0.12, 0.012), at=[2.28, s * 0.62, 0.92], material=LAMP)
     p.place(pane([1.10, 1.28], [0.34, 1.62], 0.02, -0.82, 0.82), material=GLASS)
@@ -896,7 +918,7 @@ def suv():
             material=mat((0.30, 0.305, 0.31), 0.0, 0.42))
     for x in (FA, RA):
         for s in (-1, 1):
-            p.place(wheel(WR, 0.24), at=[x, s * (Y - 0.13), WR])
+            p.place(wheel(WR, 0.24), at=[x, s * flank(x, WR + 0.28, -0.13), WR])
     return p
 
 
