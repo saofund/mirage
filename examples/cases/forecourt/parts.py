@@ -805,13 +805,24 @@ def van():
         return w * (1.0 - 0.36 * max(0.0, (x - 2.05) / 0.95) ** 2)   # the nose draws in
 
     p = MeshProgram()
-    p.place(loft(side, hw), material=BODY_WH)
+    # TUMBLEHOME: TRIED AND REVERTED. `loft` gives the body a width profile — narrower at
+    # the roof and the sill, fullest through the middle — which is a real property of a car
+    # and not of a box. It came out worse, and visibly: the side caps are ear-clipped
+    # TRIANGLES, and once the cap is curved rather than flat those long thin triangles meet
+    # at large angles, so the flank renders as diagonal facet bands and the roof and arches
+    # sag. Four attempts (two subdivision levels, one, none, then --smooth-angle 55) each
+    # softened it and none fixed it, because the fault is the cage: a lofted body wants an
+    # ALL-QUAD grid, and building that properly is a bigger change than this van is worth.
+    #
+    # What survived the experiment is the hardware, which is the part that was actually
+    # missing. Kept: handles, mirror arms with a head and a glass, grille slats, indicator,
+    # exhaust, window-frame trim.
+    p.place(prism(side, -Y, Y), material=BODY_WH)
     body = mat((0.235, 0.24, 0.25), 0.0, 0.42)
     trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
-    # Everything on the flank rides ON the loft. A constant offset leaves the glass hanging
-    # in the air wherever the body draws in, which at the window line here is 18 cm.
+
     def flank(x, z, out=0.0):
-        return hw(x, z) + out
+        return Y + out
     for s in (-1, 1):
         # the window band: one dark run from the cab door back, with body-colour pillars
         p.place(cbox(3.86, 0.03, 0.50, 0.012), at=[-0.70, s * flank(-0.70, 1.86, -0.012), 1.86],
@@ -893,11 +904,11 @@ def suv():
         return w * (1.0 - 0.30 * max(0.0, (x - 1.5) / 0.9) ** 2
                     - 0.22 * max(0.0, (-1.4 - x) / 0.9) ** 2)
     p = MeshProgram()
-    p.place(loft(side, hw), material=BODY_WH)
+    p.place(prism(side, -Y, Y), material=BODY_WH)      # see van() on why not loft()
     trim = mat((0.45, 0.455, 0.46), 0.0, 0.35)
 
     def flank(x, z, out=0.0):
-        return hw(x, z) + out
+        return Y + out
     for s in (-1, 1):
         for x, w in ((0.34, 0.82), (-0.60, 0.80), (-1.44, 0.44)):
             p.place(cbox(w, 0.03, 0.34, 0.010), at=[x, s * flank(x, 1.46, -0.010), 1.46],
