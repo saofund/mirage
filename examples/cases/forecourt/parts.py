@@ -840,103 +840,94 @@ def wheel(r=0.36, width=0.24, hub=(0.56, 0.56, 0.57)):
 
 
 def van():
-    """The white passenger van across the yard, as a LOFTED and SMOOTHED body.
+    """The white passenger van across the yard.
 
-    The reference is a long semi-bonneted minibus: a continuous dark window band the whole
-    length, a heavy grey rocker under it, a short sloped nose, vertical tail-light columns
-    either side of the rear doors. It was previously a constant-width extrusion, which is a
-    slab with wheels — a real body has tumblehome, narrower at the roof and at the sill and
-    fullest through the middle, and it is ROUND. The cage below carries that width profile
-    and is then Catmull-Clarked twice with the sharp edges creased, so the wheel arches and
-    the nose stay crisp while the panels bow.
+    MEASURED, after three rounds of adding faces to a body whose proportions were wrong.
+    Unprojecting the sill at its own height gives 7.40 m of van, and solving the roofline
+    against the van's own vertical plane gives a roof at 1.89 m — against the 5.81 x 2.28
+    it had been built at. Length over height 3.9, not 2.6. A long-wheelbase minibus, which
+    is what the four side windows in the photograph were saying all along, and no quantity
+    of subdivision was ever going to fix a body that was a metre and a half too short and
+    forty centimetres too tall.
 
-    The small hardware is inferred rather than measured — at thirty metres the photograph
-    cannot show a door handle, but a van without one is a toy, and a plausible handle in a
-    plausible place is nearer the truth than nothing at all."""
-    FA, RA, WR = 1.92, -1.58, 0.36
+    The shell is a `loft_grid` — an all-quad cage carrying real tumblehome, narrower at the
+    roof and the sill — and the hardware on it is INFERRED, which at thirty metres is the
+    honest call: the photograph cannot show a door handle, and a van without one is a toy."""
+    FA, RA, WR = 2.45, -2.05, 0.36
     Y = 0.99
-    lower = ([[-2.95, 0.64], [-2.90, 0.50], [-2.30, 0.47]]
+    ROOF = 1.95
+    lower = ([[-3.70, 0.62], [-3.64, 0.50], [-3.00, 0.47]]
              + arch(RA, 0.50, 0.47)
              + [[-0.30, 0.47]]
              + arch(FA, 0.50, 0.47)
-             + [[2.52, 0.48], [2.74, 0.56], [2.86, 0.78]])
-    upper = [[-2.95, 2.10], [-2.76, 2.28], [1.30, 2.26], [1.58, 2.14], [2.16, 1.52],
-             [2.36, 1.40], [2.72, 1.26], [2.86, 1.06]]
+             + [[3.24, 0.48], [3.46, 0.56], [3.58, 0.78]])
+    upper = [[-3.70, 1.78], [-3.54, ROOF], [1.55, ROOF - 0.01], [1.88, ROOF - 0.07],
+             [2.50, 1.32], [2.82, 1.20], [3.30, 1.06], [3.58, 0.98]]
 
     def hw(x, z):
-        t = max(0.0, min(1.0, (z - 0.45) / 1.85))          # 0 at the sill, 1 at the roof
+        t = max(0.0, min(1.0, (z - 0.47) / (ROOF - 0.47)))
         w = Y - 0.46 * (t - 0.42) ** 2 / 0.34 - 0.15 * max(0.0, t - 0.72) / 0.28
-        return w * (1.0 - 0.36 * max(0.0, (x - 2.05) / 0.95) ** 2)   # the nose draws in
+        return w * (1.0 - 0.36 * max(0.0, (x - 2.60) / 1.00) ** 2)
 
     p = MeshProgram()
-    # TUMBLEHOME, on a cage that can carry it. The first attempt extruded a silhouette
-    # polygon and capped the ends, and the caps had to be TRIANGULATED — Catmull-Clark on
-    # long thin triangles banded the flank with diagonal facets, and no amount of
-    # subdivision level or smooth-shading angle fixed it, because the fault was topological.
-    # loft_grid parameterises by x instead: one bottom edge and one top edge at every
-    # station, so the shell is a regular quad grid and subdivision does what it is for.
     p.place(loft_grid(lower, upper, hw, n_smooth=2), material=BODY_WH)
     body = mat((0.235, 0.24, 0.25), 0.0, 0.42)
     trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
 
     def flank(x, z, out=0.0):
         return hw(x, z) + out
+
+    GZ, GH = 1.52, 0.42                      # the window band: centre and height
     for s in (-1, 1):
-        # the window band: one dark run from the cab door back, with body-colour pillars
-        p.place(cbox(3.86, 0.03, 0.50, 0.012), at=[-0.70, s * flank(-0.70, 1.86, -0.012), 1.86],
+        p.place(cbox(4.70, 0.03, GH, 0.012), at=[-1.10, s * flank(-1.10, GZ, -0.012), GZ],
                 material=GLASS)
-        p.place(cbox(0.86, 0.03, 0.52, 0.012), at=[1.42, s * flank(1.42, 1.82, -0.012), 1.82],
+        p.place(cbox(1.02, 0.03, GH + 0.04, 0.012), at=[1.34, s * flank(1.34, GZ, -0.012), GZ],
                 material=GLASS)
-        for x in (0.86, -0.02, -0.98, -1.96):
-            p.place(cbox(0.10, 0.05, 0.54, 0.012), at=[x, s * flank(x, 1.86, -0.004), 1.86],
+        for x in (0.70, -0.35, -1.42, -2.50):                       # B/C/D/E pillars
+            p.place(cbox(0.10, 0.05, GH + 0.03, 0.012), at=[x, s * flank(x, GZ, -0.004), GZ],
                     material=BODY_WH)
-        p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * flank(-0.70, 2.11, 0.004), 2.11],
-                material=trim)
-        p.place(cbox(3.90, 0.02, 0.035, 0.006), at=[-0.70, s * flank(-0.70, 1.60, 0.004), 1.60],
-                material=trim)
-        p.place(cbox(5.05, 0.05, 0.20, 0.012), at=[-0.30, s * flank(-0.30, 0.655, -0.004), 0.66],
+        p.place(cbox(4.80, 0.02, 0.030, 0.006), at=[-1.05, s * flank(-1.05, GZ + GH / 2, 0.004),
+                                                    GZ + GH / 2], material=trim)
+        p.place(cbox(4.80, 0.02, 0.030, 0.006), at=[-1.05, s * flank(-1.05, GZ - GH / 2, 0.004),
+                                                    GZ - GH / 2], material=trim)
+        # the heavy dark rocker: in the photograph it is a third of the body's height
+        p.place(cbox(6.60, 0.05, 0.30, 0.012), at=[-0.20, s * flank(-0.20, 0.70, -0.004), 0.70],
                 material=body)
-        p.place(cbox(4.40, 0.03, 0.022, 0.008), at=[-0.30, s * flank(-0.30, 1.14, 0.006), 1.14],
+        p.place(cbox(5.60, 0.03, 0.020, 0.008), at=[-0.30, s * flank(-0.30, 1.02, 0.006), 1.02],
                 material=mat((0.60, 0.605, 0.61), 0.0, 0.30))
-        for x in (0.88, -1.98):                                  # door shut lines
-            p.place(cbox(0.04, 0.06, 0.62, 0.010), at=[x, s * flank(x, 1.30, 0.002), 1.30],
+        for x in (0.72, -2.52):                                     # door shut lines
+            p.place(cbox(0.04, 0.06, 0.70, 0.010), at=[x, s * flank(x, 1.05, 0.002), 1.05],
                     material=trim)
-        for x in (0.62, -1.70):                                  # door handles
-            p.place(cbox(0.17, 0.05, 0.045, 0.010), at=[x, s * flank(x, 1.42, 0.020), 1.42],
+        for x in (0.44, -2.24):                                     # door handles
+            p.place(cbox(0.17, 0.05, 0.045, 0.010), at=[x, s * flank(x, 1.20, 0.020), 1.20],
                     material=mat((0.62, 0.625, 0.63), 0.5, 0.30))
-        # the mirror: an arm and a head, not a slab
-        p.place(cyl(0.022, 0.17, 8), at=[1.98, s * flank(1.98, 1.74, 0.07), 1.74], rotate=[90, 0, 0],
+        p.place(cyl(0.022, 0.17, 8), at=[2.30, s * flank(2.30, 1.48, 0.07), 1.48],
+                rotate=[90, 0, 0], material=BLACK)
+        p.place(cbox(0.13, 0.07, 0.20, 0.016), at=[2.30, s * flank(2.30, 1.50, 0.16), 1.50],
                 material=BLACK)
-        p.place(cbox(0.13, 0.07, 0.20, 0.016), at=[1.98, s * flank(1.98, 1.76, 0.16), 1.76],
-                material=BLACK)
-        p.place(cbox(0.02, 0.05, 0.16, 0.006), at=[1.94, s * flank(1.98, 1.76, 0.17), 1.76],
+        p.place(cbox(0.02, 0.05, 0.16, 0.006), at=[2.26, s * flank(2.30, 1.50, 0.17), 1.50],
                 material=GLASS)
-        p.place(cbox(0.13, 0.30, 0.10, 0.012), at=[-2.96, s * 0.74, 1.44], material=TAIL_RED)
-        p.place(cbox(0.10, 0.13, 0.56, 0.012), at=[-2.96, s * 0.72, 1.72], material=TAIL_RED)
-        p.place(cbox(0.12, 0.36, 0.16, 0.014), at=[2.86, s * 0.66, 0.94], material=LAMP)
-        p.place(cbox(0.06, 0.16, 0.09, 0.010), at=[2.88, s * 0.80, 0.74],
-                material=mat((0.62, 0.42, 0.05), 0.0, 0.25))       # indicator
-    p.place(pane([2.16, 1.54], [1.62, 2.12], 0.02, -0.86, 0.86), material=GLASS)
-    p.place(cbox(0.03, 1.42, 0.44, 0.010), at=[-2.955, 0, 1.92], material=GLASS)
-    p.place(cbox(0.05, 0.05, 1.40, 0.012), at=[-2.95, 0, 1.55], material=trim)
-    p.place(cbox(0.16, 1.86, 0.24, 0.02), at=[-2.98, 0, 0.72], material=BODY_WH)
-    p.place(cbox(0.10, 1.30, 0.10, 0.014), at=[-3.02, 0, 0.56], material=body)
-    p.place(cbox(0.14, 1.30, 0.30, 0.02), at=[2.90, 0, 0.66],
+        p.place(cbox(0.13, 0.30, 0.10, 0.012), at=[-3.71, s * 0.72, 1.10], material=TAIL_RED)
+        p.place(cbox(0.10, 0.13, 0.48, 0.012), at=[-3.71, s * 0.70, 1.36], material=TAIL_RED)
+        p.place(cbox(0.12, 0.34, 0.15, 0.014), at=[3.58, s * 0.64, 0.90], material=LAMP)
+        p.place(cbox(0.06, 0.15, 0.09, 0.010), at=[3.60, s * 0.78, 0.72],
+                material=mat((0.62, 0.42, 0.05), 0.0, 0.25))
+    p.place(pane([2.50, 1.34], [1.90, 1.86], 0.02, -0.86, 0.86), material=GLASS)
+    p.place(cbox(0.03, 1.40, 0.40, 0.010), at=[-3.705, 0, 1.56], material=GLASS)
+    p.place(cbox(0.05, 0.05, 1.20, 0.012), at=[-3.70, 0, 1.30], material=trim)
+    p.place(cbox(0.16, 1.84, 0.22, 0.02), at=[-3.73, 0, 0.66], material=BODY_WH)
+    p.place(cbox(0.10, 1.28, 0.10, 0.014), at=[-3.77, 0, 0.52], material=body)
+    p.place(cbox(0.14, 1.28, 0.28, 0.02), at=[3.62, 0, 0.62],
             material=mat((0.26, 0.27, 0.28), 0.0, 0.40))
-    for k in range(4):                                            # the grille's slats
-        p.place(cbox(0.04, 1.02, 0.028, 0.006), at=[2.89, 0, 1.10 + k * 0.045],
+    for k in range(4):
+        p.place(cbox(0.04, 1.00, 0.026, 0.006), at=[3.60, 0, 1.02 + k * 0.042],
                 material=mat((0.08, 0.085, 0.09), 0.0, 0.35))
-    p.place(cbox(0.03, 0.44, 0.15, 0.006), at=[-3.09, 0.28, 1.02], material=PLATE_F)
-    p.place(cyl(0.030, 0.16, 10), at=[-2.40, -Y + 0.10, 0.30], rotate=[0, 90, 0],
-            material=mat((0.30, 0.30, 0.31), 0.6, 0.5))           # exhaust
+    p.place(cbox(0.03, 0.44, 0.15, 0.006), at=[-3.84, 0.26, 0.86], material=PLATE_F)
+    p.place(cyl(0.030, 0.16, 10), at=[-3.10, -Y + 0.12, 0.28], rotate=[0, 90, 0],
+            material=mat((0.30, 0.30, 0.31), 0.6, 0.5))
     for x in (FA, RA):
         for s in (-1, 1):
             p.place(wheel(WR, 0.26), at=[x, s * flank(x, WR + 0.30, -0.14), WR])
-            # the arch flare: a dark lip round the opening, which is what makes a wheel sit
-            # IN a body rather than poke through its skirt
-            p.place(tube_along(arc([x, s * flank(x, WR + 0.34, -0.03), 0.47], 0.50,
-                                   8, 172, (1, 0, 0), (0, 0, 1), 10), 0.030, 7),
-                    material=mat((0.20, 0.205, 0.21), 0.0, 0.55))
     return p
 
 
