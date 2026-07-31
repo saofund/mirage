@@ -183,6 +183,65 @@ def loft(poly, half_width, n_smooth=0, crease_angle=20.0):
     return p
 
 
+def _interp(pts, x):
+    """Piecewise-linear lookup over an x-monotonic control list."""
+    if x <= pts[0][0]:
+        return pts[0][1]
+    for (x0, z0), (x1, z1) in zip(pts, pts[1:]):
+        if x <= x1:
+            t = 0.0 if x1 <= x0 else (x - x0) / (x1 - x0)
+            return z0 + (z1 - z0) * t
+    return pts[-1][1]
+
+
+def loft_grid(lower, upper, hw, nx=44, nz=9, n_smooth=1, crease_angle=26.0):
+    """A body as an ALL-QUAD grid: for each x, the shell spans `lower(x)` to `upper(x)`.
+
+    This is the cage a lofted, subdivided body needs. The obvious construction — extrude a
+    silhouette polygon and cap the ends — gives caps that must be TRIANGULATED, and
+    Catmull-Clark on long thin triangles spreads their unevenness into diagonal facet bands
+    right across a flat flank. Four attempts at fixing that from the outside (two subdivision
+    levels, one, none, a wider smooth-shading angle) each softened it and none worked,
+    because the fault was the topology.
+
+    Parameterising by x instead removes the problem: a vehicle's silhouette is single-valued
+    in x — one bottom edge and one top edge at every station, wheel arches included — so the
+    surface is a regular (nx x nz) grid on each flank plus a rim of quads joining them, and
+    every face is a quad. Subdivision then does what it is for."""
+    xs = [lower[0][0] + (lower[-1][0] - lower[0][0]) * i / (nx - 1) for i in range(nx)]
+    verts, idx = [], {}
+    for side in (0, 1):
+        for i, x in enumerate(xs):
+            zb, zt = _interp(lower, x), _interp(upper, x)
+            for j in range(nz):
+                z = zb + (zt - zb) * j / (nz - 1)
+                w = float(hw(x, z))
+                idx[(side, i, j)] = len(verts)
+                verts.append([x, (w if side else -w), z])
+    faces = []
+    for i in range(nx - 1):
+        for j in range(nz - 1):
+            a0, b0 = idx[(0, i, j)], idx[(0, i + 1, j)]
+            c0, d0 = idx[(0, i + 1, j + 1)], idx[(0, i, j + 1)]
+            faces.append([a0, b0, c0, d0])
+            a1, b1 = idx[(1, i, j)], idx[(1, i + 1, j)]
+            c1, d1 = idx[(1, i + 1, j + 1)], idx[(1, i, j + 1)]
+            faces.append([d1, c1, b1, a1])
+    for i in range(nx - 1):                       # the bottom and top rims
+        faces.append([idx[(0, i, 0)], idx[(1, i, 0)], idx[(1, i + 1, 0)], idx[(0, i + 1, 0)]])
+        faces.append([idx[(0, i + 1, nz - 1)], idx[(1, i + 1, nz - 1)],
+                      idx[(1, i, nz - 1)], idx[(0, i, nz - 1)]])
+    for j in range(nz - 1):                       # the nose and tail ends
+        faces.append([idx[(0, 0, j + 1)], idx[(1, 0, j + 1)], idx[(1, 0, j)], idx[(0, 0, j)]])
+        faces.append([idx[(0, nx - 1, j)], idx[(1, nx - 1, j)],
+                      idx[(1, nx - 1, j + 1)], idx[(0, nx - 1, j + 1)]])
+    p = MeshProgram().mesh(verts=verts, faces=faces)
+    if n_smooth:
+        p.crease({"by": "sharp", "angle": crease_angle}, weight=float(n_smooth))
+        p.subdivide(levels=int(n_smooth))
+    return p
+
+
 def arch(cx, r, z0, n=9):
     """The wheel-arch notch in a body's side outline: an arc from (cx-r, z0) up over the
     wheel and back down to (cx+r, z0), in the direction a CCW bottom edge runs."""
@@ -791,13 +850,13 @@ def van():
     plausible place is nearer the truth than nothing at all."""
     FA, RA, WR = 1.92, -1.58, 0.36
     Y = 0.99
-    side = ([[-2.95, 0.64], [-2.90, 0.50], [-2.30, 0.47]]
-            + arch(RA, 0.50, 0.47)
-            + [[-0.30, 0.47]]
-            + arch(FA, 0.50, 0.47)
-            + [[2.52, 0.48], [2.74, 0.56], [2.86, 0.78], [2.88, 1.06], [2.72, 1.26],
-               [2.36, 1.40], [2.16, 1.52], [1.58, 2.14], [1.30, 2.26], [-2.76, 2.28],
-               [-2.95, 2.10]])
+    lower = ([[-2.95, 0.64], [-2.90, 0.50], [-2.30, 0.47]]
+             + arch(RA, 0.50, 0.47)
+             + [[-0.30, 0.47]]
+             + arch(FA, 0.50, 0.47)
+             + [[2.52, 0.48], [2.74, 0.56], [2.86, 0.78]])
+    upper = [[-2.95, 2.10], [-2.76, 2.28], [1.30, 2.26], [1.58, 2.14], [2.16, 1.52],
+             [2.36, 1.40], [2.72, 1.26], [2.86, 1.06]]
 
     def hw(x, z):
         t = max(0.0, min(1.0, (z - 0.45) / 1.85))          # 0 at the sill, 1 at the roof
@@ -805,24 +864,18 @@ def van():
         return w * (1.0 - 0.36 * max(0.0, (x - 2.05) / 0.95) ** 2)   # the nose draws in
 
     p = MeshProgram()
-    # TUMBLEHOME: TRIED AND REVERTED. `loft` gives the body a width profile — narrower at
-    # the roof and the sill, fullest through the middle — which is a real property of a car
-    # and not of a box. It came out worse, and visibly: the side caps are ear-clipped
-    # TRIANGLES, and once the cap is curved rather than flat those long thin triangles meet
-    # at large angles, so the flank renders as diagonal facet bands and the roof and arches
-    # sag. Four attempts (two subdivision levels, one, none, then --smooth-angle 55) each
-    # softened it and none fixed it, because the fault is the cage: a lofted body wants an
-    # ALL-QUAD grid, and building that properly is a bigger change than this van is worth.
-    #
-    # What survived the experiment is the hardware, which is the part that was actually
-    # missing. Kept: handles, mirror arms with a head and a glass, grille slats, indicator,
-    # exhaust, window-frame trim.
-    p.place(prism(side, -Y, Y), material=BODY_WH)
+    # TUMBLEHOME, on a cage that can carry it. The first attempt extruded a silhouette
+    # polygon and capped the ends, and the caps had to be TRIANGULATED — Catmull-Clark on
+    # long thin triangles banded the flank with diagonal facets, and no amount of
+    # subdivision level or smooth-shading angle fixed it, because the fault was topological.
+    # loft_grid parameterises by x instead: one bottom edge and one top edge at every
+    # station, so the shell is a regular quad grid and subdivision does what it is for.
+    p.place(loft_grid(lower, upper, hw, n_smooth=2), material=BODY_WH)
     body = mat((0.235, 0.24, 0.25), 0.0, 0.42)
     trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
 
     def flank(x, z, out=0.0):
-        return Y + out
+        return hw(x, z) + out
     for s in (-1, 1):
         # the window band: one dark run from the cab door back, with body-colour pillars
         p.place(cbox(3.86, 0.03, 0.50, 0.012), at=[-0.70, s * flank(-0.70, 1.86, -0.012), 1.86],
@@ -890,13 +943,16 @@ def suv():
     spoiler, roof rails, a wiper, and the blue plate low in the middle."""
     FA, RA, WR = 1.40, -1.42, 0.34
     Y = 0.93
-    side = ([[-2.26, 0.56], [-2.20, 0.40], [-1.98, 0.36]]
-            + arch(RA, 0.46, 0.36)
-            + [[-0.20, 0.36]]
-            + arch(FA, 0.46, 0.36)
-            + [[2.08, 0.38], [2.26, 0.52], [2.32, 0.82], [2.18, 1.02], [1.52, 1.14],
-               [1.10, 1.26], [0.30, 1.64], [-0.90, 1.72], [-1.70, 1.64], [-2.02, 1.30],
-               [-2.24, 0.92]])
+    lower = ([[-2.26, 0.56], [-2.20, 0.40], [-1.98, 0.36]]
+             + arch(RA, 0.46, 0.36)
+             + [[-0.20, 0.36]]
+             + arch(FA, 0.46, 0.36)
+             # The nose keeps a little HEIGHT: where the lower and upper profiles meet
+             # exactly, the end rim collapses to zero-area quads and the kernel rejects
+             # the mesh, correctly.
+             + [[2.08, 0.38], [2.26, 0.50], [2.32, 0.62]])
+    upper = [[-2.26, 0.92], [-2.02, 1.30], [-1.70, 1.64], [-0.90, 1.72], [0.30, 1.64],
+             [1.10, 1.26], [1.52, 1.14], [2.18, 1.02], [2.32, 0.86]]
 
     def hw(x, z):
         t = max(0.0, min(1.0, (z - 0.36) / 1.36))
@@ -904,11 +960,11 @@ def suv():
         return w * (1.0 - 0.30 * max(0.0, (x - 1.5) / 0.9) ** 2
                     - 0.22 * max(0.0, (-1.4 - x) / 0.9) ** 2)
     p = MeshProgram()
-    p.place(prism(side, -Y, Y), material=BODY_WH)      # see van() on why not loft()
+    p.place(loft_grid(lower, upper, hw, n_smooth=2), material=BODY_WH)
     trim = mat((0.45, 0.455, 0.46), 0.0, 0.35)
 
     def flank(x, z, out=0.0):
-        return Y + out
+        return hw(x, z) + out
     for s in (-1, 1):
         for x, w in ((0.34, 0.82), (-0.60, 0.80), (-1.44, 0.44)):
             p.place(cbox(w, 0.03, 0.34, 0.010), at=[x, s * flank(x, 1.46, -0.010), 1.46],
