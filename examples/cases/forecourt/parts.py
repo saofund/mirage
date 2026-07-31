@@ -156,7 +156,13 @@ def loft(poly, half_width, n_smooth=0, crease_angle=20.0):
     threshold has to be LOW — 20 degrees, not 50. A vehicle's silhouette is mostly gentle
     turns, and at 50 only the few sharpest corners were held: the sill, the nose and the
     wheel-arch openings all melted into the body and it came out looking poured rather than
-    pressed. What should round is the cross-section, not the profile."""
+    pressed. What should round is the cross-section, not the profile.
+
+    One level, not two. The side caps are ear-clipped TRIANGLES and Catmull-Clark wants
+    quads: a second level spreads the triangulation's unevenness into visible diagonal
+    banding across a flat flank. One level rounds the arrises and leaves the panels alone,
+    which is all that was wanted. The proper fix is an all-quad lofted tube, and that is a
+    bigger change than this scene needs."""
     poly = [list(q) for q in poly]
     area = sum((poly[(i + 1) % len(poly)][0] - poly[i][0]) *
                (poly[(i + 1) % len(poly)][1] + poly[i][1]) for i in range(len(poly)))
@@ -798,7 +804,7 @@ def van():
         return w * (1.0 - 0.36 * max(0.0, (x - 2.05) / 0.95) ** 2)   # the nose draws in
 
     p = MeshProgram()
-    p.place(loft(side, hw, n_smooth=2), material=BODY_WH)
+    p.place(loft(side, hw, n_smooth=1), material=BODY_WH)
     body = mat((0.235, 0.24, 0.25), 0.0, 0.42)
     trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
     # Everything on the flank rides ON the loft. A constant offset leaves the glass hanging
@@ -856,6 +862,11 @@ def van():
     for x in (FA, RA):
         for s in (-1, 1):
             p.place(wheel(WR, 0.26), at=[x, s * flank(x, WR + 0.30, -0.14), WR])
+            # the arch flare: a dark lip round the opening, which is what makes a wheel sit
+            # IN a body rather than poke through its skirt
+            p.place(tube_along(arc([x, s * flank(x, WR + 0.34, -0.03), 0.47], 0.50,
+                                   8, 172, (1, 0, 0), (0, 0, 1), 10), 0.030, 7),
+                    material=mat((0.20, 0.205, 0.21), 0.0, 0.55))
     return p
 
 
@@ -881,7 +892,7 @@ def suv():
         return w * (1.0 - 0.30 * max(0.0, (x - 1.5) / 0.9) ** 2
                     - 0.22 * max(0.0, (-1.4 - x) / 0.9) ** 2)
     p = MeshProgram()
-    p.place(loft(side, hw, n_smooth=2), material=BODY_WH)
+    p.place(loft(side, hw, n_smooth=1), material=BODY_WH)
     trim = mat((0.45, 0.455, 0.46), 0.0, 0.35)
 
     def flank(x, z, out=0.0):
@@ -919,6 +930,9 @@ def suv():
     for x in (FA, RA):
         for s in (-1, 1):
             p.place(wheel(WR, 0.24), at=[x, s * flank(x, WR + 0.28, -0.13), WR])
+            p.place(tube_along(arc([x, s * flank(x, WR + 0.32, -0.02), 0.36], 0.46,
+                                   8, 172, (1, 0, 0), (0, 0, 1), 10), 0.028, 7),
+                    material=mat((0.18, 0.185, 0.19), 0.0, 0.55))
     return p
 
 
