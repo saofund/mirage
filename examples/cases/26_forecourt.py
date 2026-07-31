@@ -425,6 +425,11 @@ def main():
              # MIRAGE_DENOISE overrides so the filter can be A/B'd without editing the case.
              # It is a real suspect for the ground's missing contrast: an edge-avoiding filter
              # keeps EDGES, and low-amplitude texture is exactly what it cannot tell from noise.
+             # --smooth-angle 55, not the 30 default. A lofted vehicle flank is one curved
+             # surface whose ear-clipped triangles meet at more than 30 degrees, so the
+             # tracer was flat-shading it and the body came out banded in diagonal facets —
+             # a shading choice, not geometry. The bodywork is smooth; say so.
+             "--smooth-angle", "55",
              "--denoise", os.environ.get("MIRAGE_DENOISE", "2")]
     # The id AOV comes out of the SAME trace as the beauty pass, so the scorecard's masks
     # are the pixels it is scoring and not a re-render that drifted.

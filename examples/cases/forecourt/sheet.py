@@ -80,7 +80,7 @@ def render_part(name, spp=64, w=520, h=620):
                     "--w", str(w), "--h", str(h), "--threads", "14",
                     "--cam-eye", *[f"{v:.4f}" for v in eye],
                     "--cam-target", *[f"{v:.4f}" for v in ctr],
-                    "--cam-fov", "0.62", "--env", "0.85", "--sun", "0.30",
+                    "--cam-fov", "0.62", "--env", "0.85", "--sun", "0.30", "--smooth-angle", "55",
                     "--sun-dir", "0.35", "-0.5", "0.79", "--exposure", "1.25",
                     "--clamp", "2.0", "--denoise", "3"], check=True,
                    stdout=subprocess.DEVNULL)
