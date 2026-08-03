@@ -81,9 +81,9 @@ NAVY = (86, 118, 214)     # banners: 0.230, 0.335, 0.470, against the photograph
 SIGN_NAVY = (48, 76, 170)   # 0.578 too light, then 0.285 too dark, target 0.396
 SIGN_NAVY_D = (32, 52, 126)
 NAVY_D = (40, 62, 150)
-RED = (196, 48, 8)       # scarlet. The cabinet's FACE is this decal, not the RED material,
+RED = (152, 22, 6)       # scarlet. The cabinet's FACE is this decal, not the RED material,
                          # so lightening the material alone left it brown on screen.
-RED_D = (92, 20, 28)
+RED_D = (104, 14, 6)
 ORANGE = (172, 80, 34)
 YELLOW = (215, 165, 12)
 WHITE = (232, 232, 228)
