@@ -402,7 +402,13 @@ def grate_plinth(w=1.90, d=1.35, h=0.14):
     mirrors the sky between its bars — so it is built as bars, not as a grey lid."""
     p = MeshProgram()
     p.place(cbox(w, d, h, 0.018), at=[0, 0, h / 2], material=KERB)
-    p.place(cbox(w - 0.05, d - 0.05, 0.02, 0.006), at=[0, 0, h - 0.012], material=CONCRETE)
+    # What you see BETWEEN the bars of a grating is the void under it, which is shadow --
+    # not the concrete of the plinth. Painted CONCRETE, the gaps were as bright as the bars
+    # and the whole assembly read as a pale timber deck: the plinth's mask matched the
+    # reference's mean to 0.002 while looking nothing like it, because a grating's mean is
+    # made of bright metal and black gaps in equal measure, not of one mid grey.
+    p.place(cbox(w - 0.05, d - 0.05, 0.02, 0.006), at=[0, 0, h - 0.012],
+            material=mat((0.030, 0.031, 0.033), 0.0, 0.62))
     for sx, sy, dx, dy in [(w - 0.02, 0.045, 0, (d - 0.045) / 2), (w - 0.02, 0.045, 0, -(d - 0.045) / 2),
                            (0.045, d - 0.02, (w - 0.045) / 2, 0), (0.045, d - 0.02, -(w - 0.045) / 2, 0)]:
         p.place(cbox(sx, sy, 0.030, 0.006), at=[dx, dy, h + 0.005], material=WET_STEEL)  # rim
@@ -411,7 +417,7 @@ def grate_plinth(w=1.90, d=1.35, h=0.14):
     n = int((w - 0.13) / 0.065)                                       # the grating's bars
     for i in range(n):
         x = -(w - 0.13) / 2 + (i + 0.5) * (w - 0.13) / n
-        p.place(box(0.014, d - 0.10, 0.024), at=[x, 0, h + 0.003], material=WET_STEEL)
+        p.place(box(0.030, d - 0.10, 0.024), at=[x, 0, h + 0.003], material=WET_STEEL)
     for j in range(7):
         y = -(d - 0.10) / 2 + (j + 0.5) * (d - 0.10) / 7
         p.place(box(w - 0.13, 0.008, 0.014), at=[0, y, h - 0.004], material=WET_STEEL)
