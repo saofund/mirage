@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))   # so `forecourt` impo
 
 from forecourt import parts as P                                          # noqa: E402
 from forecourt.materials import (APRON, APRON_LT, BAY_BLUE, BAY_ORNG, BAY_SLATE,  # noqa: E402
-                                 DAMP, PUDDLE, PUDDLE_L,
+                                 DAMP, DAMP2, PUDDLE, PUDDLE_L,
                                  BLACK, CONCRETE, LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
                                  WASH_F, WHITE, YELLOW, YELLOWP, mat)
 from mirage.capture import default_render                                 # noqa: E402
@@ -198,9 +198,10 @@ def forecourt():
         # TWO TIERS. A puddle does not end at a line: outside the standing water there is a
         # margin of damp concrete where the film got too thin to hold, and that margin is
         # what stops the edge reading as a cut-out. Damp halo first, water inside it.
-        p.place(P.puddle(w * 1.30, d * 1.34, seed=i * 13 + 41, lobes=4),
-                at=[x0, y0, 0.008], rotate=[0, 0, rot], material=DAMP)
-        p.place(P.puddle(w, d, seed=i * 13 + 3, lobes=4), at=[x0, y0, 0.014],
+        for scale, mm, zz in ((1.65, DAMP2, 0.006), (1.28, DAMP, 0.009)):
+            p.place(P.puddle(w * scale, d * scale, seed=i * 13 + 41 + int(scale * 10), lobes=4),
+                    at=[x0, y0, zz], rotate=[0, 0, rot], material=mm)
+        p.place(P.puddle(w, d, seed=i * 13 + 3, lobes=4), at=[x0, y0, 0.013],
                 rotate=[0, 0, rot], material=m)
     p.place(P.drain_channel(15.0), at=[6.0, 8.05, 0], rotate=[0, 0, ANG])
     return p

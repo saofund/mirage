@@ -227,6 +227,17 @@ def _crack_net(res: int, seed: int, period: int, thresh: float, sharp: float = 1
     return np.clip((ridged - thresh) * sharp, 0, 1)
 
 
+def _streaks(res: int, seed: int, period: int, length: int, angle_frac: float = 0.18):
+    """High-frequency noise SMEARED along one direction — tyre tracks, broom finish, drag
+    marks. The thing a stack of isotropic fBm octaves cannot make and a real slab is covered
+    in: its fine detail has a grain, because everything that made it was moving."""
+    n = _fbm(res, period, 2, seed)
+    out = np.zeros_like(n)
+    for k in range(length):
+        out += np.roll(np.roll(n, k, axis=1), int(k * angle_frac), axis=0)
+    return out / length
+
+
 def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_base=0.72,
               contrast=1.0):
     """Damp concrete apron: pour-to-pour patchiness, staining, aggregate, hairline cracks.
@@ -257,10 +268,20 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     cracks = _crack_net(res, seed + 9, period=5, thresh=0.91) * crack
     st = _fbm(res, 4, 4, seed + 17)                    # damp areas
     wet_patch = np.clip((0.44 - st) * 1.8, 0, 1) ** 1.5
-    tone = (1.0 + contrast * (0.26 * (pour - 0.5)
-                              + 0.34 * stain * (mott - 0.5)
-                              + 0.40 * stain * (patch - 0.5)
-                              + 0.14 * (fine - 0.5)))
+    # THE SCALE MATTERS MORE THAN THE AMOUNT. Chasing a standard-deviation target put all
+    # this energy in the 1-3 m blobs, and side by side with the photograph that is leopard
+    # print: the reference's concrete is a fairly uniform grey covered in FINE directional
+    # marks — tyre tracks, broom finish, scratches — with the large-scale variation carried
+    # by wet and dry areas, which are now placed in the layout rather than painted in here.
+    # So the blob terms come down by two thirds and the fine, streaked ones go up.
+    scratch = _streaks(res, seed + 61, 120, 26)
+    tracks = _streaks(res, seed + 97, 34, 44, angle_frac=0.55)
+    tone = (1.0 + contrast * (0.09 * (pour - 0.5)
+                              + 0.12 * stain * (mott - 0.5)
+                              + 0.13 * stain * (patch - 0.5)
+                              + 0.26 * (fine - 0.5)
+                              + 0.30 * (scratch - 0.5)
+                              + 0.22 * stain * (tracks - 0.5)))
     base = np.stack(col, -1)[None, None] * np.clip(tone, 0.35, 1.9)[..., None]
     base = base * (1 - 0.22 * stain * wet_patch[..., None])
     base = base * (1 - 0.46 * stain * spill[..., None])       # oil, with an edge
@@ -273,10 +294,11 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     # carried 12% relative spread in albedo and the render showed 4% on screen. What makes a
     # real wet forecourt blotchy is that some of it is wetter than the rest, which is a
     # roughness field, and it modulates the big term instead of the small one.
-    rough = (rough_base - 0.10 * (mott - 0.5) - 0.34 * (patch - 0.5)
-             - wet * 0.55 * wet_patch - 0.28 * spill - 0.16 * drips + 0.06 * cracks)
+    rough = (rough_base - 0.06 * (mott - 0.5) - 0.14 * (patch - 0.5)
+             - 0.16 * (tracks - 0.5) - wet * 0.55 * wet_patch
+             - 0.28 * spill - 0.16 * drips + 0.06 * cracks)
     rough = np.clip(rough, 0.10, 0.98)
-    height = mott * 0.18 + fine * 0.16 - cracks * 0.8
+    height = mott * 0.10 + fine * 0.22 + scratch * 0.18 + tracks * 0.12 - cracks * 0.8
     normal = _normal_from_height(height, strength=0.9)
     return albedo, rough, normal
 
@@ -339,8 +361,9 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     # 2.5. (The denoiser was the obvious suspect and was innocent: rendered at 900 spp with
     # the filter OFF the ground's spread was 0.0201 against 0.0238 with it ON — slightly
     # LOWER, because demodulate/remodulate sharpens albedo edges rather than blurring them.)
-    col = col * (1.0 + 0.52 * (mott[..., None] - 0.5) + 0.78 * (patch[..., None] - 0.5)
-                 + 0.20 * (fine[..., None] - 0.5))
+    bstreak = _streaks(res, seed + 61, 90, 22)
+    col = col * (1.0 + 0.22 * (mott[..., None] - 0.5) + 0.26 * (patch[..., None] - 0.5)
+                 + 0.30 * (fine[..., None] - 0.5) + 0.30 * (bstreak[..., None] - 0.5))
     col = col * (1 - 0.26 * ruts[..., None])                        # the ruts
     col = col * (1 - 0.34 * marks[..., None])                       # scuffs, with edges
     col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
@@ -470,7 +493,8 @@ def _recipe_id(name: str) -> str:
     parts += [repr(c) for c in (fn.__code__.co_consts or ()) if c is not None]
     # and the generator it calls, so editing _leather() alone still invalidates
     for gen in (_wood, _veneer, _fabric, _plaster, _leather, _marble, _concrete, _asphalt,
-                _painted_bay, _crack_net, _painted_metal, _wall_tile, _normal_from_height, _fbm):
+                _painted_bay, _crack_net, _painted_metal, _wall_tile, _streaks,
+                _normal_from_height, _fbm):
         parts.append(gen.__name__)
         parts.append(hashlib.sha1(gen.__code__.co_code).hexdigest()[:8])
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]

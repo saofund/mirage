@@ -799,9 +799,9 @@ def puddle(w, d, seed=0, lobes=3, depth=0.006):
         cy = (rng[i * 3 + 1] - 0.5) * d * 0.45
         rx, ry = w * (0.34 + 0.22 * rng[i * 3 + 2]), d * (0.34 + 0.22 * rng[i * 3 + 5])
         poly = []
-        for k in range(26):
-            a0 = 2 * math.pi * k / 26
-            wob = 0.80 + 0.34 * rng[(i * 26 + k) % 60]
+        for k in range(40):
+            a0 = 2 * math.pi * k / 40
+            wob = 0.90 + 0.16 * rng[(i * 26 + k) % 60]
             poly.append([cx + rx * wob * math.cos(a0), cy + ry * wob * math.sin(a0)])
         n = len(poly)
         verts = [[x, y, 0.0] for x, y in poly] + [[x, y, depth] for x, y in poly]
