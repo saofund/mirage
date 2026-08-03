@@ -171,8 +171,8 @@ def forecourt():
     # including the concrete infill, and the ring would come out as a solid white pancake —
     # which is exactly what it had been doing.
     ring = MeshProgram()
-    ring.place(MeshProgram().cylinder(sides=72, radius=1.03, height=0.006), material=LINE_W)
-    ring.place(MeshProgram().cylinder(sides=72, radius=0.90, height=0.014), material=APRON)
+    ring.place(MeshProgram().cylinder(sides=80, radius=1.42, height=0.006), material=LINE_W)
+    ring.place(MeshProgram().cylinder(sides=80, radius=1.24, height=0.014), material=APRON)
     # the ring is painted around the island, so it moves with it
     p.place(ring, at=[PLACEMENTS()['island'][1][0] - 0.08,
                       PLACEMENTS()['island'][1][1] - 1.39, 0.004])

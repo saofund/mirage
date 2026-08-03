@@ -83,19 +83,19 @@ BAY_ORNG = mat((0.395, 0.108, 0.034), 0.0, 0.5, maps=TEX["bay_orange"], uv_scale
 BAY_SLATE = mat((0.09, 0.10, 0.115), 0.0, 0.5, maps=TEX["bay_slate"], uv_scale=4.5)
 LINE_W   = mat((0.40, 0.405, 0.40), 0.0, 0.60)      # damp, grimy paint — never bright white
 YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
-CONCRETE = mat((0.17, 0.175, 0.170), 0.0, 0.72)
+CONCRETE = mat((0.245, 0.246, 0.238), 0.0, 0.72)
 
 # ---- structure ------------------------------------------------------------------ #
 CLAD      = mat((0.300, 0.302, 0.300), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
 WALL_TILE = mat((0.86, 0.865, 0.85), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.15)
 SEAM      = mat((0.24, 0.24, 0.24), 0.0, 0.45)      # the shadow line between clad panels
-KERB      = mat((0.24, 0.24, 0.235), 0.0, 0.66)
+KERB      = mat((0.395, 0.378, 0.345), 0.0, 0.66)
 
 # ---- painted metal and plastic --------------------------------------------------- #
 PUMP_BL   = mat((0.094, 0.118, 0.238), 0.0, 0.30)   # the dispenser's blue
 PUMP_BL_D = mat((0.054, 0.074, 0.176), 0.0, 0.34)
 PANEL_WH  = mat((0.80, 0.80, 0.79), 0.0, 0.34)
-RED       = mat((0.325, 0.052, 0.062), 0.0, 0.40)
+RED       = mat((0.285, 0.055, 0.078), 0.0, 0.40)
 RED_D     = mat((0.30, 0.028, 0.020), 0.0, 0.44)
 ORANGE_S  = mat((0.72, 0.26, 0.03), 0.0, 0.42)
 YELLOW    = mat((0.74, 0.55, 0.03), 0.0, 0.44)
@@ -110,7 +110,7 @@ HOSE      = mat((0.043, 0.047, 0.056), 0.0, 0.55)
 STEEL     = mat((0.52, 0.52, 0.53), 1.0, 0.36)
 # The island's grating stands in the rain. Bright dry steel turned it into a chrome
 # serving tray; wet steel is darker and glossier, and reads as the thing in the photo.
-WET_STEEL = mat((0.470, 0.442, 0.392), 1.0, 0.42)   # 0.249 against 0.368: overshot down
+WET_STEEL = mat((0.505, 0.462, 0.398), 1.0, 0.42)   # 0.249 against 0.368: overshot down
 GALV      = mat((0.235, 0.238, 0.240), 1.0, 0.48)      # galvanised: duller than bright steel
 CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.18)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.42)
