@@ -437,7 +437,10 @@ def dispenser():
     one orange band and a small white plate, and nothing else. The display, the grade
     buttons and the keypad live on the flank, where the photo puts them; crowding them onto
     the front because they are pleasant to model is how a part stops matching its subject."""
-    W, D, H = 1.00, 0.66, 1.46
+    # 1.36 wide, not 1.00. Measured off the close-up: the photograph's blue cabinet spans
+    # 1.4x the lightbox above it (240 px against 170), and this one spanned 0.76x — the
+    # blue clads the column's whole base, it is not a slim pump parked in front of it.
+    W, D, H = 1.36, 0.72, 1.46
     p = MeshProgram()
     p.place(cbox(W, D, H, 0.016), at=[0, 0, H / 2], material=PUMP_BL)
     p.place(cbox(W + 0.03, D + 0.03, 0.05, 0.010), at=[0, 0, 0.04], material=PUMP_BL_D)
@@ -489,22 +492,23 @@ def hose_tangle(side=1):
     jit = [0.00, 0.13, -0.07, 0.17, 0.04, -0.11, 0.09, 0.20]
     for k in range(8):
         t = k / 7.0
-        a = [side * 0.54, -0.19 + 0.048 * k, 1.33]
-        b = [side * 0.50, 0.00 + 0.026 * k, 1.14 - 0.028 * k]
+        a = [side * 0.72, -0.19 + 0.048 * k, 1.33]
+        b = [side * 0.68, 0.00 + 0.026 * k, 1.14 - 0.028 * k]
         p.place(tube_along(hose_path(a, b, side, out=0.44 + 0.16 * t + jit[k],
                                      drop=0.78 + 0.20 * t - jit[k] * 0.5,
                                      lean=0.07 + 0.19 * t), 0.0215, 8), material=HOSE)
         p.place(cyl(0.030, 0.055, 10), at=a, rotate=[0, 90, 0], material=STEEL)
     for k in range(2):                                # the rigid risers behind the loops
-        p.place(tube_along([[side * 0.56, 0.26 + 0.08 * k, 0.06],
-                            [side * 0.56, 0.26 + 0.08 * k, 1.24]], 0.024, 8), material=HOSE)
+        p.place(tube_along([[side * 0.74, 0.28 + 0.08 * k, 0.06],
+                            [side * 0.74, 0.28 + 0.08 * k, 1.24]], 0.024, 8), material=HOSE)
     return p
 
 
 def fire_cabinet():
     """灭火器箱 — the extinguisher cabinet: two doors, a lid, hinges, a latch, and the
     printed front that makes it a fire cabinet rather than a red box."""
-    W, D, H = 0.40, 0.28, 0.74
+    # the cabinet reaches about 40% of the blue body in the reference; it was reaching 25%
+    W, D, H = 0.46, 0.30, 0.92
     p = MeshProgram()
     p.place(cbox(W, D, H, 0.010), at=[0, 0, H / 2], material=RED)
     p.place(cbox(W - 0.02, 0.012, H - 0.04, 0.004), at=[0, -D / 2 - 0.004, H / 2],
@@ -580,7 +584,7 @@ def hazard_rail(width=1.83, height=0.72, r=0.045):
     return p
 
 
-def clad_column(w=1.16, d=0.88, h=8.0):
+def clad_column(w=1.06, d=0.84, h=8.0):
     """The canopy column — the largest single object in the frame, and the last one that
     was still a painted box.
 
