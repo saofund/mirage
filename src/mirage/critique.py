@@ -60,6 +60,7 @@ DETAIL_FLOOR = 0.25  # below this an object is reading flat
 CAST_TOL = 0.020     # chromaticity (r-b) difference that starts to read as a colour cast
 FILL_FLOOR = 0.28    # below this the mask is too thin for its reference pixels to be it
 MISALIGN_PX = 18.0   # above this chamfer the mask is not on its subject at all
+SAT_TOL = 0.055      # relative chroma difference that starts to read as the wrong paint
 
 
 def _detail(srgb, mask, blur=1.2):
@@ -111,6 +112,35 @@ def _fill(mask):
     return float(len(ys)) / float(max(bbox, 1))
 
 
+def _sat(srgb, mask, blur=1.6):
+    """Mean (max-min)/(max+min) over a mask — how COLOURED the object is, independent of its
+    brightness and of which colour it is.
+
+    The card measured level (`tone`), hue direction (`cast`) and structure (`detail`) and
+    could still pass an object that is visibly the wrong paint. Case 26's fire cabinet is
+    scarlet in the reference and rendered brown-red; its tone sat 0.027 out and its cast
+    0.018 warm, both inside tolerance, for every round anyone counted. Nothing was wrong with
+    how bright it was or which way its hue leaned. There was simply not enough colour in it.
+
+    Relative, not absolute (max-min), because a saturated paint in shadow has little absolute
+    chroma and would otherwise read as grey — which is exactly the mistake that would send
+    somebody off to brighten a shadow that is correct.
+
+    BLURRED first, for the same reason `_detail` is. A CCTV frame carries chroma noise over
+    every square inch and a path-traced image does not — worse, this scene's imaging chain
+    deliberately blurs chroma, because that is what a Bayer sensor and a JPEG both do.
+    Unblurred, the metric counts the reference's colour speckle as colour and reports
+    virtually every object in the frame as undersaturated, which is a statement about the
+    reference's compression rather than about any paint."""
+    s = np.clip(srgb, 0, None)
+    if blur:
+        from PIL import ImageFilter
+        im = Image.fromarray((np.clip(s, 0, 1) * 255).astype(np.uint8))
+        s = np.asarray(im.filter(ImageFilter.GaussianBlur(radius=blur)), float) / 255.0
+    hi, lo = s.max(-1), s.min(-1)
+    return float(((hi - lo) / (hi + lo + 1e-6))[mask].mean())
+
+
 def _cast(srgb, mask):
     """Red-minus-blue in CHROMATICITY — bounded in [-1, 1], so a dark region cannot post a
     cast of -2.5 the way a luma-normalised difference did."""
@@ -157,6 +187,7 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
         d_ren, d_ref = _detail(ren, mask), _detail(ref, mask)
         ratio = d_ren / max(d_ref, 1e-6)
         c_ren, c_ref = _cast(ren, mask), _cast(ref, mask)
+        s_ren, s_ref = _sat(ren, mask), _sat(ref, mask)
         # severity: how wrong, weighted by how much of the frame it is. sqrt so a huge
         # background does not drown a foreground object that is completely wrong.
         area_w = (px / total) ** 0.5
@@ -171,9 +202,11 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
         thin = _fill(mask) < FILL_FLOOR or misaligned
         tone_err = 0.0 if thin else max(abs(t_ren - t_ref) - TONE_TOL, 0.0)
         cast_err = 0.0 if misaligned else max(abs(c_ren - c_ref) - CAST_TOL, 0.0)
+        sat_err = 0.0 if (misaligned or thin) else max(abs(s_ren - s_ref) - SAT_TOL, 0.0)
         sev = area_w * (tone_err * 6.0
                         + max(DETAIL_FLOOR - ratio, 0.0) * 4.0
-                        + cast_err * 20.0)
+                        + cast_err * 20.0
+                        + sat_err * 8.0)
         flags = []
         if misaligned:
             flags.append(f"misaligned {cham_px:.0f}px (tone/cast not scored)")
@@ -189,8 +222,11 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
             flags.append("noisy (raise spp?)")
         if not misaligned and abs(c_ren - c_ref) > CAST_TOL:
             flags.append("cool cast" if c_ren < c_ref else "warm cast")
+        if sat_err > 0:
+            flags.append("undersaturated" if s_ren < s_ref else "oversaturated")
         rows.append({"name": name, "px": px, "tone": round(t_ren, 3), "tone_ref": round(t_ref, 3),
                      "detail": round(ratio, 3), "cast": round(c_ren - c_ref, 3),
+                     "sat": round(s_ren, 3), "sat_ref": round(s_ref, 3),
                      "chamfer_px": cham.get(name, {}).get("chamfer_px"),
                      "severity": round(sev, 4), "flags": flags})
     rows.sort(key=lambda r: -r["severity"])
@@ -199,13 +235,13 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
 
 def report(rows, width=96):
     """The scorecard as a table — worst first, so the top line is the next piece of work."""
-    out = [f"{'object':<14}{'px':>8}{'tone':>7}{'ref':>7}{'detail':>8}{'cast':>7}"
-           f"{'cham':>7}{'sev':>7}  flags", "-" * width]
+    out = [f"{'object':<14}{'px':>8}{'tone':>7}{'ref':>7}{'detail':>7}{'cast':>7}"
+           f"{'sat':>6}{'ref':>6}{'cham':>7}{'sev':>7}  flags", "-" * width]
     for r in rows:
         c = "  -  " if r["chamfer_px"] is None else f"{r['chamfer_px']:5.1f}"
         out.append(f"{r['name']:<14}{r['px']:>8,}{r['tone']:>7.3f}{r['tone_ref']:>7.3f}"
-                   f"{r['detail']:>8.2f}{r['cast']:>+7.3f}{c:>7}{r['severity']:>7.3f}"
-                   f"  {', '.join(r['flags'])}")
+                   f"{r['detail']:>7.2f}{r['cast']:>+7.3f}{r['sat']:>6.3f}{r['sat_ref']:>6.3f}"
+                   f"{c:>7}{r['severity']:>7.3f}  {', '.join(r['flags'])}")
     worst = [r for r in rows if r["flags"]]
     out.append("-" * width)
     # ONE number for the whole frame. The per-object rows say WHAT to fix; this says whether

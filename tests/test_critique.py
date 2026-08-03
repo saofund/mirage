@@ -116,3 +116,53 @@ def test_plate_paints_only_the_render(tmp_path):
     rows = scorecard(ren, np.clip(ren + 0.3, 0, 1), ids, names=["a"], chamfer=False)
     p = plate(ren, ids, rows, tmp_path / "plate.png", names=["a"])
     assert p.exists()
+
+
+def test_undersaturation_is_named():
+    """A second colour axis. `cast` says which way the hue leans; this says how much colour
+    there is, so a washed-out paint is reported as needing chroma, not a hue shift."""
+    import numpy as np
+    from mirage.critique import scorecard
+    ids = np.zeros((60, 60), np.uint16); ids[10:50, 10:50] = 1
+    ref = np.full((60, 60, 3), 0.30); ren = np.full((60, 60, 3), 0.30)
+    ref[10:50, 10:50] = (0.51, 0.23, 0.06)          # the fire cabinet's scarlet, measured
+    ren[10:50, 10:50] = (0.54, 0.31, 0.12)          # and what the render was putting there
+    r = scorecard(ren, ref, ids, names=["box"], chamfer=False)[0]
+    assert r["sat"] < r["sat_ref"] - 0.05
+    assert "undersaturated" in r["flags"]
+    assert r["severity"] > 0
+
+
+def test_oversaturation_is_named_too():
+    import numpy as np
+    from mirage.critique import scorecard
+    ids = np.zeros((60, 60), np.uint16); ids[10:50, 10:50] = 1
+    ref = np.full((60, 60, 3), 0.30); ren = np.full((60, 60, 3), 0.30)
+    ref[10:50, 10:50] = (0.54, 0.31, 0.12)
+    ren[10:50, 10:50] = (0.51, 0.23, 0.06)
+    r = scorecard(ren, ref, ids, names=["box"], chamfer=False)[0]
+    assert "oversaturated" in r["flags"]
+
+
+def test_saturation_passes_a_matching_colour():
+    import numpy as np
+    from mirage.critique import scorecard
+    ids = np.zeros((60, 60), np.uint16); ids[10:50, 10:50] = 1
+    ref = np.full((60, 60, 3), 0.30); ren = np.full((60, 60, 3), 0.30)
+    ref[10:50, 10:50] = (0.62, 0.10, 0.10)
+    ren[10:50, 10:50] = (0.62, 0.10, 0.10)
+    r = scorecard(ren, ref, ids, names=["box"], chamfer=False)[0]
+    assert "undersaturated" not in r["flags"]
+    assert "oversaturated" not in r["flags"]
+
+
+def test_saturation_is_relative_so_shadow_is_not_grey():
+    """Half the light on the same paint must not read as the wrong paint."""
+    import numpy as np
+    from mirage.critique import scorecard
+    ids = np.zeros((60, 60), np.uint16); ids[10:50, 10:50] = 1
+    ref = np.full((60, 60, 3), 0.30); ren = np.full((60, 60, 3), 0.30)
+    ref[10:50, 10:50] = (0.60, 0.20, 0.10)
+    ren[10:50, 10:50] = (0.30, 0.10, 0.05)          # same paint, half the light
+    r = scorecard(ren, ref, ids, names=["box"], chamfer=False)[0]
+    assert "undersaturated" not in r["flags"]
