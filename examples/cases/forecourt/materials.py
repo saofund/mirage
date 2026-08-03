@@ -95,7 +95,7 @@ KERB      = mat((0.395, 0.378, 0.345), 0.0, 0.66)
 PUMP_BL   = mat((0.094, 0.118, 0.238), 0.0, 0.30)   # the dispenser's blue
 PUMP_BL_D = mat((0.054, 0.074, 0.176), 0.0, 0.34)
 PANEL_WH  = mat((0.80, 0.80, 0.79), 0.0, 0.34)
-RED       = mat((0.285, 0.055, 0.078), 0.0, 0.40)
+RED       = mat((0.258, 0.058, 0.092), 0.0, 0.40)
 RED_D     = mat((0.30, 0.028, 0.020), 0.0, 0.44)
 ORANGE_S  = mat((0.72, 0.26, 0.03), 0.0, 0.42)
 YELLOW    = mat((0.74, 0.55, 0.03), 0.0, 0.44)
@@ -110,13 +110,13 @@ HOSE      = mat((0.043, 0.047, 0.056), 0.0, 0.55)
 STEEL     = mat((0.52, 0.52, 0.53), 1.0, 0.36)
 # The island's grating stands in the rain. Bright dry steel turned it into a chrome
 # serving tray; wet steel is darker and glossier, and reads as the thing in the photo.
-WET_STEEL = mat((0.505, 0.462, 0.398), 1.0, 0.42)   # 0.249 against 0.368: overshot down
+WET_STEEL = mat((0.520, 0.455, 0.372), 1.0, 0.42)   # tone landed; -0.076 cast remains
 GALV      = mat((0.235, 0.238, 0.240), 1.0, 0.48)      # galvanised: duller than bright steel
 CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.18)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.42)
 BODY_WH   = mat((0.62, 0.628, 0.645), 0.0, 0.22)     # vehicle paint: brighter and glossier
 GLASS     = mat((0.05, 0.06, 0.07), 0.0, 0.07)
-SHUTTER   = mat((0.262, 0.302, 0.368), 0.35, 0.40)
+SHUTTER   = mat((0.252, 0.298, 0.376), 0.35, 0.40)
 SHUTTER_D = mat((0.150, 0.165, 0.195), 0.35, 0.46)
 NAVY      = mat((0.205, 0.225, 0.38), 0.0, 0.44)
 TAIL_RED  = mat((0.42, 0.03, 0.02), 0.0, 0.22)

@@ -261,8 +261,8 @@ def yard():
             p.place(P.bin_(), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG])
         else:
             p.place(P.broom(1.4), at=[c[0], c[1], 0], rotate=[0, 9, YARD_ANG])
-    for dx, dy, top in [(-5.2, -1.15, (0.10, 0.11, 0.13)), (0.9, -1.05, (0.30, 0.30, 0.31)),
-                        (1.5, -1.15, (0.14, 0.15, 0.30))]:
+    for dx, dy, top in [(-5.2, -1.15, (0.13, 0.115, 0.105)), (0.9, -1.05, (0.32, 0.30, 0.27)),
+                        (1.5, -1.15, (0.22, 0.17, 0.12))]:
         c = at(dx, dy)
         p.place(P.person(1.70, top), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG + 150],
                 mark="people")
