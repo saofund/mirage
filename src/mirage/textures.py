@@ -271,20 +271,24 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     cracks = _crack_net(res, seed + 9, period=5, thresh=0.91) * crack
     st = _fbm(res, 4, 4, seed + 17)                    # damp areas
     wet_patch = np.clip((0.44 - st) * 1.8, 0, 1) ** 1.5
-    # THE SCALE MATTERS MORE THAN THE AMOUNT. Chasing a standard-deviation target put all
-    # this energy in the 1-3 m blobs, and side by side with the photograph that is leopard
-    # print: the reference's concrete is a fairly uniform grey covered in FINE directional
-    # marks — tyre tracks, broom finish, scratches — with the large-scale variation carried
-    # by wet and dry areas, which are now placed in the layout rather than painted in here.
-    # So the blob terms come down by two thirds and the fine, streaked ones go up.
-    scratch = _streaks(res, seed + 61, 120, 26)
-    tracks = _streaks(res, seed + 97, 34, 44, angle_frac=0.55)
-    tone = (1.0 + contrast * (0.09 * (pour - 0.5)
-                              + 0.12 * stain * (mott - 0.5)
-                              + 0.13 * stain * (patch - 0.5)
-                              + 0.26 * (fine - 0.5)
-                              + 0.34 * (scratch - 0.5)
-                              + 0.40 * stain * (tracks - 0.5)))
+    # THE SHAPE MATTERS MORE THAN THE AMOUNT, which took two rounds to learn. First the
+    # energy was in 1-3 m blobs and the ground was leopard print. Then the blobs came down,
+    # the streaks went up, and a band-by-band measurement said the render now carried
+    # 1.07/0.99/1.11 of the photograph's variation at 3-8, 8-20 and 20-50 px. The right
+    # amount, and it still looked like granite -- because that statistic cannot tell a long
+    # thin mark from a round blob, and the reference's variation is almost entirely LINEAR:
+    # tyre tracks a couple of metres long, hairline cracks, straight slab joints, drag marks.
+    # Isotropic fBm cannot make any of those however carefully it is weighted, so the three
+    # blob terms drop to a fifth and the streaks get long enough to read as tracks: at this
+    # resolution and uv_scale, 17 cm wide and about 1.7 m long.
+    scratch = _streaks(res, seed + 61, 150, 70)
+    tracks = _streaks(res, seed + 97, 26, 210, angle_frac=0.35)
+    tone = (1.0 + contrast * (0.030 * (pour - 0.5)
+                              + 0.030 * stain * (mott - 0.5)
+                              + 0.035 * stain * (patch - 0.5)
+                              + 0.110 * (fine - 0.5)
+                              + 0.360 * (scratch - 0.5)
+                              + 0.440 * stain * (tracks - 0.5)))
     base = np.stack(col, -1)[None, None] * np.clip(tone, 0.35, 1.9)[..., None]
     base = base * (1 - 0.22 * stain * wet_patch[..., None])
     base = base * (1 - 0.46 * stain * spill[..., None])       # oil, with an edge
