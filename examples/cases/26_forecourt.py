@@ -83,10 +83,13 @@ def PLACEMENTS():
         # photomatch.chamfer_per_object documents ("an object sitting in clutter is near
         # SOMETHING no matter where you put it"). The overlay caught it; the number did not.
         "rail":    (lambda: P.hazard_rail(1.88, 0.74), [-3.16, -2.30, 0], ANG - 1),
-        # Measured off its SILL, unprojected at the sill's own height rather than onto
-        # z=0 — which stretched a 5.95 m van to 9.3 m and pushed it four metres too far
-        # away, because an elevated point read as ground always lands beyond itself.
-        "van":     (P.van, [7.9, 14.6, 0], -14.5),
+        # Solved by `layout.fit_contacts` (see `place.py --measure`) against two things the
+        # photograph states outright: the line its tyres' contacts trace, row 109 at column
+        # 760 falling to 94 at 1100, and the columns its body spans, 762..1120. 1.2 px rms.
+        # It had been three and a half metres too close to the camera all along, which is why
+        # it loomed over the frame and covered shutter bases the reference shows — and the
+        # scorecard reported its chamfer as 5.3 px, the best of any vehicle in the scene.
+        "van":     (P.van, [9.81, 18.15, 0], -4.07),
         "suv":     (P.suv, [-5.3, 4.4, 0], 96),
         "hump":    (lambda: P.speed_hump(3.6, 0.52), [12.6, 5.0, 0], 26),
         "facade":  (lambda: P.facade(24.0, 5.2), [8.5, 19.13, 0], YARD_ANG),

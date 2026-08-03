@@ -3,6 +3,12 @@
 //   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N] [--threads N]
 //                 [--cam-eye X Y Z] [--cam-target X Y Z] [--cam-up X Y Z] [--cam-fov RAD]
 //                 [--denoise [N]] [--smooth-angle DEG | --flat] [--sky-tint R G B]
+//                 [--ids IDS.pgm --id-tags a,b,c] [--depth DEPTH.pfm]
+//
+// --depth writes a metric float depth map (PFM) from the centre ray: distance along the
+// view axis, in the op-log's world units, 0 where nothing was hit. With --ids and a K
+// that is what turns a render into a labelled point cloud, which is what a synthetic
+// 6D-pose dataset is made of.
 //
 // --sky-tint multiplies the sky gradient per channel. The built-in sky is a cool blue,
 // which tints EVERY surface at once — a whole render drifts blue and no single object
@@ -49,7 +55,7 @@ static std::string read_file(const std::string& path) {
 }
 
 int main(int argc, char** argv) {
-    std::string oplog, out = "render.ppm", ids_out;
+    std::string oplog, out = "render.ppm", ids_out, depth_out;
     RenderSettings s;
     Camera cam;  // default 3/4 exterior view; any field overridable via --cam-* below
     for (int i = 1; i < argc; ++i) {
@@ -72,6 +78,10 @@ int main(int argc, char** argv) {
         else if (a == "--sun-dir") s.sun_dir = next3(s.sun_dir);
         else if (a == "--sky-tint") s.sky_tint = next3(s.sky_tint);   // warm/cool the sky fill
         else if (a == "--sky-flat") s.sky_flat = next(s.sky_flat);   // 1 = uniform overcast dome
+        else if (a == "--no-ground") s.ground = false;   // drop the implicit floor: a close-up
+                                                         // of a part brings its own surroundings,
+                                                         // and a floor plane through them is a
+                                                         // wall the scene never had.
         else if (a == "--haze") s.haze_dist = next(s.haze_dist);    // aerial perspective, 1/e metres
         else if (a == "--exposure") s.exposure = next(s.exposure);
         else if (a == "--clamp") s.clamp_indirect = next(s.clamp_indirect);
@@ -94,6 +104,7 @@ int main(int argc, char** argv) {
         else if (a == "--smooth-angle") s.smooth_angle = next(s.smooth_angle);  // shade smooth below DEG
         else if (a == "--flat") s.smooth_angle = 0.0;                           // faceted (geometric normals)
         else if (a == "--ids" && i + 1 < argc) ids_out = argv[++i];        // object-id AOV (PGM)
+        else if (a == "--depth" && i + 1 < argc) { depth_out = argv[++i]; s.want_depth = true; }
         else if (a == "--id-tags" && i + 1 < argc) {   // comma-separated face tags, IN ORDER
             std::string t = argv[++i], cur;
             for (char ch : t) { if (ch == ',') { if (!cur.empty()) s.id_tags.push_back(cur); cur.clear(); }
@@ -142,6 +153,19 @@ int main(int argc, char** argv) {
             f.write(b, 2);
         }
         std::printf("wrote %s (object ids: %zu tags)\n", ids_out.c_str(), s.id_tags.size());
+    }
+    if (!depth_out.empty()) {
+        // 32-bit float PFM ("Pf" = one channel). Metric, in the op-log's own world units,
+        // 0 where the ray hit nothing. Deliberately float and not a scaled 16-bit integer:
+        // the whole point of this AOV is to be unprojected through an intrinsic K into a
+        // point cloud, and a quantisation step is a quantisation step in the cloud.
+        // PFM stores rows BOTTOM-UP and a negative scale means little-endian.
+        std::ofstream f(depth_out, std::ios::binary);
+        f << "Pf\n" << img.w << " " << img.h << "\n-1.0\n";
+        for (int y = img.h - 1; y >= 0; --y)
+            f.write(reinterpret_cast<const char*>(img.depth.data() + std::size_t(y) * img.w),
+                    std::streamsize(sizeof(float) * img.w));
+        std::printf("wrote %s (depth, metric float)\n", depth_out.c_str());
     }
     return 0;
 }

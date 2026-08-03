@@ -80,6 +80,15 @@ struct RenderSettings {
     // tests stayed green. An explicit order cannot do that.
     std::vector<std::string> id_tags;
 
+    // Depth AOV. Rides the same centre ray as the id AOV and the denoiser's G-buffer.
+    // What it records is the hit's distance ALONG THE VIEW AXIS, not along the ray —
+    // that is what a depth camera reports and what unprojecting with an intrinsic K
+    // expects, and the two differ by 1/cos(angle from the axis), which at this
+    // renderer's default 40 degree field is 8% at the corners. A dataset built from
+    // ray distance would come out with a subtly domed world, and every plane fitted
+    // to it would come out curved.
+    bool want_depth = false;
+
     // Depth of field: a thin-lens camera. aperture = lens radius in world units (0 = a
     // pinhole, everything sharp); focus_dist = distance to the sharp plane (0 = auto, the
     // distance from the eye to the camera target). Larger aperture -> shallower focus, more
@@ -135,6 +144,9 @@ struct Image {
     // lets a loss ask "is THIS object right" instead of "is the picture right": one
     // number per placed object rather than one for the frame.
     std::vector<int> ids;
+    // Metric depth per pixel from the CENTRE ray: distance along the view axis in world
+    // units, 0 where nothing was hit. Empty unless RenderSettings::want_depth was set.
+    std::vector<float> depth;
 };
 
 // Path-trace the mesh. Deterministic for a given (mesh, camera, settings): each

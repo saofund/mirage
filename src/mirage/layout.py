@@ -7,7 +7,7 @@ audited, cannot be improved without re-eyeballing everything, and quietly absorb
 that belong somewhere else — an object that is two metres too far away gets "fixed" by
 making it bigger, and now two things are wrong.
 
-Two tools, and they are the fast/slow pair:
+Three tools:
 
   :func:`overlay` — project the parts' footprints and boxes onto the photograph and draw
   them. No render, no lighting, milliseconds. This is the gate to run after every layout
@@ -20,6 +20,11 @@ Two tools, and they are the fast/slow pair:
   rasterises in numpy rather than path-tracing, so a trial is a millisecond and a hundred
   placements per object are free. This is the same loss `chamfer_per_object` reports; here
   it is being minimised instead of read.
+
+  :func:`fit_contacts` — the one to reach for when the object is a VEHICLE against a wall,
+  or anything else sitting in clutter. It ignores the edge map entirely and fits two things
+  the photograph states without ambiguity: where the object's ground contacts are, and which
+  columns it spans. See its docstring for why that is worth a whole second fitter.
 
 The camera is held FIXED. It was solved from four measured corners and a rectangle
 constraint, and letting an object-placement search push it around would trade a known
@@ -37,8 +42,8 @@ from PIL import Image, ImageDraw
 from .photomatch import edge_map, edt
 from .solve import Camera, project
 
-__all__ = ["Camera", "project_mesh", "silhouette", "outline", "fit_ground", "overlay",
-           "bbox_wire", "footprint"]
+__all__ = ["Camera", "project_mesh", "silhouette", "outline", "fit_ground", "fit_contacts",
+           "ground_line", "overlay", "bbox_wire", "footprint"]
 
 
 def project_mesh(cam: Camera, verts, w: int, h: int):
@@ -145,6 +150,115 @@ def fit_ground(make, cam: Camera, field, w: int, h: int, *, dx=(-1.5, 1.5), dy=(
             log(f"  round {r + 1}: {best_s:.2f} px at dx={best[0]:+.2f} dy={best[1]:+.2f} "
                 f"yaw={best[2]:+.1f}")
     return best, best_s, s0
+
+
+def ground_line(rows, cols=None):
+    """Least-squares (k, c) for the contact line `row = k * col + c`.
+
+    `rows` is a mapping {column: row} — the bottom of the dark band under a vehicle, read off
+    the photograph column by column. Pass the ones that are clean; drop any column with a
+    cone, a puddle edge or another object's shadow in it, because one bad column tilts the
+    line and the line is what sets the object's DISTANCE."""
+    if cols is None:
+        cols, rows = list(rows.keys()), list(rows.values())
+    A = np.stack([np.asarray(cols, float), np.ones(len(cols))], 1)
+    k, c = np.linalg.lstsq(A, np.asarray(rows, float), rcond=None)[0]
+    return float(k), float(c)
+
+
+def fit_contacts(verts, cam: Camera, w: int, h: int, *, columns, line, start=(0, 0, 0, 1),
+                 near_flank=True, z_eps=0.06, top_row=None, scale_range=(0.85, 1.18),
+                 rounds=200, log=None):
+    """Solve an object's (x, y, yaw, scale) from its GROUND CONTACTS and its column span.
+
+    `fit_ground` minimises chamfer against the photograph's edges, and its own docstring
+    warns that an object in clutter is near something wherever you put it. Case 26's van is
+    the worst case of that: it stands against a roller-shuttered wall whose every slat is an
+    edge, and it sat three and a half metres too close to the camera for weeks while the
+    scorecard reported its chamfer as 5.3 px — the best of any vehicle in the scene — and its
+    tone, colour and cast all inside tolerance. Nothing that reads the render could see it.
+
+    This reads the photograph instead, and only where the photograph is unambiguous:
+
+    * `line` (k, c) — the contact line, `row = k*col + c`, traced from the bottom of the dark
+      band under the object. Tyres touch z=0, which is the one height in a photograph that
+      needs no assumption, so this fixes the DISTANCE outright. Unprojecting a sill or a
+      waistline instead requires assuming its height, and an elevated point read as ground
+      always lands beyond itself.
+    * `columns` (x0, x1) — the first and last column the object covers. With the distance
+      pinned, this is a LENGTH.
+    * `top_row` — an optional row the object's top must not fall below. Use it when the
+      photograph crops the object (case 26's van has its roof cut off by the frame): that is
+      real information about height, and without it the fit is free to shrink.
+
+    Only the NEAR flank's contacts are fitted. Both flanks touch the ground, but the far one
+    is a vehicle's width further away and so projects several pixels higher; asking one line
+    to fit both leaves a residual no placement can remove, and the fit pays for it in yaw —
+    measured on the van, 9.0 px of residual and 5 degrees of error that vanish when the far
+    flank is dropped.
+
+    Returns (x, y, yaw_deg, scale, rms_px).
+    """
+    V = np.asarray(verts, float)
+    x0, x1 = columns
+    k, c = line
+    # ABSOLUTE z, not `min() + z_eps`. Relative would silently accept an object whose lowest
+    # point is not on the ground — a hanging sign, a body handed over without its wheels —
+    # and then fit its distance as though it were, which is precisely the error this function
+    # exists to prevent. Parts here are authored with their base at z=0; anything else should
+    # say so by failing.
+    ground = V[:, 2] < z_eps
+    if near_flank:
+        ground = ground & (V[:, 1] < V[:, 1].mean())
+    if ground.sum() < 4:
+        raise ValueError(f"only {int(ground.sum())} ground contacts below z={z_eps} — pass the "
+                         "object in its own frame with its base on z=0, or raise z_eps")
+    G = V[ground]
+
+    def put(p, pts):
+        x, y, yaw, s = p
+        a = np.radians(yaw)
+        R = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1.0]])
+        return (pts * s) @ R.T + np.array([x, y, 0.0])
+
+    def cost(p):
+        if not (scale_range[0] <= p[3] <= scale_range[1]):
+            return np.inf
+        q = project(cam, put(p, V), w, h)
+        q = q[np.isfinite(q).all(1)]
+        if len(q) < 32:
+            return np.inf
+        g = project(cam, put(p, G), w, h)
+        g = g[np.isfinite(g).all(1)]
+        if len(g) < 4:
+            return np.inf
+        d = g[:, 1] - (k * g[:, 0] + c)
+        e = (q[:, 0].min() - x0) ** 2 + (q[:, 0].max() - x1) ** 2 + 4.0 * float((d ** 2).mean())
+        n = 6.0
+        if top_row is not None:
+            e += 2.0 * max(0.0, q[:, 1].min() - top_row) ** 2
+            n += 2.0
+        return e / n
+
+    best = np.asarray(start, float)
+    step = np.array([1.2, 1.6, 8.0, 0.04])
+    fb = cost(best)
+    for _ in range(rounds):
+        moved = False
+        for i in range(4):
+            for sgn in (+1, -1):
+                cand = best.copy(); cand[i] += sgn * step[i]
+                fc = cost(cand)
+                if fc < fb - 1e-9:
+                    best, fb, moved = cand, fc, True
+        if not moved:
+            step *= 0.55
+            if step.max() < 1e-4:
+                break
+        if log:
+            log(f"  {best[0]:+.2f} {best[1]:+.2f} yaw {best[2]:+.1f} x{best[3]:.3f}"
+                f"  rms {np.sqrt(fb):.2f}px")
+    return float(best[0]), float(best[1]), float(best[2]), float(best[3]), float(np.sqrt(fb))
 
 
 def footprint(verts, z_eps=0.06):

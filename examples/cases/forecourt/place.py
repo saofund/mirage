@@ -2,6 +2,7 @@
 
     uv run python -m forecourt.place            # draw the overlay, report per-object chamfer
     uv run python -m forecourt.place --fit van suv hump   # search x/y/yaw for those objects
+    uv run python -m forecourt.place --contacts van      # fit x/y/yaw/scale to ground contacts
     uv run python -m forecourt.place --measure           # measure the photograph itself
 
 The overlay is the thing to look at after moving anything: every object's ground footprint
@@ -16,7 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
-from mirage.layout import Camera, fit_ground, overlay, reference_field, score, silhouette
+from mirage.layout import (Camera, fit_contacts, fit_ground, ground_line, overlay,
+                           reference_field, score, silhouette)
 from mirage.meshlang import MeshProgram
 
 from . import parts as P
@@ -111,6 +113,11 @@ def main():
             print("== ground luminance, photo vs render =="); measure_profile(c, cam, ref, ren)
         return
 
+    if "--contacts" in sys.argv:
+        for name in (want or list(CONTACTS)):
+            fit_by_contacts(c, cam, items, name)
+        return
+
     if "--fit" in sys.argv:
         for name in (want or list(items)):
             build, at, yaw = items[name]
@@ -137,6 +144,48 @@ def main():
     print("wrote", p)
 
 
+
+
+# --------------------------------------------------------------------------- #
+# fitting to ground contacts
+# --------------------------------------------------------------------------- #
+# What the photograph says about a vehicle, read off it once and written down: the columns
+# its body spans, and the row where the dark band under it meets the ground, column by
+# column. Nothing here is a guess about height, which is the whole point -- tyres touch z=0
+# and nothing else in the picture is that certain. `layout.fit_contacts` does the rest.
+#
+# The van is why this exists. It sat 3.5 m too close to the camera through a dozen rounds of
+# material and tone work while the scorecard called its chamfer the best of any vehicle in
+# the scene, because it stands against a wall of roller-shutter slats and an object in
+# clutter is near SOMETHING wherever you put it.
+CONTACTS = {
+    "van": dict(
+        columns=(762.0, 1120.0),
+        rows={760: 109, 780: 110, 800: 109, 820: 109, 840: 107, 860: 106, 880: 105,
+              920: 101, 940: 100, 960: 99, 980: 98, 1000: 97, 1020: 97, 1060: 95, 1080: 95,
+              1100: 94},
+        top_row=0.0,                 # the frame cuts its roof off, which bounds its height
+    ),
+}
+
+
+def fit_by_contacts(c, cam, items, name):
+    spec = CONTACTS.get(name)
+    if spec is None:
+        print(f"{name}: no measured contacts -- add them to CONTACTS")
+        return
+    build, at, yaw = items[name]
+    verts, _ = _mesh(build())
+    line = ground_line(spec["rows"])
+    x, y, g, sc, rms = fit_contacts(verts, cam, W, H, columns=spec["columns"], line=line,
+                                    start=(at[0], at[1], yaw, 1.0),
+                                    top_row=spec.get("top_row"))
+    print(f"{name}: ground line row = {line[0]:+.5f} * col {line[1]:+.2f}")
+    print(f"  was  at=[{at[0]:.2f}, {at[1]:.2f}]  yaw={yaw:.2f}")
+    print(f"  fit  at=[{x:.2f}, {y:.2f}]  yaw={g:.2f}  scale={sc:.4f}   rms={rms:.2f}px")
+    if abs(sc - 1.0) > 0.04:
+        print(f"  NOTE scale {sc:.3f} -- the PART is the wrong size, not the placement; "
+              f"rebuild it and re-fit rather than scaling it here")
 
 
 # --------------------------------------------------------------------------- #
