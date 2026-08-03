@@ -166,9 +166,9 @@ def ground_line(rows, cols=None):
     return float(k), float(c)
 
 
-def fit_contacts(verts, cam: Camera, w: int, h: int, *, columns, line, start=(0, 0, 0, 1),
-                 near_flank=True, z_eps=0.06, top_row=None, scale_range=(0.85, 1.18),
-                 rounds=200, log=None):
+def fit_contacts(verts, cam: Camera, w: int, h: int, *, columns=(None, None), line=None,
+                 rows=(None, None), start=(0, 0, 0, 1), near_flank=True, z_eps=0.06,
+                 top_row=None, scale_range=(0.85, 1.18), rounds=200, log=None):
     """Solve an object's (x, y, yaw, scale) from its GROUND CONTACTS and its column span.
 
     `fit_ground` minimises chamfer against the photograph's edges, and its own docstring
@@ -187,9 +187,20 @@ def fit_contacts(verts, cam: Camera, w: int, h: int, *, columns, line, start=(0,
       always lands beyond itself.
     * `columns` (x0, x1) — the first and last column the object covers. With the distance
       pinned, this is a LENGTH.
+    * `rows` (top, bottom) — the first and last ROW it covers, for when the contact line
+      cannot be read. Case 26's SUV is that case: it stands at the frame's left edge, half
+      behind a kerb and in shade, and the dark band under it belongs partly to the kerb's
+      own shadow. Its roof and its bumper are unambiguous where its contacts are not, and
+      the two rows carry the distance nearly as well.
     * `top_row` — an optional row the object's top must not fall below. Use it when the
       photograph crops the object (case 26's van has its roof cut off by the frame): that is
       real information about height, and without it the fit is free to shrink.
+
+    Any of `columns[0]`, `columns[1]`, `rows[0]`, `rows[1]` may be None, and an object the
+    frame CLIPS needs that: the van's roof leaves the top of the picture and the SUV's tail
+    leaves the left of it, so those bounds are properties of the frame, not of the object,
+    and constraining to them would drag the fit toward the edge. Supply what the photograph
+    actually shows and leave the rest out.
 
     Only the NEAR flank's contacts are fitted. Both flanks touch the ground, but the far one
     is a vehicle's width further away and so projects several pixels higher; asking one line
@@ -201,19 +212,23 @@ def fit_contacts(verts, cam: Camera, w: int, h: int, *, columns, line, start=(0,
     """
     V = np.asarray(verts, float)
     x0, x1 = columns
-    k, c = line
+    r0, r1 = rows
+    if line is None and r0 is None and r1 is None:
+        raise ValueError("nothing to fit distance with — pass `line`, or `rows`")
     # ABSOLUTE z, not `min() + z_eps`. Relative would silently accept an object whose lowest
     # point is not on the ground — a hanging sign, a body handed over without its wheels —
     # and then fit its distance as though it were, which is precisely the error this function
     # exists to prevent. Parts here are authored with their base at z=0; anything else should
     # say so by failing.
-    ground = V[:, 2] < z_eps
-    if near_flank:
-        ground = ground & (V[:, 1] < V[:, 1].mean())
-    if ground.sum() < 4:
-        raise ValueError(f"only {int(ground.sum())} ground contacts below z={z_eps} — pass the "
-                         "object in its own frame with its base on z=0, or raise z_eps")
-    G = V[ground]
+    G = None
+    if line is not None:
+        ground = V[:, 2] < z_eps
+        if near_flank:
+            ground = ground & (V[:, 1] < V[:, 1].mean())
+        if ground.sum() < 4:
+            raise ValueError(f"only {int(ground.sum())} ground contacts below z={z_eps} — pass "
+                             "the object in its own frame with its base on z=0, or raise z_eps")
+        G = V[ground]
 
     def put(p, pts):
         x, y, yaw, s = p
@@ -228,17 +243,24 @@ def fit_contacts(verts, cam: Camera, w: int, h: int, *, columns, line, start=(0,
         q = q[np.isfinite(q).all(1)]
         if len(q) < 32:
             return np.inf
-        g = project(cam, put(p, G), w, h)
-        g = g[np.isfinite(g).all(1)]
-        if len(g) < 4:
-            return np.inf
-        d = g[:, 1] - (k * g[:, 0] + c)
-        e = (q[:, 0].min() - x0) ** 2 + (q[:, 0].max() - x1) ** 2 + 4.0 * float((d ** 2).mean())
-        n = 6.0
+        e, n = 0.0, 0.0
+        for want, got in ((x0, q[:, 0].min()), (x1, q[:, 0].max()),
+                          (r0, q[:, 1].min()), (r1, q[:, 1].max())):
+            if want is not None:
+                e += (got - want) ** 2
+                n += 1.0
+        if G is not None:
+            g = project(cam, put(p, G), w, h)
+            g = g[np.isfinite(g).all(1)]
+            if len(g) < 4:
+                return np.inf
+            d = g[:, 1] - (line[0] * g[:, 0] + line[1])
+            e += 4.0 * float((d ** 2).mean())
+            n += 4.0
         if top_row is not None:
             e += 2.0 * max(0.0, q[:, 1].min() - top_row) ** 2
             n += 2.0
-        return e / n
+        return e / max(n, 1.0)
 
     best = np.asarray(start, float)
     step = np.array([1.2, 1.6, 8.0, 0.04])

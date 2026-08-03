@@ -104,3 +104,33 @@ def test_needs_contacts():
     v[:, 2] += 3.0                                   # nothing touching the ground
     with pytest.raises(ValueError):
         fit_contacts(v, CAM, W, H, columns=(700, 1100), line=(-0.05, 148.0), z_eps=0.01)
+
+
+def observe_rows(v, x, y, yaw, s=1.0):
+    q = project(CAM, put(v, x, y, yaw, s), W, H)
+    return (float(q[:, 1].min()), float(q[:, 1].max()))
+
+
+def test_rows_alone_recover_distance():
+    """For an object whose contact line the photograph hides — behind a kerb, in shade."""
+    v = box()
+    cols, _ = observe(v, 9.8, 18.1, 0.0)
+    rows = observe_rows(v, 9.8, 18.1, 0.0)
+    x, y, yaw, sc, rms = fit_contacts(v, CAM, W, H, columns=cols, rows=rows,
+                                      start=(9.8, 13.0, 0.0, 1.0))
+    assert y == pytest.approx(18.1, abs=0.4)
+    assert rms < 2.0
+
+
+def test_a_clipped_bound_can_be_left_out():
+    """The frame clips the object, so one bound describes the frame and not the object."""
+    v = box()
+    cols, line = observe(v, 9.8, 18.1, 0.0)
+    x, y, yaw, sc, rms = fit_contacts(v, CAM, W, H, columns=(None, cols[1]), line=line,
+                                      start=(8.0, 15.0, 0.0, 1.0))
+    assert y == pytest.approx(18.1, abs=0.4)
+
+
+def test_needs_something_to_fit_distance_with():
+    with pytest.raises(ValueError):
+        fit_contacts(box(), CAM, W, H, columns=(700, 1100))
