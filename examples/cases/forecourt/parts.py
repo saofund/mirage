@@ -437,14 +437,18 @@ def dispenser():
     one orange band and a small white plate, and nothing else. The display, the grade
     buttons and the keypad live on the flank, where the photo puts them; crowding them onto
     the front because they are pleasant to model is how a part stops matching its subject."""
-    # 1.36 wide, not 1.00. Measured off the close-up: the photograph's blue cabinet spans
-    # 1.4x the lightbox above it (240 px against 170), and this one spanned 0.76x — the
-    # blue clads the column's whole base, it is not a slim pump parked in front of it.
-    W, D, H = 1.36, 0.72, 1.46
+    # 1.22 wide. The 1.36 came from reading a close-up by eye; scanning both frames on the
+    # same rows says the blue body is 168 px across in the reference and was 192 here, with
+    # the lightbox above it matching to 4 px (116 against 112) and so serving as the ruler.
+    W, D, H = 1.22, 0.72, 1.46
     p = MeshProgram()
     p.place(cbox(W, D, H, 0.016), at=[0, 0, H / 2], material=PUMP_BL)
     p.place(cbox(W + 0.02, D + 0.02, 0.035, 0.008), at=[0, 0, 0.028], material=PUMP_BL_D)
-    p.place(cbox(W + 0.02, D + 0.02, 0.018, 0.006), at=[0, 0, H - 0.006], material=PANEL_WH)
+    # The cap is DARK, not white. It is 18 mm thick, but a camera 4.5 m above it sees its
+    # whole 1.22 x 0.74 top face foreshortened into a broad band -- and painted PANEL_WH that
+    # band was the brightest thing on the island, a white shelf between the sign and the body
+    # that the reference does not have. Its top is the same paint as its sides.
+    p.place(cbox(W + 0.02, D + 0.02, 0.018, 0.006), at=[0, 0, H - 0.006], material=PUMP_BL_D)
     for s in (-1, 1):                                                 # corner pilasters
         for t in (-1, 1):
             p.place(cbox(0.034, 0.034, H - 0.05, 0.010),

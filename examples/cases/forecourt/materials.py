@@ -103,13 +103,19 @@ CONCRETE = mat((0.245, 0.246, 0.238), 0.0, 0.72)
 CLAD      = mat((0.300, 0.302, 0.300), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
 WALL_TILE = mat((0.86, 0.865, 0.85), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.15)
 SEAM      = mat((0.24, 0.24, 0.24), 0.0, 0.45)      # the shadow line between clad panels
-# The worst single item on the scorecard for several rounds: the plinth assembly reading
-# 0.053 cool, and the kerb is most of its pixels. Warmed by that much rather than guessed at.
-KERB      = mat((0.409, 0.379, 0.330), 0.0, 0.66)
+# Sampled on the kerb's own front face -- world y=-2.02, z=0.07, seventeen points along it --
+# the reference reads 0.436/0.409/0.364 and the render read 0.316/0.298/0.258. Not a cast: it
+# was simply 0.113 too dark, and the aggregate "plinth cool" flag was the grating's blue-grey
+# outvoting it. The grating itself measures within 0.034 and is left alone.
+KERB      = mat((0.530, 0.496, 0.440), 0.0, 0.66)
 
 # ---- painted metal and plastic --------------------------------------------------- #
-PUMP_BL   = mat((0.094, 0.118, 0.238), 0.0, 0.30)   # the dispenser's blue
-PUMP_BL_D = mat((0.054, 0.074, 0.176), 0.0, 0.34)
+# Sampled on the body ABOVE the fire cabinet -- below it the samples land on red, not blue.
+# The reference's blue/red ratio there is 2.7 and the render's was 1.7: an overcast dome adds
+# the same broad white to every surface, so a saturated paint has to start further out than
+# its measured display colour to arrive at it.
+PUMP_BL   = mat((0.070, 0.105, 0.290), 0.0, 0.30)   # the dispenser's blue
+PUMP_BL_D = mat((0.040, 0.065, 0.215), 0.0, 0.34)
 PANEL_WH  = mat((0.80, 0.80, 0.79), 0.0, 0.34)
 RED       = mat((0.215, 0.062, 0.115), 0.0, 0.40)
 RED_D     = mat((0.30, 0.028, 0.020), 0.0, 0.44)
