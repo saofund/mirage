@@ -87,6 +87,8 @@ BAY_SLATE = mat((0.09, 0.10, 0.115), 0.0, 0.5, maps=TEX["bay_slate"], uv_scale=4
 # continuously under the water instead of stopping at its edge.
 PUDDLE   = mat((0.088, 0.091, 0.096), 0.0, 0.07, maps=TEX["forecourt_wet"], uv_scale=5.5)
 PUDDLE_L = mat((0.125, 0.128, 0.133), 0.0, 0.14, maps=TEX["forecourt_wet"], uv_scale=5.5)
+# the margin: damp, not wet. Half way between the apron and the water in both channels.
+DAMP     = mat((0.150, 0.154, 0.158), 0.0, 0.30, maps=TEX["forecourt_wet"], uv_scale=5.5)
 LINE_W   = mat((0.40, 0.405, 0.40), 0.0, 0.60)      # damp, grimy paint — never bright white
 YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
 CONCRETE = mat((0.245, 0.246, 0.238), 0.0, 0.72)
