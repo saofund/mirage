@@ -454,7 +454,7 @@ def main():
              # exactly that. The tint below takes it to (0.425, 0.412, 0.398) -- overcast
              # white, a touch warm -- and --env drops by the same luminance ratio so the
              # exposure that was already measured right does not move.
-             "--sky-tint", "1.667", "1.248", "0.829", "--sky-flat", "0.80",
+             "--sky-tint", "1.595", "1.246", "0.868", "--sky-flat", "0.80",
              # Aerial perspective, and a hypothesis that was HALF WRONG. The table flagged
              # every distant DARK object as too dark while distant BRIGHT ones were fine,
              # which looks exactly like missing haze -- so haze went in at 130 m, and total

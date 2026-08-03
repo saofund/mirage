@@ -95,7 +95,7 @@ KERB      = mat((0.24, 0.24, 0.235), 0.0, 0.66)
 PUMP_BL   = mat((0.070, 0.105, 0.315), 0.0, 0.30)   # the dispenser's blue
 PUMP_BL_D = mat((0.046, 0.068, 0.205), 0.0, 0.34)
 PANEL_WH  = mat((0.80, 0.80, 0.79), 0.0, 0.34)
-RED       = mat((0.50, 0.045, 0.030), 0.0, 0.40)
+RED       = mat((0.40, 0.048, 0.045), 0.0, 0.40)
 RED_D     = mat((0.30, 0.028, 0.020), 0.0, 0.44)
 ORANGE_S  = mat((0.72, 0.26, 0.03), 0.0, 0.42)
 YELLOW    = mat((0.74, 0.55, 0.03), 0.0, 0.44)
@@ -106,18 +106,18 @@ RUBBER    = mat((0.020, 0.020, 0.022), 0.0, 0.78)
 HUMP      = mat((0.115, 0.115, 0.120), 0.0, 0.70)
 # Fuel hose is near-black rubber. It was lifted to 0.125 chasing a tone target that was
 # really a blend of hose and forecourt (see critique._fill) and came out grey.
-HOSE      = mat((0.048, 0.048, 0.051), 0.0, 0.55)
+HOSE      = mat((0.043, 0.047, 0.056), 0.0, 0.55)
 STEEL     = mat((0.52, 0.52, 0.53), 1.0, 0.36)
 # The island's grating stands in the rain. Bright dry steel turned it into a chrome
 # serving tray; wet steel is darker and glossier, and reads as the thing in the photo.
-WET_STEEL = mat((0.44, 0.445, 0.44), 1.0, 0.34)
-GALV      = mat((0.34, 0.348, 0.355), 1.0, 0.46)      # galvanised: duller than bright steel
+WET_STEEL = mat((0.55, 0.545, 0.525), 1.0, 0.34)
+GALV      = mat((0.235, 0.238, 0.240), 1.0, 0.48)      # galvanised: duller than bright steel
 CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.18)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.42)
-BODY_WH   = mat((0.83, 0.835, 0.84), 0.0, 0.22)     # vehicle paint: brighter and glossier
+BODY_WH   = mat((0.62, 0.628, 0.645), 0.0, 0.22)     # vehicle paint: brighter and glossier
 GLASS     = mat((0.05, 0.06, 0.07), 0.0, 0.07)
-SHUTTER   = mat((0.315, 0.325, 0.335), 0.35, 0.40)
-SHUTTER_D = mat((0.175, 0.18, 0.19), 0.35, 0.46)
+SHUTTER   = mat((0.275, 0.310, 0.360), 0.35, 0.40)
+SHUTTER_D = mat((0.150, 0.165, 0.195), 0.35, 0.46)
 NAVY      = mat((0.190, 0.215, 0.40), 0.0, 0.44)
 TAIL_RED  = mat((0.42, 0.03, 0.02), 0.0, 0.22)
 LAMP      = mat((0.70, 0.68, 0.62), 0.0, 0.14)
@@ -132,7 +132,7 @@ SIGN_FACE["emission"] = [0.045, 0.045, 0.044]  # a LIGHTBOX: lit from inside, no
 FIREBOX_F  = face_decal(DEC["fire_cabinet"], 0.38, 0.70, 0.012, base=(0.50, 0.045, 0.030),
                         roughness=0.40)
 BUCKET_F   = face_decal(DEC["fire_bucket"], 0.28, 0.20, 0.30, centre=(0.0, 0.0, 0.175),
-                        base=(0.46, 0.47, 0.48), metallic=0.7, roughness=0.45)
+                        base=(0.235, 0.238, 0.240), metallic=0.7, roughness=0.48)
 WETSIGN_F  = face_decal(DEC["wet_floor"], 0.34, 0.62, 0.024, base=(0.60, 0.47, 0.04),
                         roughness=0.45)
 WASH_F     = face_decal(DEC["wash_banner"], 1.30, 1.76, 0.02, base=(0.03, 0.055, 0.20),
