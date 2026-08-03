@@ -193,15 +193,21 @@ def forecourt():
     # 0.17 against 0.55 — this scene was wet in the wrong places by as much as it was wet at
     # all. A texture can only make a surface uniformly damp; water collects where the slab
     # falls away, so it belongs in the LAYOUT.
+    # ...and then three more puddles were GUESSED into the middle of it, which undid the
+    # measurement. Sampling ground luma on a world grid, photograph against render: the open
+    # forecourt from y=5 to y=12 reads 0.58..0.71 in the reference and 0.33..0.43 here, a
+    # third of a stop too dark over most of the frame's area. Where no puddle lies -- (5, 8) --
+    # the same two images agree to 0.026, so the apron material was never the problem. The
+    # reference is wet in a BAND in front of the shop, y 13..15, and dry everywhere in front
+    # of it. Two puddles, both in that band, and no others.
     for i, (x0, y0, w, d, rot, m) in enumerate([(9.0, 13.2, 15.0, 3.6, ANG, PUDDLE),
-                                               (2.0, 13.0, 9.0, 2.8, ANG, PUDDLE),
-                                               (11.0, 7.2, 5.4, 3.2, ANG + 8, PUDDLE_L),
-                                               (7.2, 3.0, 3.8, 2.8, ANG - 6, PUDDLE_L),
-                                               (-1.0, 5.2, 2.6, 3.2, 4, PUDDLE_L)]):
+                                               (2.0, 13.0, 9.0, 2.8, ANG, PUDDLE)]):
         # TWO TIERS. A puddle does not end at a line: outside the standing water there is a
         # margin of damp concrete where the film got too thin to hold, and that margin is
         # what stops the edge reading as a cut-out. Damp halo first, water inside it.
-        for scale, mm, zz in ((1.65, DAMP2, 0.006), (1.28, DAMP, 0.009)):
+        # 1.35x, not 1.65x: at 1.65 the outer halo on the big band reached y=10, two metres
+        # into concrete the photograph shows dry.
+        for scale, mm, zz in ((1.35, DAMP2, 0.006), (1.16, DAMP, 0.009)):
             p.place(P.puddle(w * scale, d * scale, seed=i * 13 + 41 + int(scale * 10), lobes=4),
                     at=[x0, y0, zz], rotate=[0, 0, rot], material=mm)
         p.place(P.puddle(w, d, seed=i * 13 + 3, lobes=4), at=[x0, y0, 0.013],
