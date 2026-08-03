@@ -83,7 +83,7 @@ def PLACEMENTS():
         # its chamfer doing it, because it landed in the hose tangle -- exactly the failure
         # photomatch.chamfer_per_object documents ("an object sitting in clutter is near
         # SOMETHING no matter where you put it"). The overlay caught it; the number did not.
-        "rail":    (lambda: P.hazard_rail(1.88, 0.74), [-3.16, -2.30, 0], ANG - 1),
+        "rail":    (lambda: P.hazard_rail(2.20, 0.74), [-3.16, -2.30, 0], ANG - 1),
         # Solved by `layout.fit_contacts` (see `place.py --measure`) against two things the
         # photograph states outright: the line its tyres' contacts trace, row 109 at column
         # 760 falling to 94 at 1100, and the columns its body spans, 762..1120. 1.2 px rms.

@@ -498,7 +498,11 @@ def hose_tangle(side=1):
         t = k / 7.0
         a = [side * 0.72, -0.19 + 0.048 * k, 1.33]
         b = [side * 0.68, 0.00 + 0.026 * k, 1.14 - 0.028 * k]
-        p.place(tube_along(hose_path(a, b, side, out=0.44 + 0.16 * t + jit[k],
+        # `out` measured, not chosen. The dispenser is 1.22 m across and spans 179 px, so the
+        # scale here is 147 px/m; the reference's loops reach 74 px past the body on one side
+        # and 95 on the other, which is 0.50 to 0.65 m. These reached 0.80, and a hose bowing
+        # two thirds of a metre off the flank reads as handlebars rather than as slack.
+        p.place(tube_along(hose_path(a, b, side, out=0.30 + 0.12 * t + jit[k] * 0.7,
                                      drop=0.78 + 0.20 * t - jit[k] * 0.5,
                                      lean=0.07 + 0.19 * t), 0.0215, 8), material=HOSE)
         p.place(cyl(0.030, 0.055, 10), at=a, rotate=[0, 90, 0], material=STEEL)
@@ -578,7 +582,9 @@ def hazard_rail(width=1.83, height=0.72, r=0.045):
             + arc([-hw + b, 0, height - b], b, 180, 90, (1, 0, 0), (0, 0, 1), 5)[1:]
             + arc([hw - b, 0, height - b], b, 90, 0, (1, 0, 0), (0, 0, 1), 5)
             + [[hw, 0, 0.0]])
-    p = banded_tube(path, r, [YELLOW, BLACK], band=0.155, sides=12)
+    # 0.24 m bands, not 0.155: counted off the reference, the hoop carries about nine
+    # alternations across its span, and at 0.155 it carried fourteen -- a barber's pole.
+    p = banded_tube(path, r, [YELLOW, BLACK], band=0.24, sides=12)
     p.place(tube_along([[-hw + 0.02, 0, height * 0.52], [hw - 0.02, 0, height * 0.52]], r * 0.62, 10),
             material=BLACK)                                            # the mid rail
     p.place(tube_along([[0.02, 0, 0.0], [0.02, 0, height * 0.55]], r * 0.72, 10), material=YELLOW)
