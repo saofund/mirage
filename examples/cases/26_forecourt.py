@@ -200,8 +200,14 @@ def forecourt():
     # the same two images agree to 0.026, so the apron material was never the problem. The
     # reference is wet in a BAND in front of the shop, y 13..15, and dry everywhere in front
     # of it. Two puddles, both in that band, and no others.
-    for i, (x0, y0, w, d, rot, m) in enumerate([(9.0, 13.2, 15.0, 3.6, ANG, PUDDLE),
-                                               (2.0, 13.0, 9.0, 2.8, ANG, PUDDLE)]):
+    # Both measured off a 0.75 m world grid of the reference's ground luma, wet being
+    # anything under 0.45 where the dry apron reads 0.62..0.88:
+    #   x 2.5..6,   y 12.8..15.2   (0.31..0.43)
+    #   x 10..16,   y 11.5..14.3   (0.20..0.43)
+    # and dry everywhere in front of them. The fifteen-metre band that used to run across
+    # here covered x 2..16 at y 13, where the photograph reads 0.49 and 0.64.
+    for i, (x0, y0, w, d, rot, m) in enumerate([(4.2, 14.0, 3.6, 2.3, ANG, PUDDLE),
+                                               (13.2, 12.9, 6.4, 2.5, ANG, PUDDLE)]):
         # TWO TIERS. A puddle does not end at a line: outside the standing water there is a
         # margin of damp concrete where the film got too thin to hold, and that margin is
         # what stops the edge reading as a cut-out. Damp halo first, water inside it.

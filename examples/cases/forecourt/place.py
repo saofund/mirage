@@ -109,6 +109,7 @@ def main():
         ren = np.asarray(_I.open(OUT / "hero.png").convert("RGB"), float) / 255             if (OUT / "hero.png").exists() else None
         print("== painted regions ==");    measure_paint(c, cam, ref)
         print("== the building line =="); measure_yard_line(c, cam, ref)
+        print("== ground luminance on a world grid =="); measure_ground_grid(cam, ref, ren)
         if ren is not None:
             print("== ground luminance, photo vs render =="); measure_profile(c, cam, ref, ren)
         return
@@ -267,6 +268,45 @@ def measure_profile(c, cam, ref, ren, x=6.0):
         tot += abs(u - v); n += 1
         print(f"  y={y:5.1f}  photo {u:.3f}   render {v:.3f}   {v - u:+.3f}")
     print(f"  mean |delta| = {tot / max(n, 1):.3f}")
+
+
+def measure_ground_grid(cam, ref, ren=None, x=(-1.0, 15.0), y=(2.0, 17.0), step=1.5,
+                        wet=0.45):
+    """Ground luma sampled on a WORLD grid, photograph beside render. A map, not a profile.
+
+    `measure_profile` walks one line into the distance and was enough to catch a whole
+    material being the wrong brightness. It is not enough to catch a material being the wrong
+    brightness in the wrong PLACE, and that is the more common error: this scene carried five
+    puddles, two of them measured and three of them put where the frame looked like it wanted
+    one, and the three covered most of a forecourt the photograph shows dry -- a third of a
+    stop over the largest area in the picture, and the single biggest reason it did not look
+    like the reference at a glance.
+
+    Read the map for two things. Where the render is uniformly off, suspect the material.
+    Where it is off in patches, suspect the layout -- and the patches' world coordinates are
+    right there to place against."""
+    from mirage.solve import project
+    xs = np.arange(x[0], x[1] + 1e-6, step)
+    ys = np.arange(y[0], y[1] + 1e-6, step)
+    L = lambda img: np.asarray(img, float) @ [0.2126, 0.7152, 0.0722]
+    A, B = L(ref), (L(ren) if ren is not None else None)
+    print("       " + " ".join(f"x={v:<5.1f}" for v in xs) + "     (* = wet, under %.2f)" % wet)
+    for yy in ys:
+        pts = project(cam, np.array([[xx, yy, 0.0] for xx in xs]), W, H)
+        row = []
+        for px, py in pts:
+            if not np.isfinite([px, py]).all():
+                row.append("  .   "); continue
+            a0, b0 = int(round(px)), int(round(py))
+            if not (0 <= a0 < W and 0 <= b0 < H):
+                row.append("  .   "); continue
+            w = slice(max(0, b0 - 3), b0 + 4), slice(max(0, a0 - 3), a0 + 4)
+            u = float(A[w].mean())
+            if B is None:
+                row.append(("*" if u < wet else " ") + f"{u:.2f} ")
+            else:
+                row.append(("*" if u < wet else " ") + f"{u:.2f}/{float(B[w].mean()):.2f}")
+        print(f"y={yy:5.1f} " + " ".join(row))
 
 
 def _gp(cam, px, py, z=0.0):
