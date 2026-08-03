@@ -456,13 +456,20 @@ _LIBRARY = {
     # glazes it, and you go on seeing what is underneath.
     "forecourt_wet":      lambda: _concrete(RES, 101, (0.088, 0.091, 0.096), crack=0.22, stain=0.95, wet=1.0, rough_base=0.085, contrast=1.5),
     "asphalt_wet":        lambda: _asphalt(RES, 107, (0.095, 0.100, 0.110)),
-    "bay_blue":           lambda: _painted_bay(RES, 113, (0.022, 0.046, 0.135), (0.082, 0.088, 0.098), wet=0.88, wear_amt=0.40),
-    "bay_orange":         lambda: _painted_bay(RES, 127, (0.395, 0.108, 0.034), (0.185, 0.160, 0.135), wet=0.45, faded=0.22, wear_amt=0.35),
+    # Sampled inside the bay itself, photograph against render: display luma 0.455
+    # against 0.222 and r-b -0.26 against -0.19. Both the level and the saturation, so
+    # the paint goes up 1.8x and stays blue rather than being greyed toward the middle.
+    "bay_blue":           lambda: _painted_bay(RES, 113, (0.040, 0.083, 0.243), (0.148, 0.159, 0.177), wet=0.88, wear_amt=0.40),
+    "bay_orange":         lambda: _painted_bay(RES, 127, (0.442, 0.121, 0.038), (0.207, 0.179, 0.151), wet=0.45, faded=0.22, wear_amt=0.35),
+    # The strip beyond the far white line is the SAME paint bleached almost out of
+    # existence: the reference reads 0.858 0.700 0.649 there, a pale warm grey, where a
+    # full-strength bay reads 0.727 0.403 0.265. It had been painted at full strength and
+    # came out 0.30 too dark -- the largest single colour error left in the frame.
+    "bay_bleached":       lambda: _painted_bay(RES, 139, (0.62, 0.45, 0.39), (0.400, 0.395, 0.385), wet=0.35, faded=0.62, wear_amt=0.85),
     # The shop frontage is a DIFFERENT SLAB, poured lighter. The photograph runs 0.68 to
     # 0.97 there against 0.53 near the bays, and that gap is albedo, not reflection: no
     # roughness makes a mid-grey pour read as white concrete at fifteen metres.
     "apron_light":        lambda: _concrete(RES, 103, (0.360, 0.365, 0.368), crack=0.16, stain=0.75, wet=0.80, rough_base=0.44, contrast=2.2),
-    "bay_slate":          lambda: _painted_bay(RES, 131, (0.062, 0.080, 0.122), (0.100, 0.106, 0.112), wet=0.70, wear_amt=0.50),
     # painted metal cladding for the canopy column: light cool grey, semi-gloss, streaked
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
     "clad_panel":         lambda: _painted_metal(RES, 137, (0.40, 0.405, 0.41), dirt=0.85, rough_base=0.36),

@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # so `forecourt` imports as a kit
 
 from forecourt import parts as P                                          # noqa: E402
-from forecourt.materials import (APRON, APRON_LT, BAY_BLUE, BAY_ORNG, BAY_SLATE,  # noqa: E402
+from forecourt.materials import (APRON, APRON_LT, BAY_BLUE, BAY_FADE, BAY_ORNG,  # noqa: E402
                                  DAMP, DAMP2, PUDDLE, PUDDLE_L,
                                  BLACK, CONCRETE, LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
                                  WASH_F, WHITE, YELLOW, YELLOWP, mat)
@@ -153,21 +153,33 @@ def forecourt():
     #   far      x[0, 3.47]     y[6.2, 7.9]     <- scanned up a column: orange 6.47..7.63
     #   slate    x[-1.16,-0.11] y[-2.28, 3.29]  <- a strip left of the blue bay, unmodelled
     #   left-t   x[-1.15,-0.10] y[-4.4, -2.4]   <- the same strip, terracotta nearer in
-    bays = [(0, 3.47, 0, 6, BAY_BLUE),
-            (0, 3.47, -6.6, -0.12, BAY_ORNG),
-            (3.62, 7.5, -6.6, -0.12, BAY_ORNG),
-            (0, 3.47, 6.2, 7.9, BAY_ORNG),
-            (-1.20, -0.12, -2.4, 3.35, BAY_SLATE),
-            (-1.20, -0.12, -4.6, -2.45, BAY_ORNG)]
+    # Re-measured by scanning the reference at 0.15 m along and across the array, calling a
+    # sample orange at r-b > 0.20, blue at r-b < -0.12 and a line at luma > 0.66. It is THREE
+    # LANES, not a block, and the white lines fall exactly where the case already had them:
+    #
+    #   across y=-3:  ....W...W.OOOOOO.WOOOOOOOOOOOOOOOOOOOOOOWOOO.............
+    #   across y=+2:  BBW......WBBBBB.WWBBBBBBBBBBBBBBBBBBBBBWWBBB.............
+    #                       ^x=-1.15   ^x=0        (3.47 m)   ^x=3.55
+    #
+    # Two things it had wrong. The right-hand lane was modelled four metres wide and is
+    # half a metre -- the reference is bare concrete from x=4.1 outward, rgb 0.42/0.42/0.39,
+    # neutral. And the left-hand strip was painted SLATE, which was a guess; the photograph
+    # reads it blue, the same blue as the middle lane, from y=0.3 to 3.35.
+    bays = [(-1.14, -0.12, 0.30, 3.35, BAY_BLUE),      # the narrow left lane
+            (-1.14, -0.12, -4.6, -2.45, BAY_ORNG),
+            (0.0, 3.47, 0.0, 6.0, BAY_BLUE),           # the wide middle one
+            (0.0, 3.47, -6.6, -0.12, BAY_ORNG),
+            (0.0, 3.47, 6.2, 7.9, BAY_FADE),
+            (3.62, 4.10, 0.0, 6.4, BAY_BLUE),          # and the sliver on the right
+            (3.62, 4.10, -6.6, -0.12, BAY_ORNG)]
     LW = 0.18
     for x0, x1, y0, y1, m in bays:
         slab(p, x0, x1, y0, y1, 0.004, 0.006, m)
     # each boundary once: (x, y0, y1) for the lines running away from the camera, and
     # (y, x0, x1) for the ones running across it
-    for x, y0, y1 in [(-1.20, -4.6, 3.35), (-0.06, -6.6, 7.9), (3.55, -6.6, 7.9),
-                      (7.50, -6.6, -0.12)]:
+    for x, y0, y1 in [(-1.20, -4.6, 3.35), (-0.06, -6.6, 7.9), (3.55, -6.6, 7.9)]:
         slab(p, x - LW / 2, x + LW / 2, y0, y1, 0.006, 0.006, LINE_W)
-    for y, x0, x1 in [(0.015, -0.06, 7.5), (6.05, -0.06, 3.55), (7.90, -0.06, 3.55),
+    for y, x0, x1 in [(0.015, -0.06, 4.10), (6.05, -0.06, 3.55), (7.90, -0.06, 3.55),
                       (-2.42, -1.20, -0.06), (-4.60, -1.20, -0.06)]:
         slab(p, x0, x1, y - LW / 2, y + LW / 2, 0.006, 0.006, LINE_W)
     # The white RING painted around the island. Both discs are painted INSIDE the
