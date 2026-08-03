@@ -232,9 +232,12 @@ def _streaks(res: int, seed: int, period: int, length: int, angle_frac: float = 
     marks. The thing a stack of isotropic fBm octaves cannot make and a real slab is covered
     in: its fine detail has a grain, because everything that made it was moving."""
     n = _fbm(res, period, 2, seed)
+    # Smeared along the texture's Y, which triplanar maps to world Y — the direction cars
+    # drive in this scene. Smearing along X put the tracks across the traffic, which is a
+    # detail nobody would name and everybody would feel.
     out = np.zeros_like(n)
     for k in range(length):
-        out += np.roll(np.roll(n, k, axis=1), int(k * angle_frac), axis=0)
+        out += np.roll(np.roll(n, k, axis=0), int(k * angle_frac), axis=1)
     return out / length
 
 
@@ -280,8 +283,8 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
                               + 0.12 * stain * (mott - 0.5)
                               + 0.13 * stain * (patch - 0.5)
                               + 0.26 * (fine - 0.5)
-                              + 0.30 * (scratch - 0.5)
-                              + 0.22 * stain * (tracks - 0.5)))
+                              + 0.34 * (scratch - 0.5)
+                              + 0.40 * stain * (tracks - 0.5)))
     base = np.stack(col, -1)[None, None] * np.clip(tone, 0.35, 1.9)[..., None]
     base = base * (1 - 0.22 * stain * wet_patch[..., None])
     base = base * (1 - 0.46 * stain * spill[..., None])       # oil, with an edge

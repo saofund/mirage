@@ -894,13 +894,13 @@ def van():
     The shell is a `loft_grid` — an all-quad cage carrying real tumblehome, narrower at the
     roof and the sill — and the hardware on it is INFERRED, which at thirty metres is the
     honest call: the photograph cannot show a door handle, and a van without one is a toy."""
-    FA, RA, WR = 2.45, -2.05, 0.36
+    FA, RA, WR = 2.45, -2.05, 0.41
     Y = 0.99
     ROOF = 1.95
     lower = ([[-3.70, 0.62], [-3.64, 0.50], [-3.00, 0.47]]
-             + arch(RA, 0.62, 0.47)
+             + arch(RA, 0.52, 0.47)
              + [[-0.30, 0.47]]
-             + arch(FA, 0.62, 0.47)
+             + arch(FA, 0.52, 0.47)
              + [[3.24, 0.48], [3.46, 0.56], [3.58, 0.78]])
     # A SHORT, BLUNT nose. It was a wedge tapering over a metre and a half, which is a
     # nose no van has: measured off the crop the reference's bonnet drops from the
@@ -936,7 +936,7 @@ def van():
         p.place(cbox(4.80, 0.02, 0.030, 0.006), at=[-1.05, s * flank(-1.05, GZ - GH / 2, 0.004),
                                                     GZ - GH / 2], material=trim)
         # the heavy dark rocker: in the photograph it is a third of the body's height
-        p.place(cbox(6.90, 0.05, 0.32, 0.012), at=[-0.20, s * flank(-0.20, 0.63, 0.000), 0.63],
+        p.place(cbox(6.90, 0.06, 0.34, 0.012), at=[-0.20, s * flank(-0.20, 0.63, 0.012), 0.63],
                 material=body)
         p.place(cbox(5.60, 0.03, 0.020, 0.008), at=[-0.30, s * flank(-0.30, 1.02, 0.006), 1.02],
                 material=mat((0.60, 0.605, 0.61), 0.0, 0.30))
@@ -952,8 +952,8 @@ def van():
                 material=BLACK)
         p.place(cbox(0.02, 0.05, 0.16, 0.006), at=[2.26, s * flank(2.30, 1.50, 0.17), 1.50],
                 material=GLASS)
-        p.place(cbox(0.13, 0.30, 0.10, 0.012), at=[-3.71, s * 0.72, 1.10], material=TAIL_RED)
-        p.place(cbox(0.10, 0.13, 0.48, 0.012), at=[-3.71, s * 0.70, 1.36], material=TAIL_RED)
+        p.place(cbox(0.10, 0.34, 0.14, 0.012), at=[-3.73, s * 0.74, 0.98], material=TAIL_RED)
+        p.place(cbox(0.06, 0.17, 0.62, 0.012), at=[-3.74, s * 0.72, 1.32], material=TAIL_RED)
         p.place(cbox(0.12, 0.34, 0.15, 0.014), at=[3.58, s * 0.64, 0.90], material=LAMP)
         p.place(cbox(0.06, 0.15, 0.09, 0.010), at=[3.60, s * 0.78, 0.72],
                 material=mat((0.62, 0.42, 0.05), 0.0, 0.25))
