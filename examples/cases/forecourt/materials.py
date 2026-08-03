@@ -127,7 +127,7 @@ LAMP      = mat((0.70, 0.68, 0.62), 0.0, 0.14)
 # proud of the face and would otherwise crop 3 cm of artwork off each edge.
 SIGN_FACE  = face_decal(DEC["pump_sign"], 0.915, 2.06, 0.02, base=(0.60, 0.60, 0.59),
                         roughness=0.26)
-SIGN_FACE["emission"] = [0.045, 0.045, 0.044]  # a LIGHTBOX: lit from inside, not lit on.
+SIGN_FACE["emission"] = [0.014, 0.014, 0.0138]  # a LIGHTBOX: lit from inside, not lit on.
 # 0.16 overshot to sRGB 0.646 against the photo's 0.400. Measured back down, not guessed.
 FIREBOX_F  = face_decal(DEC["fire_cabinet"], 0.38, 0.70, 0.012, base=(0.50, 0.045, 0.030),
                         roughness=0.40)

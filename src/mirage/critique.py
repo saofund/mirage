@@ -59,6 +59,7 @@ TONE_TOL = 0.06      # sRGB luma difference that starts to read as "wrong exposu
 DETAIL_FLOOR = 0.25  # below this an object is reading flat
 CAST_TOL = 0.020     # chromaticity (r-b) difference that starts to read as a colour cast
 FILL_FLOOR = 0.28    # below this the mask is too thin for its reference pixels to be it
+MISALIGN_PX = 18.0   # above this chamfer the mask is not on its subject at all
 
 
 def _detail(srgb, mask, blur=1.2):
@@ -159,13 +160,24 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
         # severity: how wrong, weighted by how much of the frame it is. sqrt so a huge
         # background does not drown a foreground object that is completely wrong.
         area_w = (px / total) ** 0.5
-        thin = _fill(mask) < FILL_FLOOR
+        # An object whose own outline sits far from any real structure is not ON its subject,
+        # so the reference pixels under it are somebody else's. The fire bucket has been
+        # reporting cast -0.28 for three rounds at a chamfer of 24 px, and no plausible metal
+        # is that colour: what it is measuring is the blue pump behind where it should be.
+        # `thin` catches masks that are too scattered; this catches masks that are solid and
+        # in the wrong place, which is the other half of the same problem.
+        cham_px = cham.get(name, {}).get("chamfer_px")
+        misaligned = cham_px is not None and cham_px > MISALIGN_PX
+        thin = _fill(mask) < FILL_FLOOR or misaligned
         tone_err = 0.0 if thin else max(abs(t_ren - t_ref) - TONE_TOL, 0.0)
+        cast_err = 0.0 if misaligned else max(abs(c_ren - c_ref) - CAST_TOL, 0.0)
         sev = area_w * (tone_err * 6.0
                         + max(DETAIL_FLOOR - ratio, 0.0) * 4.0
-                        + max(abs(c_ren - c_ref) - CAST_TOL, 0.0) * 20.0)
+                        + cast_err * 20.0)
         flags = []
-        if thin:
+        if misaligned:
+            flags.append(f"misaligned {cham_px:.0f}px (tone/cast not scored)")
+        elif thin:
             flags.append("thin mask (tone not scored)")
         elif t_ren - t_ref > TONE_TOL:
             flags.append("too light")
@@ -175,7 +187,7 @@ def scorecard(render, reference, ids, names=None, chamfer=True):
             flags.append("reads flat")
         elif ratio > 2.5:
             flags.append("noisy (raise spp?)")
-        if abs(c_ren - c_ref) > CAST_TOL:
+        if not misaligned and abs(c_ren - c_ref) > CAST_TOL:
             flags.append("cool cast" if c_ren < c_ref else "warm cast")
         rows.append({"name": name, "px": px, "tone": round(t_ren, 3), "tone_ref": round(t_ref, 3),
                      "detail": round(ratio, 3), "cast": round(c_ren - c_ref, 3),
