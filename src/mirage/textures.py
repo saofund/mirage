@@ -350,8 +350,10 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     wet_mask = np.clip((0.44 - st) * 1.3, 0, 1) ** 1.5
     # only a few hairline cracks on a bay — the WET SHEET is the story, not a mud-crack web
     cracks = _crack_net(res, seed + 23, period=8, thresh=0.91) * 0.55
-    # hard-edged marks: a tyre scuff and a spill both END somewhere
-    marks = np.clip((_fbm(res, 16, 3, seed + 67) - 0.62) * 10.0, 0, 1)
+    # Hard-edged marks: a tyre scuff and a spill both END somewhere. Thresholded from a
+    # STREAKED field for the same reason the concrete's drips are -- cut from round noise
+    # they are a scatter of ovals, and paint is marked by things sliding across it.
+    marks = np.clip((_streaks(res, seed + 67, 20, 120, angle_frac=0.30) - 0.516) * 13.0, 0, 1)
     paint_c = np.stack(paint, -1)[None, None]
     conc_c = np.stack(concrete, -1)[None, None]
     # TYRE TRACKS. Cars enter a bay along its length and always in the same two ruts, so a
@@ -372,11 +374,18 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     # 2.5. (The denoiser was the obvious suspect and was innocent: rendered at 900 spp with
     # the filter OFF the ground's spread was 0.0201 against 0.0238 with it ON — slightly
     # LOWER, because demodulate/remodulate sharpens albedo edges rather than blurring them.)
-    bstreak = _streaks(res, seed + 61, 90, 22)
-    col = col * (1.0 + 0.22 * (mott[..., None] - 0.5) + 0.26 * (patch[..., None] - 0.5)
-                 + 0.30 * (fine[..., None] - 0.5) + 0.30 * (bstreak[..., None] - 0.5))
+    # ...and the same correction the concrete needed, for the same reason. Getting the
+    # AMOUNT of variation right left the bay marbled, because fBm's variation is round and a
+    # painted bay's is dragged: ruts, scuffs, sweep marks, the edge where a squeegee stopped.
+    # So the two blob terms drop to a third and the streak terms carry it, long enough to
+    # cross a good part of the bay.
+    bstreak = _streaks(res, seed + 61, 110, 90)
+    bdrag = _streaks(res, seed + 79, 30, 170, angle_frac=0.22)
+    col = col * (1.0 + 0.075 * (mott[..., None] - 0.5) + 0.085 * (patch[..., None] - 0.5)
+                 + 0.150 * (fine[..., None] - 0.5) + 0.300 * (bstreak[..., None] - 0.5)
+                 + 0.260 * (bdrag[..., None] - 0.5))
     col = col * (1 - 0.26 * ruts[..., None])                        # the ruts
-    col = col * (1 - 0.34 * marks[..., None])                       # scuffs, with edges
+    col = col * (1 - 0.24 * marks[..., None])                       # scuffs, with edges
     col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
     col = col * (1 - faded * 0.28)
     col = col * (1 - 0.42 * cracks[..., None])
