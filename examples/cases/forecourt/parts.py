@@ -779,15 +779,36 @@ def speed_hump(length=3.6, w=0.50, h=0.075):
     return p
 
 
-def puddle(w, d, rot=0.0, depth=0.008):
-    """Standing water lying in one PLACE.
+def puddle(w, d, seed=0, lobes=3, depth=0.006):
+    """Standing water lying in one PLACE, with the edge water actually has.
 
     A wetness texture makes a surface uniformly damp; a forecourt after rain is not. Water
     collects where the slab falls away, so the wet is a property of the LOCATION, and mapping
     the reference on a two-metre world grid shows exactly that — the far band by the road at
     0.79 against this render's 0.42, and the blue bay at 0.17 against 0.55, i.e. wet in the
-    wrong places by as much as it was wet at all. These go where the photograph's water is."""
-    return cbox(w, d, depth, 0.002)
+    wrong places by as much as it was wet at all.
+
+    Built as overlapping irregular LOBES rather than a rectangle. The first version was a
+    box, and a box of water is unmistakable: a puddle's edge is where the film got too thin
+    to see, which is a wandering line, and a straight one reads as a sheet of grey plastic
+    dropped on the floor."""
+    p = MeshProgram()
+    rng = [((seed * 7919 + k * 104729) % 1000) / 1000.0 for k in range(64)]
+    for i in range(lobes):
+        cx = (rng[i * 3] - 0.5) * w * 0.45
+        cy = (rng[i * 3 + 1] - 0.5) * d * 0.45
+        rx, ry = w * (0.34 + 0.22 * rng[i * 3 + 2]), d * (0.34 + 0.22 * rng[i * 3 + 5])
+        poly = []
+        for k in range(26):
+            a0 = 2 * math.pi * k / 26
+            wob = 0.80 + 0.34 * rng[(i * 26 + k) % 60]
+            poly.append([cx + rx * wob * math.cos(a0), cy + ry * wob * math.sin(a0)])
+        n = len(poly)
+        verts = [[x, y, 0.0] for x, y in poly] + [[x, y, depth] for x, y in poly]
+        faces = [[n + j for j in range(n)], list(reversed(range(n)))]
+        faces += [[j, (j + 1) % n, n + (j + 1) % n, n + j] for j in range(n)]
+        p.place(MeshProgram().mesh(verts=verts, faces=faces))
+    return p
 
 
 def drain_channel(length=13.0, w=0.28):
