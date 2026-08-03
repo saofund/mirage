@@ -78,12 +78,12 @@ NAVY = (86, 118, 214)     # banners: 0.230, 0.335, 0.470, against the photograph
 # The LIGHTBOX gets its own, darker. It shared NAVY with the banners, so three rounds of
 # lifting a banner that measured too dark also lifted a sign that was already too light —
 # 0.578 against 0.396. Two objects with different targets cannot share one constant.
-SIGN_NAVY = (30, 50, 128)
-SIGN_NAVY_D = (20, 34, 96)
+SIGN_NAVY = (48, 76, 170)   # 0.578 too light, then 0.285 too dark, target 0.396
+SIGN_NAVY_D = (32, 52, 126)
 NAVY_D = (40, 62, 150)
-RED = (150, 20, 14)
-RED_D = (110, 12, 9)
-ORANGE = (196, 74, 10)
+RED = (126, 28, 38)
+RED_D = (92, 20, 28)
+ORANGE = (172, 80, 34)
 YELLOW = (215, 165, 12)
 WHITE = (232, 232, 228)
 OFFWHITE = (206, 206, 200)
