@@ -390,7 +390,10 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
                  + 0.260 * (bdrag[..., None] - 0.5))
     col = col * (1 - 0.26 * ruts[..., None])                        # the ruts
     col = col * (1 - 0.24 * marks[..., None])                       # scuffs, with edges
-    col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
+    # The darkening now scales with `wet`. It was a flat 0.52 whatever the bay, so a DRY
+    # terracotta got the same soft dark lobes as the standing water on the blue one, and read
+    # as cloud shadows on paint. At wet=0.88 this is what it always was; at 0.45 it is half.
+    col = _lerp(col, col * (1.0 - 0.55 * wet), wet_mask[..., None])   # the dark wet sheet
     col = col * (1 - faded * 0.28)
     col = col * (1 - 0.20 * cracks[..., None])
     albedo = np.clip(col, 0, 1)
@@ -506,7 +509,9 @@ _LIBRARY = {
     # their whole length, where the reference has them clean at one end of the array (luma
     # 0.836) and trodden grey at the other (0.669). Same generator as a bay, because a line
     # IS a bay: paint on concrete, worn through, dirty in the ruts.
-    "line_paint":         lambda: _painted_bay(RES, 167, (0.560, 0.566, 0.558), (0.230, 0.228, 0.222), wet=0.30, faded=0.18, wear_amt=0.70),
+    # wear 0.25, not 0.70: at 0.70 the patches rubbed back to concrete are the size of the
+    # LINE and it comes out spotted, which is worse than the flat colour it replaced.
+    "line_paint":         lambda: _painted_bay(RES, 167, (0.505, 0.510, 0.502), (0.300, 0.297, 0.290), wet=0.30, faded=0.18, wear_amt=0.25),
 }
 
 
