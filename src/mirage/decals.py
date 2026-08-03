@@ -81,7 +81,7 @@ NAVY = (86, 118, 214)     # banners: 0.230, 0.335, 0.470, against the photograph
 SIGN_NAVY = (48, 76, 170)   # 0.578 too light, then 0.285 too dark, target 0.396
 SIGN_NAVY_D = (32, 52, 126)
 NAVY_D = (40, 62, 150)
-RED = (186, 34, 22)      # scarlet. The cabinet's FACE is this decal, not the RED material,
+RED = (196, 48, 8)       # scarlet. The cabinet's FACE is this decal, not the RED material,
                          # so lightening the material alone left it brown on screen.
 RED_D = (92, 20, 28)
 ORANGE = (172, 80, 34)
@@ -172,7 +172,7 @@ def _fire_bucket(W, H):
     the bucket wears a black card."""
     # Galvanised steel photographs BRIGHT -- the reference's bucket is one of the lighter
     # things on the island. At 117/120/122 it read as a dark cylinder in the corner.
-    im = Image.new("RGB", (W, H), (172, 175, 177))
+    im = Image.new("RGB", (W, H), (186, 189, 191))
     d = ImageDraw.Draw(im)
     _text(d, (W * 0.5, H * 0.40), "消防桶", int(W * 0.30), WHITE, spacing=W * 0.01)
     _text(d, (W * 0.5, H * 0.68), "119", int(W * 0.20), WHITE)

@@ -657,7 +657,11 @@ def island():
     p.place(dispenser(), at=[0, 0.06, Z], mark="dispenser")
     for s in (-1, 1):
         p.place(hose_tangle(s), at=[0, 0.06, Z], mark="hoses")
-    p.place(fire_cabinet(), at=[0.02, -0.44, Z], mark="firebox")
+    # 0.27 m right and 0.20 m further in. Its mask was overlapping the blue body behind it,
+    # which is why the card reported the cabinet 0.161 WARM while a like-for-like
+    # comparison of the reddest sixth of each said the render was too BLUE: half the
+    # reference pixels the mask was reading belonged to the dispenser.
+    p.place(fire_cabinet(), at=[0.29, -0.24, Z], mark="firebox")
     # 0.20 m right and 0.27 m further in: measured off the crop, the render put the bucket
     # 29 px left of the reference and 40 px below it, at 147 px per metre.
     p.place(fire_bucket(), at=[0.70, -0.20, Z], mark="bucket")
