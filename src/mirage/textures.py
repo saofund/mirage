@@ -424,6 +424,11 @@ _LIBRARY = {
     # is exactly what the photograph does (0.53 near, 0.80 at fifteen metres) and exactly
     # what a matte 0.72 cannot do, however dark or light its albedo is set.
     "forecourt_concrete": lambda: _concrete(RES, 101, (0.200, 0.205, 0.208), crack=0.22, stain=0.95, wet=0.90, rough_base=0.46, contrast=2.6),
+    # Standing water on the SAME concrete, same seed, so the aggregate and the joints run
+    # continuously under it. A puddle modelled as an opaque grey slab reads as a sheet of
+    # plastic dropped on the floor -- water does not cover a surface, it darkens it and
+    # glazes it, and you go on seeing what is underneath.
+    "forecourt_wet":      lambda: _concrete(RES, 101, (0.088, 0.091, 0.096), crack=0.22, stain=0.95, wet=1.0, rough_base=0.085, contrast=1.5),
     "asphalt_wet":        lambda: _asphalt(RES, 107, (0.095, 0.100, 0.110)),
     "bay_blue":           lambda: _painted_bay(RES, 113, (0.022, 0.046, 0.135), (0.082, 0.088, 0.098), wet=0.88, wear_amt=0.40),
     "bay_orange":         lambda: _painted_bay(RES, 127, (0.395, 0.108, 0.034), (0.185, 0.160, 0.135), wet=0.45, faded=0.22, wear_amt=0.35),

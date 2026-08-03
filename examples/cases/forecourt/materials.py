@@ -70,7 +70,7 @@ def top_decal(art, w, d, height, base=(0.3, 0.3, 0.3), metallic=0.0, roughness=0
 
 
 TEX = ensure_textures(["forecourt_concrete", "asphalt_wet", "bay_blue", "bay_orange",
-                       "bay_slate", "apron_light", "clad_panel", "shop_tile"])
+                       "bay_slate", "apron_light", "forecourt_wet", "clad_panel", "shop_tile"])
 DEC = ensure_decals(["pump_sign", "fire_cabinet", "fire_bucket", "wet_floor", "wash_banner",
                      "promo_banner", "repair_sign", "plate", "shutter_slat"])
 
@@ -83,8 +83,10 @@ BAY_ORNG = mat((0.395, 0.108, 0.034), 0.0, 0.5, maps=TEX["bay_orange"], uv_scale
 BAY_SLATE = mat((0.09, 0.10, 0.115), 0.0, 0.5, maps=TEX["bay_slate"], uv_scale=4.5)
 # Standing water: dark and nearly a mirror, so what you see in it is the sky, not the
 # puddle. A "wet" material that is merely a darker grey reads as a stain.
-PUDDLE   = mat((0.030, 0.033, 0.038), 0.0, 0.055)
-PUDDLE_L = mat((0.055, 0.058, 0.062), 0.0, 0.10)
+# Same maps as the apron and the same uv_scale, so the aggregate and the joints run
+# continuously under the water instead of stopping at its edge.
+PUDDLE   = mat((0.088, 0.091, 0.096), 0.0, 0.07, maps=TEX["forecourt_wet"], uv_scale=5.5)
+PUDDLE_L = mat((0.125, 0.128, 0.133), 0.0, 0.14, maps=TEX["forecourt_wet"], uv_scale=5.5)
 LINE_W   = mat((0.40, 0.405, 0.40), 0.0, 0.60)      # damp, grimy paint — never bright white
 YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
 CONCRETE = mat((0.245, 0.246, 0.238), 0.0, 0.72)
