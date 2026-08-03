@@ -267,7 +267,11 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     # real oil stain has a boundary where the liquid stopped, and thresholding a noise field
     # is what puts one there. Two scales: big spills and a scatter of drips.
     spill = np.clip((_fbm(res, 7, 3, seed + 71) - 0.60) * 9.0, 0, 1)
-    drips = np.clip((_fbm(res, 40, 2, seed + 89) - 0.68) * 12.0, 0, 1)
+    # Thresholded from a STREAKED field, not a round one. Cut from isotropic fBm these came
+    # out as a scatter of dark ovals -- which read as fallen leaves, and became the loudest
+    # thing on the ground the moment the blob terms were turned down around them. What marks
+    # a forecourt is dragged, not dropped.
+    drips = np.clip((_streaks(res, seed + 89, 44, 34, angle_frac=0.42) - 0.522) * 16.0, 0, 1)
     cracks = _crack_net(res, seed + 9, period=5, thresh=0.91) * crack
     st = _fbm(res, 4, 4, seed + 17)                    # damp areas
     wet_patch = np.clip((0.44 - st) * 1.8, 0, 1) ** 1.5
@@ -292,7 +296,7 @@ def _concrete(res: int, seed: int, col, crack=0.7, stain=0.8, wet=0.7, rough_bas
     base = np.stack(col, -1)[None, None] * np.clip(tone, 0.35, 1.9)[..., None]
     base = base * (1 - 0.22 * stain * wet_patch[..., None])
     base = base * (1 - 0.46 * stain * spill[..., None])       # oil, with an edge
-    base = base * (1 - 0.30 * drips[..., None])
+    base = base * (1 - 0.14 * drips[..., None])
     base = base * (1 - 0.50 * cracks[..., None])              # joints/cracks darkest
     albedo = np.clip(base, 0, 1)
     # MOST OF THE VARIATION LIVES HERE, not in the albedo. On a wet apron under an overcast
@@ -463,7 +467,12 @@ _LIBRARY = {
     # Sampled inside the bay itself, photograph against render: display luma 0.455
     # against 0.222 and r-b -0.26 against -0.19. Both the level and the saturation, so
     # the paint goes up 1.8x and stays blue rather than being greyed toward the middle.
-    "bay_blue":           lambda: _painted_bay(RES, 113, (0.040, 0.083, 0.243), (0.148, 0.159, 0.177), wet=0.88, wear_amt=0.40),
+    "bay_blue":           lambda: _painted_bay(RES, 113, (0.055, 0.112, 0.325), (0.198, 0.213, 0.237), wet=0.88, wear_amt=0.40),
+    # The narrow lane to its left is NOT the same blue, which is what modelling it as one
+    # assumed: sampled inside it the reference reads luma 0.606 and r-b -0.15, against the
+    # middle lane's 0.455 and -0.26. Half again as bright and half as saturated -- an older
+    # coat, weathered most of the way back to the concrete under it.
+    "bay_blue_faded":     lambda: _painted_bay(RES, 151, (0.300, 0.375, 0.500), (0.330, 0.336, 0.345), wet=0.55, faded=0.45, wear_amt=0.75),
     "bay_orange":         lambda: _painted_bay(RES, 127, (0.442, 0.121, 0.038), (0.207, 0.179, 0.151), wet=0.45, faded=0.22, wear_amt=0.35),
     # The strip beyond the far white line is the SAME paint bleached almost out of
     # existence: the reference reads 0.858 0.700 0.649 there, a pale warm grey, where a

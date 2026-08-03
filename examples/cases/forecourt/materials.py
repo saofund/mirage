@@ -70,7 +70,8 @@ def top_decal(art, w, d, height, base=(0.3, 0.3, 0.3), metallic=0.0, roughness=0
 
 
 TEX = ensure_textures(["forecourt_concrete", "asphalt_wet", "bay_blue", "bay_orange",
-                       "bay_bleached", "apron_light", "forecourt_wet", "clad_panel", "shop_tile"])
+                       "bay_bleached", "bay_blue_faded", "apron_light", "forecourt_wet",
+                       "clad_panel", "shop_tile"])
 DEC = ensure_decals(["pump_sign", "fire_cabinet", "fire_bucket", "wet_floor", "wash_banner",
                      "promo_banner", "repair_sign", "plate", "shutter_slat"])
 
@@ -81,6 +82,7 @@ APRON_LT = mat((0.36, 0.365, 0.368), 0.0, 0.55, maps=TEX["apron_light"], uv_scal
 BAY_BLUE = mat((0.03, 0.058, 0.15), 0.0, 0.5, maps=TEX["bay_blue"], uv_scale=4.0)
 BAY_ORNG = mat((0.395, 0.108, 0.034), 0.0, 0.5, maps=TEX["bay_orange"], uv_scale=4.5)
 BAY_FADE = mat((0.62, 0.45, 0.39), 0.0, 0.5, maps=TEX["bay_bleached"], uv_scale=4.5)
+BAY_BLUE_F = mat((0.30, 0.375, 0.50), 0.0, 0.5, maps=TEX["bay_blue_faded"], uv_scale=3.0)
 # Standing water: dark and nearly a mirror, so what you see in it is the sky, not the
 # puddle. A "wet" material that is merely a darker grey reads as a stain.
 # Same maps as the apron and the same uv_scale, so the aggregate and the joints run

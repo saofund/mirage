@@ -31,7 +31,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # so `forecourt` imports as a kit
 
 from forecourt import parts as P                                          # noqa: E402
-from forecourt.materials import (APRON, APRON_LT, BAY_BLUE, BAY_FADE, BAY_ORNG,  # noqa: E402
+from forecourt.materials import (APRON, APRON_LT, BAY_BLUE, BAY_BLUE_F,  # noqa: E402
+                                 BAY_FADE, BAY_ORNG,
                                  DAMP, DAMP2, PUDDLE, PUDDLE_L,
                                  BLACK, CONCRETE, LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
                                  WASH_F, WHITE, YELLOW, YELLOWP, mat)
@@ -165,7 +166,7 @@ def forecourt():
     # half a metre -- the reference is bare concrete from x=4.1 outward, rgb 0.42/0.42/0.39,
     # neutral. And the left-hand strip was painted SLATE, which was a guess; the photograph
     # reads it blue, the same blue as the middle lane, from y=0.3 to 3.35.
-    bays = [(-1.14, -0.12, 0.30, 3.35, BAY_BLUE),      # the narrow left lane
+    bays = [(-1.14, -0.12, 0.30, 3.35, BAY_BLUE_F),    # the narrow left lane, an older coat
             (-1.14, -0.12, -4.6, -2.45, BAY_ORNG),
             (0.0, 3.47, 0.0, 6.0, BAY_BLUE),           # the wide middle one
             (0.0, 3.47, -6.6, -0.12, BAY_ORNG),
