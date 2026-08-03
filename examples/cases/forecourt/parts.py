@@ -406,10 +406,12 @@ def grate_plinth(w=1.90, d=1.35, h=0.14):
     for sx, sy, dx, dy in [(w - 0.02, 0.045, 0, (d - 0.045) / 2), (w - 0.02, 0.045, 0, -(d - 0.045) / 2),
                            (0.045, d - 0.02, (w - 0.045) / 2, 0), (0.045, d - 0.02, -(w - 0.045) / 2, 0)]:
         p.place(cbox(sx, sy, 0.030, 0.006), at=[dx, dy, h + 0.005], material=WET_STEEL)  # rim
-    n = int((w - 0.13) / 0.048)                                       # the grating's bars
+    # 6.5 cm pitch, not 4.8. At the finer spacing the grating rendered 1.65x the
+    # photograph's detail — busier than the real thing, which is its own kind of wrong.
+    n = int((w - 0.13) / 0.065)                                       # the grating's bars
     for i in range(n):
         x = -(w - 0.13) / 2 + (i + 0.5) * (w - 0.13) / n
-        p.place(box(0.010, d - 0.10, 0.026), at=[x, 0, h + 0.003], material=WET_STEEL)
+        p.place(box(0.014, d - 0.10, 0.024), at=[x, 0, h + 0.003], material=WET_STEEL)
     for j in range(7):
         y = -(d - 0.10) / 2 + (j + 0.5) * (d - 0.10) / 7
         p.place(box(w - 0.13, 0.008, 0.014), at=[0, y, h - 0.004], material=WET_STEEL)

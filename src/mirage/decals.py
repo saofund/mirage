@@ -74,8 +74,8 @@ def _text(d, xy, s, px, fill, anchor="mm", spacing=0.0):
 
 
 # Linear-space palette (see the module docstring on why these look dark as sRGB).
-NAVY = (34, 58, 158)      # the banners measured 0.230 against the photograph's 0.554
-NAVY_D = (22, 38, 120)
+NAVY = (62, 96, 205)      # banners: 0.230, then 0.335, against the photograph's 0.554
+NAVY_D = (40, 62, 150)
 RED = (150, 20, 14)
 RED_D = (110, 12, 9)
 ORANGE = (196, 74, 10)

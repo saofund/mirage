@@ -454,7 +454,12 @@ def main():
              # exactly that. The tint below takes it to (0.425, 0.412, 0.398) -- overcast
              # white, a touch warm -- and --env drops by the same luminance ratio so the
              # exposure that was already measured right does not move.
-             "--sky-tint", "1.595", "1.246", "0.868", "--sky-flat", "0.80",
+             # --sky-flat 0.94, not 0.80. The diffuse surfaces have been neutral for several
+             # rounds while the METALS -- plinth, bucket, chrome -- keep coming back cool,
+             # and that is the 20% of clear-day gradient left in the dome: a mirror sees
+             # the zenith specifically, where the gradient is bluest, while a diffuse
+             # surface integrates the whole thing and never notices.
+             "--sky-tint", "1.560", "1.240", "0.900", "--sky-flat", "0.94",
              # Aerial perspective, and a hypothesis that was HALF WRONG. The table flagged
              # every distant DARK object as too dark while distant BRIGHT ones were fine,
              # which looks exactly like missing haze -- so haze went in at 130 m, and total
