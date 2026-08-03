@@ -329,7 +329,8 @@ def _asphalt(res: int, seed: int, col):
     return albedo, rough, normal
 
 
-def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_amt=1.0):
+def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_amt=1.0,
+                 wet_cover=0.44):
     """A weathered painted forecourt bay. The paint is worn through to the concrete in patches,
     fine-cracked, and — the point of the whole exercise — stained with big ORGANIC dark wet
     lobes pooled in the low spots. The photo's blue bay is that: irregular standing water, not a
@@ -347,7 +348,10 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     st = _fbm(res, 2, 4, seed + 17)
     # Softer and less contrasty than it was: at (0.55-st)*2.1 darkening to 26%% the lobes
     # read as marbling — tie-dye — rather than as water lying on paint.
-    wet_mask = np.clip((0.44 - st) * 1.3, 0, 1) ** 1.5
+    # `wet_cover` is the fraction of the tile the water reaches. The blue bay in the
+    # reference is not a bay with puddles ON it -- it is a bay UNDER a sheet, edge to edge,
+    # with the shop reflected in it. One lobe covering 40%% of the tile cannot say that.
+    wet_mask = np.clip((wet_cover - st) * 1.3, 0, 1) ** 1.5
     # HAIRLINE. At period 8 and a 0.91 threshold the cells are half a metre across and the
     # lines between them are centimetres WIDE, which is not a crack network -- it is marble
     # veining, and magnified beside the reference it was the loudest thing on the bay. A real
@@ -483,7 +487,7 @@ _LIBRARY = {
     # Sampled inside the bay itself, photograph against render: display luma 0.455
     # against 0.222 and r-b -0.26 against -0.19. Both the level and the saturation, so
     # the paint goes up 1.8x and stays blue rather than being greyed toward the middle.
-    "bay_blue":           lambda: _painted_bay(RES, 113, (0.055, 0.112, 0.325), (0.198, 0.213, 0.237), wet=0.88, wear_amt=0.40),
+    "bay_blue":           lambda: _painted_bay(RES, 113, (0.066, 0.134, 0.390), (0.222, 0.239, 0.266), wet=0.88, wear_amt=0.40, wet_cover=0.72),
     # The narrow lane to its left is NOT the same blue, which is what modelling it as one
     # assumed: sampled inside it the reference reads luma 0.606 and r-b -0.15, against the
     # middle lane's 0.455 and -0.26. Half again as bright and half as saturated -- an older
