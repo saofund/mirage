@@ -86,7 +86,7 @@ YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
 CONCRETE = mat((0.17, 0.175, 0.170), 0.0, 0.72)
 
 # ---- structure ------------------------------------------------------------------ #
-CLAD      = mat((0.415, 0.417, 0.413), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
+CLAD      = mat((0.300, 0.302, 0.300), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
 WALL_TILE = mat((0.86, 0.865, 0.85), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.15)
 SEAM      = mat((0.24, 0.24, 0.24), 0.0, 0.45)      # the shadow line between clad panels
 KERB      = mat((0.24, 0.24, 0.235), 0.0, 0.66)
@@ -110,14 +110,14 @@ HOSE      = mat((0.048, 0.048, 0.051), 0.0, 0.55)
 STEEL     = mat((0.52, 0.52, 0.53), 1.0, 0.36)
 # The island's grating stands in the rain. Bright dry steel turned it into a chrome
 # serving tray; wet steel is darker and glossier, and reads as the thing in the photo.
-WET_STEEL = mat((0.60, 0.605, 0.60), 1.0, 0.30)
-GALV      = mat((0.46, 0.47, 0.48), 1.0, 0.44)      # galvanised: duller than bright steel
+WET_STEEL = mat((0.44, 0.445, 0.44), 1.0, 0.34)
+GALV      = mat((0.34, 0.348, 0.355), 1.0, 0.46)      # galvanised: duller than bright steel
 CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.18)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.42)
 BODY_WH   = mat((0.83, 0.835, 0.84), 0.0, 0.22)     # vehicle paint: brighter and glossier
 GLASS     = mat((0.05, 0.06, 0.07), 0.0, 0.07)
-SHUTTER   = mat((0.42, 0.43, 0.435), 0.35, 0.40)
-SHUTTER_D = mat((0.24, 0.245, 0.255), 0.35, 0.46)
+SHUTTER   = mat((0.315, 0.325, 0.335), 0.35, 0.40)
+SHUTTER_D = mat((0.175, 0.18, 0.19), 0.35, 0.46)
 NAVY      = mat((0.190, 0.215, 0.40), 0.0, 0.44)
 TAIL_RED  = mat((0.42, 0.03, 0.02), 0.0, 0.22)
 LAMP      = mat((0.70, 0.68, 0.62), 0.0, 0.14)

@@ -271,7 +271,12 @@ def yard():
         p.place(P.wet_floor_sign(), at=[c[0], c[1], 0], rotate=[0, 0, YARD_ANG + 8 * k],
                 mark="wetsign")
     p.place(P.bollard(0.86), at=[13.6, 8.6, 0])
-    p.place(P.hanging_banner(0.60, 2.60, REPAIR_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6],
+    # BLUE, not orange. The scorecard put the banners at cast +0.340, the largest colour
+    # error on the board by a factor of three, and it was not a colour error at all: the
+    # photograph has a big blue promotional banner at this corner and this scene had the
+    # workshop's orange 修保养 sign there. The orange one belongs on a pier, where
+    # tiled_pilaster already carries it.
+    p.place(P.hanging_banner(0.62, 2.70, PROMO_F), at=[-5.6, 11.0, 1.75], rotate=[0, 0, -6],
             mark="banners")
     return p
 
