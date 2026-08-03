@@ -83,6 +83,11 @@ def sample(rng, camera="orbbec640", domain="wide"):
         well_lip=_lerp(rng, 0.003, 0.010),
         neck=bool(rng.random() < 0.75),
         well_metal=bool(rng.random() < 0.25),
+        # the furniture down the recess, and the shape of the aperture — both are what
+        # `fit.complexity` says is missing between 6 and 24 mm
+        well_ribs=int(rng.choice([0, 3, 4, 4, 5, 6])),
+        well_drain=bool(rng.random() < 0.7),
+        squareness=float(rng.choice([1.0, 1.0, 2.6, 3.4, 4.2, 5.0])),
         # the filler neck is not square to the body panel on any real car
         tilt_x=_lerp(rng, -14.0, 14.0), tilt_y=_lerp(rng, -16.0, 10.0),
         cap_spin=_lerp(rng, 0.0, 360.0),        # a screw cap stops wherever it stops
@@ -167,12 +172,18 @@ def build(v):
     # panel leaves the car floating in a square of sky, and every pixel of that sky is a
     # pixel of background a real frame would have had car in.
     prog = prog.place(obj=P.panel(size=max(0.55, 3.0 * v["dist"]), hole_d=2 * rim_r,
-                                  thick=0.009, material=paint), at=(0.0, 0.0, 0.0))
+                                  thick=0.009, material=paint,
+                                  squareness=v["squareness"]), at=(0.0, 0.0, 0.0))
     prog = prog.place(obj=P.well(rim_r=rim_r, floor_d=v["d_cap"] + 0.010,
                                  depth=depth + v["flange"],
                                  neck_d=v["d_cap"] * 0.66, neck_len=0.055,
                                  lip=v["well_lip"], neck=v["neck"], material=well_mat),
                       at=(0.0, 0.0, 0.0), rotate=tilt)
+    if v["well_ribs"] or v["well_drain"]:
+        prog = prog.place(obj=P.well_details(rim_r, v["d_cap"] + 0.010, depth + v["flange"],
+                                             ribs=v["well_ribs"], drain=v["well_drain"],
+                                             material=well_mat),
+                          at=(0.0, 0.0, 0.0), rotate=tilt)
     cap_prog = P.cap(d=v["d_cap"], flange=v["flange"], rib_len=v["rib_len"], rib_w=v["rib_w"],
                      rib_h=v["rib_h"], rib_draft=v["rib_draft"], rib_slot=v["rib_slot"],
                      dome=v["dome"], chamfer=v["chamfer"], teeth=v["teeth"],

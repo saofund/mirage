@@ -153,8 +153,8 @@ def dropout_vs_texture(cloud_dir="orbbec_clouds", raw_dir="orbbec_raw", limit=60
         if im.shape[1] != w:
             im = cv2.resize(im, (w, h))
         fx, fy, cx, cy = K[0, 0] * w, K[1, 1] * h, K[0, 2] * w, K[1, 2] * h
-        u = np.round(xyz[:, 0] / xyz[:, 2] * fx + cx).astype(int)
-        v = np.round(xyz[:, 1] / xyz[:, 2] * fy + cy).astype(int)
+        u = np.floor(xyz[:, 0] / xyz[:, 2] * fx + cx + 0.5).astype(int)  # see complexity()
+        v = np.floor(xyz[:, 1] / xyz[:, 2] * fy + cy + 0.5).astype(int)
         ok = (u >= 0) & (u < w) & (v >= 0) & (v < h)
         u, v = u[ok], v[ok]
         if len(u) < 200:
@@ -218,8 +218,8 @@ def dropout_vs_brightness(cloud_dir="orbbec_clouds", raw_dir="orbbec_raw", bins=
         if im.shape[1] != w:
             im = cv2.resize(im, (w, h))
         fx, fy, cx, cy = K[0, 0] * w, K[1, 1] * h, K[0, 2] * w, K[1, 2] * h
-        u = np.round(xyz[:, 0] / xyz[:, 2] * fx + cx).astype(int)
-        v = np.round(xyz[:, 1] / xyz[:, 2] * fy + cy).astype(int)
+        u = np.floor(xyz[:, 0] / xyz[:, 2] * fx + cx + 0.5).astype(int)  # see complexity()
+        v = np.floor(xyz[:, 1] / xyz[:, 2] * fy + cy + 0.5).astype(int)
         ok = (u >= 0) & (u < w) & (v >= 0) & (v < h)
         u, v = u[ok], v[ok]
         if len(u) < 200:
@@ -402,6 +402,111 @@ def compare(real_dir, synth_dir, png=None):
         print("wrote", png)
 
 
+def complexity(files, limit=40, k=12):
+    """How much STRUCTURE the cloud has — the axis eleven cap dimensions cannot see.
+
+    The audit table below measures the cap: its disc, its rib, how far away it is, how
+    noisy. Every one of those can match while the frame around the cap is a coloured
+    rectangle with a hole in it, and that is exactly what happened here — the numbers said
+    4 % and the pictures said a toy. What the pictures showed and the numbers did not is
+    that a real ROI is *full of other things*: folded sheet metal, a hinged flap and its
+    liner, steps and a drain and stiffening ribs down the recess, a door shut line, glass.
+
+    Three numbers that see it, all on the ROI as a whole, none of them about the cap:
+
+    * `normal_var` — mean angular spread of local normals in a k-neighbourhood. A scene
+      made of a plane, a cone and a disc is locally flat almost everywhere; a real one is
+      not.
+    * `rough_ratio` — plane residual at 24 mm divided by residual at 6 mm. White noise
+      gives ~1; a surface with real low-frequency structure on it gives much more. This
+      separates "noisy" from "detailed", which a single-scale noise number cannot.
+    * `hole_blob` — median connected size of the MISSING pixels. Real dropout comes in
+      slabs; salt-and-pepper is the signature of a per-pixel dropout model.
+    """
+    nv, rr, hb = [], [], []
+    for f in files[:limit]:
+        d = np.load(f)
+        P = d["xyz"].astype(np.float64)
+        if len(P) < 2000:
+            continue
+        idx = np.random.default_rng(0).choice(len(P), min(4000, len(P)), replace=False)
+        Q = P[idx]
+        # local normal spread, via a coarse voxel grid instead of a kd-tree (numpy only)
+        for scale, acc in ((0.006, None), (0.024, None)):
+            pass
+        res = {}
+        for scale in (0.006, 0.024):
+            key = np.floor(P / scale).astype(np.int64)
+            key = key[:, 0] * 73856093 ^ key[:, 1] * 19349663 ^ key[:, 2] * 83492791
+            order = np.argsort(key)
+            ks, Ps = key[order], P[order]
+            bnd = np.flatnonzero(np.diff(ks)) + 1
+            r, nrm = [], []
+            for a, b in zip(np.r_[0, bnd], np.r_[bnd, len(ks)]):
+                if b - a < 8:
+                    continue
+                B = Ps[a:b]
+                c = B.mean(0)
+                _, s, V = np.linalg.svd(B - c, full_matrices=False)
+                r.append(float(np.sqrt(max(s[2] ** 2 / len(B), 0))))
+                nrm.append(V[2])
+            if not r:
+                break
+            res[scale] = float(np.median(r))
+            if scale == 0.006 and len(nrm) > 20:
+                N = np.array(nrm)
+                N *= np.sign(N[:, 2:3] + 1e-9)
+                m = N.mean(0)
+                nv.append(float(np.degrees(np.arccos(np.clip(
+                    np.abs(N @ (m / np.linalg.norm(m))), 0, 1))).mean()))
+        if len(res) == 2 and res[0.006] > 1e-9:
+            rr.append(res[0.024] / res[0.006])
+        # dropout structure: project to pixels, label the gaps by run length
+        K, w, h = d["K_norm"], int(d["w"]), int(d["h"])
+        fx, fy = K[0, 0] * w, K[1, 1] * h
+        cx, cy = K[0, 2] * w, K[1, 2] * h
+        # Snap to pixels by DETECTED PHASE, not by a fixed rounding rule.
+        #
+        # A cloud unprojected from pixel centres re-projects onto xx + 0.5 when cx is
+        # exactly w/2 (every synthetic frame) and onto xx when it is not (every real one,
+        # cx = 321.9). Half a pixel apart — and there is no single rounding function that
+        # is stable on both, because whichever one is chosen, the other set sits exactly on
+        # its tie boundary and float noise scatters neighbouring pixels to either side.
+        #
+        # This cost three wrong conclusions in a row. np.round put the synthetic frames on
+        # a banker's-rounding checkerboard and pinned `hole_run_px` at 1.0 whatever the
+        # sensor model did. Bare floor moved the artefact onto the real frames and said the
+        # REAL clouds were the speckled ones. floor(x+0.5) moved it back. Each time the
+        # number changed and the data had not.
+        #
+        # So measure the phase and pick the rounding that lands mid-interval for THIS set.
+        uf = P[:, 0] / P[:, 2] * fx + cx
+        vf = P[:, 1] / P[:, 2] * fy + cy
+        half = float(np.median(np.abs(np.mod(uf, 1.0) - 0.5))) < 0.25
+        u = np.floor(uf if half else uf + 0.5).astype(int)
+        v = np.floor(vf if half else vf + 0.5).astype(int)
+        x0, y0 = u.min(), v.min()
+        H, W = v.max() - y0 + 1, u.max() - x0 + 1
+        if H * W > 4_000_000 or H < 8 or W < 8:
+            continue
+        occ = np.zeros((H, W), bool)
+        occ[v - y0, u - x0] = True
+        runs = []
+        for row in ~occ:                       # horizontal runs of MISSING pixels
+            e = np.flatnonzero(np.diff(np.r_[0, row.view(np.int8), 0]))
+            runs.extend((e[1::2] - e[0::2]).tolist())
+        if runs:
+            hb.append(float(np.median(runs)))
+    out = {}
+    if nv:
+        out["normal_var_deg"] = float(np.median(nv))
+    if rr:
+        out["rough_ratio"] = float(np.median(rr))
+    if hb:
+        out["hole_run_px"] = float(np.median(hb))
+    return out
+
+
 def audit(synth_dir, real_dir="orbbec_clouds"):
     """Every measured statistic, real against synthetic, in one table.
 
@@ -429,6 +534,7 @@ def audit(synth_dir, real_dir="orbbec_clouds"):
         out["pts_per_frame"] = float(np.median([len(np.load(f)["xyz"]) for f in files[:80]]))
         out["cap_frac"] = float(np.median([
             float((np.load(f)["label"] == 1).mean()) for f in files[:80]]))
+        out.update(complexity(files))
         return out
 
     A, B = block(rf), block(sf)
@@ -436,7 +542,7 @@ def audit(synth_dir, real_dir="orbbec_clouds"):
     print(f"{'':18s} {'real':>10s} {'synth':>10s} {'ratio':>8s}")
     shape = ("disc_u_mm", "disc_v_mm", "rib_h_mm", "rib_len_mm", "rib_wid_mm")
     for k in shape + ("dist_m", "obliquity_deg", "cap_px", "noise_mm", "pts_per_frame",
-                      "cap_frac"):
+                      "cap_frac", "normal_var_deg", "rough_ratio", "hole_run_px"):
         va, vb = A.get(k), B.get(k)
         if va is None or vb is None:
             continue

@@ -23,7 +23,7 @@ from mirage.meshlang import MeshProgram
 from . import materials as M
 from . import parts as P
 from . import scene as S
-from .dataset import RENDER, _read_pgm16, _read_pfm, _read_ppm, render_frame
+from .dataset import _render_bin, _read_pgm16, _read_pfm, _read_ppm, render_frame
 
 OUT = Path(__file__).resolve().parent / "_out"
 
@@ -32,7 +32,7 @@ def _render(prog, out, eye, target, w=340, h=340, spp=64, up=(0, 0, 1), fov=0.7,
     out.parent.mkdir(parents=True, exist_ok=True)
     js = out.with_suffix(".json")
     js.write_text(prog.to_json(), encoding="utf-8")
-    args = [str(RENDER), "--oplog", str(js), "--out", str(out.with_suffix(".ppm")),
+    args = [str(_render_bin()), "--oplog", str(js), "--out", str(out.with_suffix(".ppm")),
             "--w", str(w), "--h", str(h), "--spp", str(spp), "--denoise", "4",
             "--cam-eye", *[f"{x:.5f}" for x in eye],
             "--cam-target", *[f"{x:.5f}" for x in target],

@@ -23,7 +23,7 @@ import math
 from mirage.meshlang import MeshProgram
 
 from .materials import (
-    CAP_ALU, CAP_BLACK, CAP_CHROME, NECK_STEEL, SEAL_RED, SEAL_RUBBER, TETHER,
+    CAP_ALU, CAP_BLACK, CAP_CHROME, GRIME, NECK_STEEL, SEAL_RED, SEAL_RUBBER, TETHER,
     WELL_METAL, WELL_PLASTIC, mat,
 )
 
@@ -215,6 +215,52 @@ def seal(d=0.070, thick=0.0035, material=None):
 # --------------------------------------------------------------------------- #
 # the pocket
 # --------------------------------------------------------------------------- #
+def superellipse(rx, ry, n=4.0, seg=48):
+    """A rounded-rectangle outline — the aperture shape most of these pockets actually have.
+
+    `n` = 2 is an ellipse and `n` -> infinity is a rectangle; real filler apertures sit
+    around 3-5. Modelling them as circles was wrong in a way that only the reference photos
+    showed: over half the by-car sample has a squarish opening with a corner radius, and a
+    perfect circle is the one shape none of them is."""
+    pts = []
+    for i in range(seg):
+        t = TAU * i / seg
+        c, s = math.cos(t), math.sin(t)
+        k = (abs(c) ** n + abs(s) ** n) ** (-1.0 / n)
+        pts.append((rx * c * k, ry * s * k))
+    return pts
+
+
+def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, material=None):
+    """The furniture down the recess: stiffening ribs, a step, a drain notch.
+
+    None of this is decoration. `fit.complexity` measures the ratio of plane residual at
+    24 mm to residual at 6 mm — how much structure a surface has at the scale between
+    those — and the real pockets read 2.13 against a smooth cone's 1.2. That gap is these
+    parts: a real recess is a moulding with draft ribs up its wall, a step where the liner
+    meets the neck, and a drain notch at its low point. A sensor model cannot put them
+    back; only modelling them can."""
+    material = material or WELL_PLASTIC
+    rf = floor_d / 2.0
+    p = MeshProgram()
+    blade = prism([(-0.0038, -0.0024), (0.0038, -0.0024), (0.0032, 0.0024),
+                   (-0.0032, 0.0024)], 0.0, depth * 0.55, mark="well")
+    for i in range(ribs):
+        a = TAU * (i + 0.5) / ribs
+        r = rim_r - 0.005
+        p = p.place(obj=blade, at=(r * math.cos(a), r * math.sin(a), -depth + 0.002),
+                    rotate=(0.0, 0.0, math.degrees(a)), material=material)
+    # the step where the moulded liner meets the neck flange
+    p = p.place(obj=lathe([(0.0, 0.0), (rf * 0.98, 0.0), (rf * 0.98, -0.0045),
+                           (rf * 0.86, -0.0045), (0.0, -0.0045)], steps=40, mark="well"),
+                at=(0.0, 0.0, -depth + 0.0055), material=material)
+    if drain:
+        # the notch at the low point, where water is meant to leave
+        p = p.place(obj=prism(superellipse(0.008, 0.0045, 2.6, 14), 0.0, 0.011, mark="well"),
+                    at=(0.0, -(rf - 0.005), -depth - 0.001), material=GRIME)
+    return p
+
+
 def well(rim_r=0.062, floor_d=0.098, depth=0.052, neck_d=0.052, neck_len=0.055, lip=0.006,
          wall_taper=0.86, neck=True, material=None, steps=48):
     """The recess the cap sits in: a tapered cup with the filler neck down its middle.
@@ -261,7 +307,8 @@ def well(rim_r=0.062, floor_d=0.098, depth=0.052, neck_d=0.052, neck_len=0.055, 
     return p
 
 
-def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=28):
+def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48,
+          squareness=1.0):
     """The body panel around the pocket: an annular plate, not a plate with a hole in it.
 
     Same reasoning as `well` — the aperture is built, not subtracted. A ring of quads from
@@ -273,7 +320,11 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=28
     for z in (0.0, -thick):
         for i in range(ring):
             a = TAU * i / ring
-            verts.append((rh * math.cos(a), rh * math.sin(a), z))
+            c, sn = math.cos(a), math.sin(a)
+            # `squareness` 1 = a circle, 4-5 = the rounded rectangle over half the reference
+            # cars actually have. A perfect circle is the one aperture shape none of them is.
+            k = (abs(c) ** squareness + abs(sn) ** squareness) ** (-1.0 / squareness)                 if squareness > 1.0 else 1.0
+            verts.append((rh * c * k, rh * sn * k, z))
         for i in range(ring):
             # The border walks the SQUARE's perimeter by arc length, not by angle. Mapping
             # a ring of angles onto a square only lands on the corners if a sample happens

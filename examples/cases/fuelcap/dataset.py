@@ -30,9 +30,25 @@ import numpy as np
 from . import scene as S
 
 ROOT = Path(__file__).resolve().parents[3]
-RENDER = ROOT / "core" / "build" / "Release" / "mirage_render.exe"
-if not RENDER.exists():
-    RENDER = ROOT / "core" / "build" / "mirage_render"          # posix build
+
+
+def _render_bin():
+    """The tracer, via ``capture.default_render`` — NOT by gluing the path together here.
+
+    That indirection is the whole point. This checkout carries a ``.render-remote-only``
+    marker precisely because "just a quick preview" locally happens over and over on a
+    workstation that has a 152-core box behind it, and `default_render` is what makes the
+    local path physically impossible rather than merely inadvisable.
+
+    Building the path by hand walks straight around that guard, and this module did, which
+    is how four hundred frames of this dataset got path-traced on a laptop while the box sat
+    idle. A generator that renders in a loop is the LAST thing that should be exempt.
+    """
+    from mirage.capture import default_render
+    return default_render()
+
+
+RENDER = None       # resolved lazily, so importing this module never trips the guard
 
 
 # --------------------------------------------------------------------------- #
@@ -67,7 +83,7 @@ def _read_pfm(p):
 # the sensor
 # --------------------------------------------------------------------------- #
 def degrade_depth(depth, rng, sigma_mm=0.42, jump_mm=12.0, flying=0.35, edge_px=1.6,
-                  quant_mm=0.0):
+                  quant_mm=0.0, warp_mm=0.55, warp_px=13):
     """Turn a perfect depth map into one a stereo camera would have produced.
 
     Four effects, in the order they happen in a real pipeline:
@@ -123,6 +139,25 @@ def degrade_depth(depth, rng, sigma_mm=0.42, jump_mm=12.0, flying=0.35, edge_px=
     if quant_mm > 0:
         d = np.round(d / (quant_mm * 1e-3)) * (quant_mm * 1e-3)
     d += rng.normal(0.0, sigma_mm * 1e-3, d.shape).astype(np.float32)
+    if warp_mm > 0:
+        # LOW-FREQUENCY axial error, on top of the white noise. A real depth map is not a
+        # clean surface plus per-pixel scatter: it also wanders, over tens of pixels, from
+        # calibration residual, rectification error and the matcher's own bias.
+        #
+        # Kept small and honest. `fit.complexity` reports the ratio of plane residual at
+        # 24 mm to residual at 6 mm: 2.13 on the real clouds. White noise gives 1.0 by
+        # construction, and this correlated term was added to close the gap — it does not.
+        # Swept over sigma 0.20-0.42 mm and warp 0-1.8 mm at 13-31 px, the ratio never got
+        # past 1.37, because a field smooth at 13 px is smooth at BOTH 6 mm and 24 mm and
+        # lifts the two residuals together.
+        #
+        # That is a real answer, not a tuning failure: the missing structure is GEOMETRY —
+        # the steps, ribs, drain and folded sheet a real pocket has between 6 and 24 mm,
+        # which this kit does not model. No sensor model can put it back, and turning this
+        # knob up to make the number move would only be forging the evidence.
+        f = _smooth(rng.normal(0.0, 1.0, d.shape).astype(np.float32), warp_px)
+        s = float(f.std()) or 1.0
+        d += (f / s) * (warp_mm * 1e-3)
 
     return d, valid
 
@@ -157,6 +192,21 @@ def _box_mean(a, win):
     return (s / (win * win)).astype(np.float32)
 
 
+def _smooth(a, win, passes=3):
+    """`passes` successive box means — a near-gaussian blur, and the passes are not
+    optional.
+
+    A single box filter is a sinc in frequency and its side lobes leak high frequencies
+    straight through. Threshold such a field and the level set comes out as percolation
+    lace rather than as patches: measured, the median run of a thresholded one-pass field
+    is 3 px *at every kernel width from 5 to 31*, which is the tell — a length scale that
+    does not respond to the length-scale knob is not the length scale you think it is.
+    Two passes make it 11, three make 13, and both then track the kernel."""
+    for _ in range(max(1, passes)):
+        a = _box_mean(a, win)
+    return a
+
+
 def _texture(rgb, win=5):
     """Local luminance standard deviation, the same way `fit.dropout_vs_texture` measures
     it on the real frames — the two have to agree or the calibration means nothing."""
@@ -165,29 +215,38 @@ def _texture(rgb, win=5):
     return np.sqrt(np.maximum(_box_mean(lum * lum, win) - mu * mu, 0.0))
 
 
-def _dropout(valid, rgb, rng, fill=0.60, blob=0.35):
+def _dropout(valid, rgb, rng, fill=0.60, blob_px=11, speckle=0.0):
     """Thin the valid mask to the measured ROI fill, following the measured curve."""
     if fill >= 1.0:
         return valid
     if not valid.any():
         return valid
-    # Real dropouts arrive in patches, not as salt and pepper: a correlation window that
-    # fails, fails for its whole neighbourhood. Eroding a random field twice gives patches
-    # a few pixels across, which is the scale the reference frames show. The patches are
-    # drawn FIRST so the per-pixel curve can be rescaled to land on `fill` including them —
-    # rescaling first and then eroding overshoots the dropout by whatever the patches cost.
-    lost = np.zeros(valid.shape, bool)
-    if blob > 0:
-        lost = rng.random(valid.shape) < blob
-        for _ in range(2):
-            lost[:, 1:] &= lost[:, :-1]
-            lost[1:, :] &= lost[:-1, :]
+    # Real dropouts arrive in SLABS, not as salt and pepper: a correlation window that
+    # fails, fails for its whole neighbourhood, and the reason it failed — a specular
+    # highlight, a shadowed pocket, a textureless panel — is itself many pixels wide.
+    # `fit.complexity` measures it as the median run of consecutive missing pixels: 12 px
+    # on the real frames.
+    #
+    # The fix is NOT to subtract extra blobs on top. Whatever else is done, a per-pixel
+    # Bernoulli draw at p≈0.6 produces isolated one-pixel gaps by the thousand, and the
+    # median run stays pinned at 1 — measured, twice, including once after adding exactly
+    # such a blob term. The draw ITSELF has to be spatially correlated.
+    #
+    # So the comparison is made against a smoothed random field instead of white noise.
+    # Rank-transforming it back to uniform keeps `curve` meaning exactly what it meant —
+    # a per-pixel survival probability, still modulated by texture — while making
+    # neighbouring pixels succeed and fail together. One field, both properties.
     sd = _texture(rgb)
     curve = SURVIVAL[np.clip(np.digitize(sd, TEXTURE_EDGES) - 1, 0, len(SURVIVAL) - 1)]
-    live = valid & ~lost
-    got = float(curve[live].mean() * live.sum() / max(valid.sum(), 1)) if live.any() else 1.0
-    curve = np.clip(curve * (fill / max(got, 1e-6)), 0.0, 1.0)
-    return live & (rng.random(valid.shape) < curve)
+    curve = np.clip(curve * (fill / max(curve[valid].mean(), 1e-6)), 0.0, 1.0)
+    f = _smooth(rng.normal(0.0, 1.0, valid.shape).astype(np.float32), blob_px)
+    r = np.empty(f.size, np.int64)
+    r[np.argsort(f, axis=None)] = np.arange(f.size)
+    u = ((r + 0.5) / f.size).reshape(f.shape)          # uniform [0,1], but correlated
+    keep = u < curve
+    if speckle > 0:
+        keep &= rng.random(valid.shape) > speckle       # the genuinely isolated failures
+    return valid & keep
 
 
 # --------------------------------------------------------------------------- #
@@ -198,7 +257,7 @@ def render_frame(v, gt, work: Path, spp=48, threads=0, denoise=4):
     prog, _ = None, None
     oplog = work / "scene.json"
     cam = gt
-    args = [str(RENDER), "--oplog", str(oplog), "--out", str(work / "rgb.ppm"),
+    args = [str(_render_bin()), "--oplog", str(oplog), "--out", str(work / "rgb.ppm"),
             "--depth", str(work / "d.pfm"), "--ids", str(work / "ids.pgm"),
             "--id-tags", ",".join(S.ID_TAGS),
             "--w", str(v_w(v)), "--h", str(v_h(v)), "--spp", str(spp),
@@ -271,8 +330,10 @@ def make_cloud(rgb, ids, depth, gt, rng, cfg):
 
     d, valid = degrade_depth(depth, rng, sigma_mm=cfg["sigma_mm"], jump_mm=cfg["jump_mm"],
                              flying=cfg["flying"], edge_px=cfg["edge_px"],
-                             quant_mm=cfg["quant_mm"])
-    valid = _dropout(valid, rgb, rng, fill=cfg["fill"])
+                             quant_mm=cfg["quant_mm"], warp_mm=cfg["warp_mm"],
+                             warp_px=cfg["warp_px"])
+    valid = _dropout(valid, rgb, rng, fill=cfg["fill"], blob_px=cfg["blob_px"],
+                     speckle=cfg["speckle"])
     d, valid = d[y0:y1, x0:x1], valid[y0:y1, x0:x1]
     sub_rgb, sub_ids = rgb[y0:y1, x0:x1], ids[y0:y1, x0:x1]
 
@@ -324,6 +385,9 @@ def make_cloud(rgb, ids, depth, gt, rng, cfg):
 # --------------------------------------------------------------------------- #
 DEFAULT_CFG = dict(roi_scale=3.9, fill=0.60, sigma_mm=0.42, jump_mm=12.0, flying=0.35,
                    edge_px=1.6, quant_mm=0.0,
+                   # correlated depth error + slab-shaped dropout: the two terms that a
+                   # per-pixel model cannot produce at all. Both calibrated in fit.complexity.
+                   warp_mm=0.55, warp_px=13, blob_px=9, speckle=0.0,
                    rgb_grain=0.012, rgb_chroma_blur=1.2, rgb_saturation=1.12)
 
 
