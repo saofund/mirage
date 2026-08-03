@@ -76,9 +76,21 @@ def main():
     env = os.environ.get("MIRAGE_BOX_ENV", "PATH=$HOME/.local/bin:$PATH")
     pull = [p for p in os.environ.get("MIRAGE_BOX_PULL", ",".join(DEFAULT_PULL)).split(",") if p]
 
-    if out("git", "status", "--porcelain"):
-        raise SystemExit("working tree is dirty — commit first, so the box renders what you\n"
-                         "  are about to claim it rendered (git status)")
+    # TRACKED changes are the ones that make the box render something other than what is in
+    # front of you, so those still refuse. Untracked files are a different case and used to
+    # be treated the same: they cannot reach the box at all, so they cannot make the render
+    # disagree with the checkout — and blocking on them means somebody else's work in
+    # progress sitting in the tree stops every render in the repository. Worth NAMING,
+    # though: a case that imports an untracked module runs here and dies there.
+    status = [ln for ln in out("git", "status", "--porcelain").splitlines() if ln.strip()]
+    tracked = [ln for ln in status if not ln.startswith("??")]
+    if tracked:
+        raise SystemExit("tracked changes are uncommitted — commit first, so the box renders\n"
+                         "  what you are about to claim it rendered:\n    "
+                         + "\n    ".join(tracked))
+    for ln in status:
+        if ln.startswith("??"):
+            print(f"[box] untracked, will NOT exist on the box: {ln[3:]}")
     print(f"[box] pushing {out('git', 'rev-parse', '--short', 'HEAD')}")
     sh("git", "push", "-q", "origin", "HEAD")
 
