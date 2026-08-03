@@ -483,11 +483,14 @@ def hose_tangle(side=1):
     p = MeshProgram()
     # Walked apart with a JITTER, not a ramp: five loops whose reach grows monotonically
     # nest like a rainbow. Real ones cross, because nobody re-racks a fuel hose tidily.
-    jit = [0.00, 0.13, -0.07, 0.17, 0.04]
-    for k in range(5):
-        t = k / 4.0
-        a = [side * 0.54, -0.17 + 0.066 * k, 1.33]
-        b = [side * 0.50, 0.02 + 0.034 * k, 1.12 - 0.035 * k]
+    # EIGHT, not five. Count them in the photograph: the flank of a multi-product dispenser
+    # carries one hose per grade per side and they hang over each other. Five reads as a
+    # tidy diagram of a pump; eight reads as a pump somebody uses.
+    jit = [0.00, 0.13, -0.07, 0.17, 0.04, -0.11, 0.09, 0.20]
+    for k in range(8):
+        t = k / 7.0
+        a = [side * 0.54, -0.19 + 0.048 * k, 1.33]
+        b = [side * 0.50, 0.00 + 0.026 * k, 1.14 - 0.028 * k]
         p.place(tube_along(hose_path(a, b, side, out=0.44 + 0.16 * t + jit[k],
                                      drop=0.78 + 0.20 * t - jit[k] * 0.5,
                                      lean=0.07 + 0.19 * t), 0.0215, 8), material=HOSE)
