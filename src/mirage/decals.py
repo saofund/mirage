@@ -81,7 +81,8 @@ NAVY = (86, 118, 214)     # banners: 0.230, 0.335, 0.470, against the photograph
 SIGN_NAVY = (48, 76, 170)   # 0.578 too light, then 0.285 too dark, target 0.396
 SIGN_NAVY_D = (32, 52, 126)
 NAVY_D = (40, 62, 150)
-RED = (130, 34, 16)      # green over blue, as the photograph's cabinet has it; was 28/38
+RED = (186, 34, 22)      # scarlet. The cabinet's FACE is this decal, not the RED material,
+                         # so lightening the material alone left it brown on screen.
 RED_D = (92, 20, 28)
 ORANGE = (172, 80, 34)
 YELLOW = (215, 165, 12)
@@ -146,7 +147,8 @@ def _fire_cabinet(W, H):
     """灭火器箱 — the red extinguisher cabinet's printed front."""
     im = Image.new("RGB", (W, H), RED)
     d = ImageDraw.Draw(im)
-    d.rectangle([0, 0, W, int(H * 0.055)], fill=ORANGE)            # the lid's orange band
+    d.rectangle([0, 0, W, int(H * 0.055)], fill=RED_D)             # the lid: RED in the
+                                                                  # reference, not orange
     d.rectangle([0, int(H * 0.46), W, int(H * 0.475)], fill=RED_D)  # the two-door split
     ey = int(H * 0.16)                                              # extinguisher pictogram
     d.rounded_rectangle([int(W * 0.10), ey, int(W * 0.19), ey + int(H * 0.11)],
@@ -168,7 +170,9 @@ def _fire_bucket(W, H):
     The background is the BUCKET'S OWN colour, not black or transparent: a decal has no
     alpha, so whatever is behind the letters is painted onto the part. Get this wrong and
     the bucket wears a black card."""
-    im = Image.new("RGB", (W, H), (117, 120, 122))
+    # Galvanised steel photographs BRIGHT -- the reference's bucket is one of the lighter
+    # things on the island. At 117/120/122 it read as a dark cylinder in the corner.
+    im = Image.new("RGB", (W, H), (172, 175, 177))
     d = ImageDraw.Draw(im)
     _text(d, (W * 0.5, H * 0.40), "消防桶", int(W * 0.30), WHITE, spacing=W * 0.01)
     _text(d, (W * 0.5, H * 0.68), "119", int(W * 0.20), WHITE)

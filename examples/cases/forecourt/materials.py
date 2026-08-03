@@ -138,7 +138,7 @@ STEEL     = mat((0.52, 0.52, 0.53), 1.0, 0.36)
 # The island's grating stands in the rain. Bright dry steel turned it into a chrome
 # serving tray; wet steel is darker and glossier, and reads as the thing in the photo.
 WET_STEEL = mat((0.535, 0.452, 0.348), 1.0, 0.42)   # tone landed; chasing the cast
-GALV      = mat((0.235, 0.238, 0.240), 1.0, 0.48)      # galvanised: duller than bright steel
+GALV      = mat((0.520, 0.526, 0.530), 1.0, 0.48)      # galvanised: duller than bright steel
 CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.18)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.42)
 # White automotive paint is a 0.80-albedo surface, not a 0.62 one, and the scorecard says so

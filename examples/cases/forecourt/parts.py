@@ -521,7 +521,7 @@ def fire_cabinet():
     p.place(cbox(W, D, H, 0.010), at=[0, 0, H / 2], material=RED)
     p.place(cbox(W - 0.02, 0.012, H - 0.04, 0.004), at=[0, -D / 2 - 0.004, H / 2],
             material=FIREBOX_F)                                        # the printed doors
-    p.place(cbox(W + 0.02, D + 0.02, 0.05, 0.010), at=[0, 0, H - 0.02], material=ORANGE_S)
+    p.place(cbox(W + 0.02, D + 0.02, 0.05, 0.010), at=[0, 0, H - 0.02], material=RED_D)
     p.place(box(W - 0.02, 0.014, 0.010), at=[0, -D / 2 - 0.008, H * 0.46], material=RED_D)
     for z in (H * 0.22, H * 0.70):                                     # hinges and the latch
         for s in (-1, 1):
@@ -658,7 +658,9 @@ def island():
     for s in (-1, 1):
         p.place(hose_tangle(s), at=[0, 0.06, Z], mark="hoses")
     p.place(fire_cabinet(), at=[0.02, -0.44, Z], mark="firebox")
-    p.place(fire_bucket(), at=[0.52, -0.46, Z], mark="bucket")
+    # 0.20 m right and 0.27 m further in: measured off the crop, the render put the bucket
+    # 29 px left of the reference and 40 px below it, at 147 px per metre.
+    p.place(fire_bucket(), at=[0.70, -0.20, Z], mark="bucket")
     p.place(bottle(0.115, 0.032, (0.34, 0.20, 0.05)), at=[-0.34, -0.48, Z])
     p.place(bottle(0.105, 0.030, (0.72, 0.72, 0.70)), at=[-0.20, -0.49, Z])
     p.place(bottle(0.098, 0.028, (0.20, 0.42, 0.16)), at=[-0.27, -0.42, Z])
