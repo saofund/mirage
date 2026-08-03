@@ -443,11 +443,11 @@ def dispenser():
     W, D, H = 1.36, 0.72, 1.46
     p = MeshProgram()
     p.place(cbox(W, D, H, 0.016), at=[0, 0, H / 2], material=PUMP_BL)
-    p.place(cbox(W + 0.03, D + 0.03, 0.05, 0.010), at=[0, 0, 0.04], material=PUMP_BL_D)
-    p.place(cbox(W + 0.03, D + 0.03, 0.035, 0.010), at=[0, 0, H - 0.01], material=PANEL_WH)
+    p.place(cbox(W + 0.02, D + 0.02, 0.035, 0.008), at=[0, 0, 0.028], material=PUMP_BL_D)
+    p.place(cbox(W + 0.02, D + 0.02, 0.018, 0.006), at=[0, 0, H - 0.006], material=PANEL_WH)
     for s in (-1, 1):                                                 # corner pilasters
         for t in (-1, 1):
-            p.place(cbox(0.058, 0.058, H - 0.05, 0.012),
+            p.place(cbox(0.034, 0.034, H - 0.05, 0.010),
                     at=[s * (W / 2 - 0.012), t * (D / 2 - 0.012), H / 2 - 0.01],
                     material=PANEL_WH)
     p.place(cbox(W + 0.016, D + 0.016, 0.075, 0.010), at=[0, 0, 0.50], material=ORANGE_S)
@@ -623,10 +623,10 @@ def pump_sign():
     p.place(cbox(W, D, H, 0.012), at=[0, 0, 0], material=PANEL_WH)
     p.place(cbox(W - 0.02, 0.02, H - 0.02, 0.006), at=[0, -D / 2 - 0.006, 0], material=SIGN_FACE)
     for s in (-1, 1):                                                  # the frame's extrusions
-        p.place(cbox(0.045, D + 0.012, H + 0.01, 0.008), at=[s * (W / 2 - 0.018), 0, 0],
+        p.place(cbox(0.022, D + 0.010, H + 0.01, 0.006), at=[s * (W / 2 - 0.010), 0, 0],
                 material=PANEL_WH)
     for s in (-1, 1):
-        p.place(cbox(W + 0.01, D + 0.012, 0.045, 0.008), at=[0, 0, s * (H / 2 - 0.018)],
+        p.place(cbox(W + 0.008, D + 0.010, 0.022, 0.006), at=[0, 0, s * (H / 2 - 0.010)],
                 material=PANEL_WH)
     return p
 
