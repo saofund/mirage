@@ -100,7 +100,9 @@ CONCRETE = mat((0.245, 0.246, 0.238), 0.0, 0.72)
 CLAD      = mat((0.300, 0.302, 0.300), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
 WALL_TILE = mat((0.86, 0.865, 0.85), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.15)
 SEAM      = mat((0.24, 0.24, 0.24), 0.0, 0.45)      # the shadow line between clad panels
-KERB      = mat((0.395, 0.378, 0.345), 0.0, 0.66)
+# The worst single item on the scorecard for several rounds: the plinth assembly reading
+# 0.053 cool, and the kerb is most of its pixels. Warmed by that much rather than guessed at.
+KERB      = mat((0.409, 0.379, 0.330), 0.0, 0.66)
 
 # ---- painted metal and plastic --------------------------------------------------- #
 PUMP_BL   = mat((0.094, 0.118, 0.238), 0.0, 0.30)   # the dispenser's blue
@@ -125,7 +127,9 @@ WET_STEEL = mat((0.535, 0.452, 0.348), 1.0, 0.42)   # tone landed; chasing the c
 GALV      = mat((0.235, 0.238, 0.240), 1.0, 0.48)      # galvanised: duller than bright steel
 CHROME    = mat((0.62, 0.63, 0.64), 1.0, 0.18)
 WHITE     = mat((0.78, 0.78, 0.77), 0.0, 0.42)
-BODY_WH   = mat((0.62, 0.628, 0.645), 0.0, 0.22)     # vehicle paint: brighter and glossier
+# White automotive paint is a 0.80-albedo surface, not a 0.62 one, and the scorecard says so
+# plainly once the van's mask actually lands on the van: 0.559 against the photograph's 0.693.
+BODY_WH   = mat((0.80, 0.806, 0.818), 0.0, 0.22)     # vehicle paint: brighter and glossier
 GLASS     = mat((0.05, 0.06, 0.07), 0.0, 0.07)
 SHUTTER   = mat((0.252, 0.298, 0.376), 0.35, 0.40)
 SHUTTER_D = mat((0.150, 0.165, 0.195), 0.35, 0.46)

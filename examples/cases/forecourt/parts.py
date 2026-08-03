@@ -24,7 +24,7 @@ Conventions, so the layout can place these without guessing:
 """
 import math
 
-from mirage.meshlang import MeshProgram
+from mirage.meshlang import MeshProgram, Sel
 
 from .materials import (
     BLACK, BODY_WH, BUCKET_F, CHROME, CLAD, CONCRETE, FIREBOX_F, GALV, GLASS, HOSE, KERB,
@@ -927,14 +927,24 @@ def van():
 
     p = MeshProgram()
     p.place(loft_grid(lower, upper, hw, n_smooth=2), material=BODY_WH)
-    # the rocker in the photograph is nearly black against the white body, not grey
+    # The dark lower band is PAINTED ONTO THE SHELL, not stuck to it as a proud box. Twice
+    # now it was built as a `cbox` sitting at one flank offset, and twice it rendered as
+    # nothing at all: the body's tumblehome moves 18 cm across the band's own height, so a
+    # box placed level with the flank at z=0.63 is buried 3 cm inside the body at its top
+    # edge and floating 11 cm off it at its bottom. A selector cannot make that mistake --
+    # these are the body's own faces, so the band follows every curve and every arch.
+    # Heights measured off the reference at column 900: the band runs z 0.43..0.74, white
+    # body above it to 1.27, glass from there up past the frame's edge.
     body = mat((0.105, 0.108, 0.115), 0.0, 0.45)
+    p.material(Sel.box([-9, -9, 0.40], [9, 9, 0.76]), color=body["color"],
+               metallic=0.0, roughness=0.45)
     trim = mat((0.50, 0.505, 0.51), 0.0, 0.35)
 
     def flank(x, z, out=0.0):
         return hw(x, z) + out
 
-    GZ, GH = 1.34, 0.56                      # the window band: centre and height
+    GZ, GH = 1.50, 0.46                      # measured: glass from z 1.27 to past 1.73,
+                                             # where the top of the frame cuts it off
     for s in (-1, 1):
         p.place(cbox(4.05, 0.03, GH, 0.012), at=[-0.95, s * flank(-0.95, GZ, -0.012), GZ],
                 material=GLASS)
@@ -947,11 +957,11 @@ def van():
                                                     GZ + GH / 2], material=trim)
         p.place(cbox(4.14, 0.02, 0.030, 0.006), at=[-0.90, s * flank(-0.90, GZ - GH / 2, 0.004),
                                                     GZ - GH / 2], material=trim)
-        # the heavy dark rocker: it stands PROUD of the flank, because a moulding flush with
-        # the body is not a moulding -- placed level with it, it rendered as nothing at all
-        p.place(cbox(5.94, 0.06, 0.34, 0.012), at=[-0.17, s * flank(-0.17, 0.63, 0.012), 0.63],
-                material=body)
-        p.place(cbox(4.82, 0.03, 0.020, 0.008), at=[-0.26, s * flank(-0.26, 1.02, 0.006), 1.02],
+        # the rub strip along the top of the dark band, which is what makes it read as a
+        # moulding and not as a paint job
+        p.place(cbox(5.94, 0.03, 0.026, 0.008), at=[-0.17, s * flank(-0.17, 0.76, 0.008), 0.76],
+                material=mat((0.30, 0.305, 0.31), 0.0, 0.35))
+        p.place(cbox(4.82, 0.03, 0.020, 0.008), at=[-0.26, s * flank(-0.26, 1.14, 0.006), 1.14],
                 material=mat((0.60, 0.605, 0.61), 0.0, 0.30))
         for x in (0.62, -2.17):                                     # door shut lines
             p.place(cbox(0.04, 0.06, 0.70, 0.010), at=[x, s * flank(x, 1.05, 0.002), 1.05],
