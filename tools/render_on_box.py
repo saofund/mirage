@@ -63,6 +63,8 @@ def main():
                     help="what to run remotely, e.g. examples/cases/26_forecourt.py")
     ap.add_argument("--cwd", default=".", help="directory on the box to run from (repo-relative)")
     ap.add_argument("--no-build", action="store_true", help="skip the remote cmake build")
+    ap.add_argument("--allow-dirty", action="store_true",
+                    help="render HEAD with tracked changes outstanding, listing them loudly")
     ap.add_argument("--threads", default="140")
     args = ap.parse_args()
     if args.command and args.command[0] == "--":
@@ -85,9 +87,14 @@ def main():
     status = [ln for ln in out("git", "status", "--porcelain").splitlines() if ln.strip()]
     tracked = [ln for ln in status if not ln.startswith("??")]
     if tracked:
-        raise SystemExit("tracked changes are uncommitted — commit first, so the box renders\n"
-                         "  what you are about to claim it rendered:\n    "
-                         + "\n    ".join(tracked))
+        if not args.allow_dirty:
+            raise SystemExit("tracked changes are uncommitted — commit first, so the box renders\n"
+                             "  what you are about to claim it rendered:\n    "
+                             + "\n    ".join(tracked)
+                             + "\n  (--allow-dirty renders HEAD anyway and prints this list)")
+        print("[box] RENDERING HEAD, NOT YOUR TREE. Uncommitted and therefore absent there:")
+        for ln in tracked:
+            print(f"[box]   {ln}")
     for ln in status:
         if ln.startswith("??"):
             print(f"[box] untracked, will NOT exist on the box: {ln[3:]}")

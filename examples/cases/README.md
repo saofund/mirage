@@ -38,7 +38,21 @@ at scale, path-traced** (`uv run python examples/cases/17_city_scene.py`; also
 examples/cases/18_interior_scene.py`; `--hero` for the gallery still, `--film` for the
 making-of, `--oplog` to dump the legible scene op-log).
 
+**`26` rebuilds a real scene from one photograph** (`26_forecourt.py`; camera solved with
+`mirage.solve`, parts in `forecourt/`, `python -m forecourt.sheet` to review each alone).
+
+**`27` goes the other way: a real perception dataset, replaced.** (`27_fuelcap.py`) The
+subject is the inner fuel cap (内盖) inside a car's filler pocket, and the product is an
+unlimited stream of labelled point clouds in the format the customer's own pipeline
+already reads — exact 6D pose, segmentation and knob OBB per frame. The shape, the camera
+envelope and the *depth sensor's* noise, dropout and flying pixels are all measured off
+376 real clouds and reproduced; `python -m fuelcap.fit --audit` puts eleven statistics of
+the real set beside the synthetic one, and `--check-labels` verifies the labels against the
+geometry they describe rather than trusting them. See `fuelcap/README.md`, including the
+three bugs that were invisible in every render and what caught them.
+
 Cases 01–10 run physics/rendering through MuJoCo behind Mirage's `PhysicsBackend` /
 `RenderBackend` interfaces (scene model = OpenUSD, `mirage.scene.Scene`); 11–18 are
-the op-log modeling kernel; 17 and 18 also drive the `mirage_render` path tracer (18
-composes the whole scene from a legible op-log of `place` ops).
+the op-log modeling kernel; 17, 18, 26 and 27 also drive the `mirage_render` path tracer
+(18 composes the whole scene from a legible op-log of `place` ops; 27 reads its
+`--depth` and `--ids` AOVs back as a labelled cloud).
