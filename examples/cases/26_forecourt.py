@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))   # so `forecourt` impo
 
 from forecourt import parts as P                                          # noqa: E402
 from forecourt.materials import (APRON, APRON_LT, BAY_BLUE, BAY_ORNG, BAY_SLATE,  # noqa: E402
+                                 PUDDLE, PUDDLE_L,
                                  BLACK, CONCRETE, LINE_W, PROMO_F, REPAIR_F, ROAD, SHUTTER_D,
                                  WASH_F, WHITE, YELLOW, YELLOWP, mat)
 from mirage.capture import default_render                                 # noqa: E402
@@ -184,6 +185,17 @@ def forecourt():
             material=YELLOWP)
     # Scanning a column up the photograph put the drain at world y = 8.0 (black at 8.04,
     # concrete again by 8.47). It had been sitting at 11.3, three metres into the road.
+    # WHERE THE WATER IS. Mapping wetness on a two-metre world grid, photograph against
+    # render: the far band by the road reads 0.79 against 0.42 here and the blue bay reads
+    # 0.17 against 0.55 — this scene was wet in the wrong places by as much as it was wet at
+    # all. A texture can only make a surface uniformly damp; water collects where the slab
+    # falls away, so it belongs in the LAYOUT.
+    for x0, y0, w, d, rot, m in [(9.0, 13.2, 15.0, 3.4, ANG, PUDDLE),
+                                 (2.0, 13.0, 9.0, 2.6, ANG, PUDDLE),
+                                 (11.0, 7.2, 5.0, 3.0, ANG + 8, PUDDLE_L),
+                                 (7.2, 3.0, 3.6, 2.6, ANG - 6, PUDDLE_L),
+                                 (-1.0, 5.2, 2.4, 3.0, 4, PUDDLE_L)]:
+        p.place(P.puddle(w, d), at=[x0, y0, 0.010], rotate=[0, 0, rot], material=m)
     p.place(P.drain_channel(15.0), at=[6.0, 8.05, 0], rotate=[0, 0, ANG])
     return p
 

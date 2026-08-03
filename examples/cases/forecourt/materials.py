@@ -81,6 +81,10 @@ APRON_LT = mat((0.36, 0.365, 0.368), 0.0, 0.55, maps=TEX["apron_light"], uv_scal
 BAY_BLUE = mat((0.03, 0.058, 0.15), 0.0, 0.5, maps=TEX["bay_blue"], uv_scale=4.0)
 BAY_ORNG = mat((0.395, 0.108, 0.034), 0.0, 0.5, maps=TEX["bay_orange"], uv_scale=4.5)
 BAY_SLATE = mat((0.09, 0.10, 0.115), 0.0, 0.5, maps=TEX["bay_slate"], uv_scale=4.5)
+# Standing water: dark and nearly a mirror, so what you see in it is the sky, not the
+# puddle. A "wet" material that is merely a darker grey reads as a stain.
+PUDDLE   = mat((0.030, 0.033, 0.038), 0.0, 0.055)
+PUDDLE_L = mat((0.055, 0.058, 0.062), 0.0, 0.10)
 LINE_W   = mat((0.40, 0.405, 0.40), 0.0, 0.60)      # damp, grimy paint — never bright white
 YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
 CONCRETE = mat((0.245, 0.246, 0.238), 0.0, 0.72)

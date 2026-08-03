@@ -314,7 +314,7 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     st = _fbm(res, 2, 4, seed + 17)
     # Softer and less contrasty than it was: at (0.55-st)*2.1 darkening to 26%% the lobes
     # read as marbling — tie-dye — rather than as water lying on paint.
-    wet_mask = np.clip((0.52 - st) * 1.5, 0, 1) ** 1.4
+    wet_mask = np.clip((0.44 - st) * 1.3, 0, 1) ** 1.5
     # only a few hairline cracks on a bay — the WET SHEET is the story, not a mud-crack web
     cracks = _crack_net(res, seed + 23, period=8, thresh=0.91) * 0.55
     # hard-edged marks: a tyre scuff and a spill both END somewhere

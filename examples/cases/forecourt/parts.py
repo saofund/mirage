@@ -779,6 +779,17 @@ def speed_hump(length=3.6, w=0.50, h=0.075):
     return p
 
 
+def puddle(w, d, rot=0.0, depth=0.008):
+    """Standing water lying in one PLACE.
+
+    A wetness texture makes a surface uniformly damp; a forecourt after rain is not. Water
+    collects where the slab falls away, so the wet is a property of the LOCATION, and mapping
+    the reference on a two-metre world grid shows exactly that — the far band by the road at
+    0.79 against this render's 0.42, and the blue bay at 0.17 against 0.55, i.e. wet in the
+    wrong places by as much as it was wet at all. These go where the photograph's water is."""
+    return cbox(w, d, depth, 0.002)
+
+
 def drain_channel(length=13.0, w=0.28):
     """The forecourt's drainage run: two kerbs with a slotted cover between them. The kerbs
     have to be a FRAME rather than a slab, or they roof over the grating they contain."""
