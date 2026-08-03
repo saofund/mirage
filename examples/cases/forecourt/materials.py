@@ -71,7 +71,7 @@ def top_decal(art, w, d, height, base=(0.3, 0.3, 0.3), metallic=0.0, roughness=0
 
 TEX = ensure_textures(["forecourt_concrete", "asphalt_wet", "bay_blue", "bay_orange",
                        "bay_bleached", "bay_blue_faded", "apron_light", "forecourt_wet",
-                       "clad_panel", "shop_tile"])
+                       "clad_panel", "shop_tile", "line_paint"])
 DEC = ensure_decals(["pump_sign", "fire_cabinet", "fire_bucket", "wet_floor", "wash_banner",
                      "promo_banner", "repair_sign", "plate", "shutter_slat"])
 
@@ -94,7 +94,8 @@ DAMP     = mat((0.150, 0.154, 0.158), 0.0, 0.30, maps=TEX["forecourt_wet"], uv_s
 # ...and one step further out again, barely damp. Three tiers, because a puddle's edge
 # in a photograph is not a line at any magnification — it is where the film ran out.
 DAMP2    = mat((0.178, 0.182, 0.186), 0.0, 0.44, maps=TEX["forecourt_wet"], uv_scale=5.5)
-LINE_W   = mat((0.40, 0.405, 0.40), 0.0, 0.60)      # damp, grimy paint — never bright white
+LINE_W   = mat((0.40, 0.405, 0.40), 0.0, 0.60, maps=TEX["line_paint"], uv_scale=1.3)
+#          damp, grimy paint — never bright white, and never one flat value end to end
 YELLOWP  = mat((0.52, 0.36, 0.04), 0.0, 0.68)
 CONCRETE = mat((0.245, 0.246, 0.238), 0.0, 0.72)
 

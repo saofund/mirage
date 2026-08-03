@@ -348,8 +348,12 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     # Softer and less contrasty than it was: at (0.55-st)*2.1 darkening to 26%% the lobes
     # read as marbling — tie-dye — rather than as water lying on paint.
     wet_mask = np.clip((0.44 - st) * 1.3, 0, 1) ** 1.5
-    # only a few hairline cracks on a bay — the WET SHEET is the story, not a mud-crack web
-    cracks = _crack_net(res, seed + 23, period=8, thresh=0.91) * 0.55
+    # HAIRLINE. At period 8 and a 0.91 threshold the cells are half a metre across and the
+    # lines between them are centimetres WIDE, which is not a crack network -- it is marble
+    # veining, and magnified beside the reference it was the loudest thing on the bay. A real
+    # bay's cracks are sub-millimetre; what the photograph actually shows at this scale is
+    # paint PEELING, and that is the `wear` term above, not this one.
+    cracks = _crack_net(res, seed + 23, period=8, thresh=0.964) * 0.55
     # Hard-edged marks: a tyre scuff and a spill both END somewhere. Thresholded from a
     # STREAKED field for the same reason the concrete's drips are -- cut from round noise
     # they are a scatter of ovals, and paint is marked by things sliding across it.
@@ -388,7 +392,7 @@ def _painted_bay(res: int, seed: int, paint, concrete, wet=0.6, faded=0.0, wear_
     col = col * (1 - 0.24 * marks[..., None])                       # scuffs, with edges
     col = _lerp(col, col * 0.52, wet_mask[..., None])              # the dark wet sheet
     col = col * (1 - faded * 0.28)
-    col = col * (1 - 0.42 * cracks[..., None])
+    col = col * (1 - 0.20 * cracks[..., None])
     albedo = np.clip(col, 0, 1)
     rough = (0.60 + 0.18 * wear - 0.14 * (mott - 0.5) - 0.30 * (patch - 0.5)
              + 0.10 * ruts)                                     # matte paint, rougher where worn
@@ -482,7 +486,9 @@ _LIBRARY = {
     # middle lane's 0.455 and -0.26. Half again as bright and half as saturated -- an older
     # coat, weathered most of the way back to the concrete under it.
     "bay_blue_faded":     lambda: _painted_bay(RES, 151, (0.300, 0.375, 0.500), (0.330, 0.336, 0.345), wet=0.55, faded=0.45, wear_amt=0.75),
-    "bay_orange":         lambda: _painted_bay(RES, 127, (0.442, 0.121, 0.038), (0.207, 0.179, 0.151), wet=0.45, faded=0.22, wear_amt=0.35),
+    # wear_amt 0.80, not 0.35: magnified, the reference's terracotta is more peeled than
+    # painted -- irregular patches rubbed back to a concrete LIGHTER than the paint over it.
+    "bay_orange":         lambda: _painted_bay(RES, 127, (0.442, 0.121, 0.038), (0.300, 0.265, 0.230), wet=0.45, faded=0.22, wear_amt=0.80),
     # The strip beyond the far white line is the SAME paint bleached almost out of
     # existence: the reference reads 0.858 0.700 0.649 there, a pale warm grey, where a
     # full-strength bay reads 0.727 0.403 0.265. It had been painted at full strength and
@@ -496,6 +502,11 @@ _LIBRARY = {
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
     "clad_panel":         lambda: _painted_metal(RES, 137, (0.40, 0.405, 0.41), dirt=0.85, rough_base=0.36),
     "shop_tile":          lambda: _wall_tile(RES, 149, (0.72, 0.725, 0.71), (0.30, 0.30, 0.295), tiles=6),
+    # The painted lines were the last flat surface in the frame -- one constant colour over
+    # their whole length, where the reference has them clean at one end of the array (luma
+    # 0.836) and trodden grey at the other (0.669). Same generator as a bay, because a line
+    # IS a bay: paint on concrete, worn through, dirty in the ruts.
+    "line_paint":         lambda: _painted_bay(RES, 167, (0.560, 0.566, 0.558), (0.230, 0.228, 0.222), wet=0.30, faded=0.18, wear_amt=0.70),
 }
 
 
