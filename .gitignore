@@ -61,6 +61,8 @@ docs/gallery/forecourt_compare.png
 # a working copy that must not render locally (see capture.default_render)
 .render-remote-only
 
-# Case work-in-progress: reference captures and local outputs are NOT repo assets.
-# `git add -A` swept 310 MB of an Orbbec RGB-D dataset into a public commit once.
-examples/cases/fuelcap/
+# Case 27 reference data — pulled read-only from the customer's capture host, not ours to
+# commit. `git add -A` once swept 310 MB of it into a public commit; the sources beside it
+# ARE repo content, so this ignores the data and not the case.
+examples/cases/fuelcap/_ref/
+examples/cases/fuelcap/_out/
