@@ -432,13 +432,24 @@ def audit(synth_dir, real_dir="orbbec_clouds"):
         return out
 
     A, B = block(rf), block(sf)
-    print(f"\n{'':18s} {'real':>10s} {'synth':>10s} {'ratio':>8s}")
-    for k in ("disc_u_mm", "disc_v_mm", "rib_h_mm", "rib_len_mm", "rib_wid_mm",
-              "dist_m", "obliquity_deg", "cap_px", "noise_mm", "pts_per_frame", "cap_frac"):
+    print(f"\nreference: {real_dir}   ({len(rf)} real / {len(sf)} synth)")
+    print(f"{'':18s} {'real':>10s} {'synth':>10s} {'ratio':>8s}")
+    shape = ("disc_u_mm", "disc_v_mm", "rib_h_mm", "rib_len_mm", "rib_wid_mm")
+    for k in shape + ("dist_m", "obliquity_deg", "cap_px", "noise_mm", "pts_per_frame",
+                      "cap_frac"):
         va, vb = A.get(k), B.get(k)
         if va is None or vb is None:
             continue
-        print(f"{k:18s} {va:10.2f} {vb:10.2f} {vb/max(va,1e-9):8.2f}")
+        print(f"{k:18s} {va:10.2f} {vb:10.2f} {vb/max(va,1e-9):8.2f}"
+              f"{'' if k in shape else '   <- viewpoint'}")
+    # Said plainly because the table invites the wrong reading: only the SHAPE rows are
+    # supposed to match on any run. The viewpoint rows compare the synthetic camera
+    # envelope against this one reference set, so they only line up when the set was
+    # generated with the matching --domain. Under the default `wide` — which deliberately
+    # spans all three real sets and then some — a distance ratio of 1.4 against the orbbec
+    # reference is the sampler working, not a defect.
+    print("  shape rows should match on every run; the viewpoint rows only match when\n"
+          f"  the set was generated with the --domain matching '{real_dir}'.")
 
 
 def check_labels(synth_dir, limit=200):

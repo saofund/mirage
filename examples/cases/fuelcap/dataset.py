@@ -142,13 +142,27 @@ TEXTURE_EDGES = np.array([0.0, 0.004, 0.008, 0.015, 0.028, 0.050, 1e9])
 SURVIVAL = np.array([0.529, 0.570, 0.586, 0.587, 0.575, 0.679])
 
 
+def _box_mean(a, win):
+    """Box mean over a win x win window, edges clamped. numpy only.
+
+    Deliberately not cv2.blur, even though the calibration curve in `fit.py` is measured
+    with cv2.blur: generating data is the product and reviewing it is a tool, and the
+    product should not need OpenCV installed. Checked against it — bit-identical over the
+    interior, differing only on the 2-pixel border, where cv2 reflects and this clamps."""
+    p = win // 2
+    b = np.pad(a, p, mode="edge").astype(np.float64)
+    c = b.cumsum(0).cumsum(1)
+    c = np.pad(c, ((1, 0), (1, 0)))
+    s = c[win:, win:] - c[:-win, win:] - c[win:, :-win] + c[:-win, :-win]
+    return (s / (win * win)).astype(np.float32)
+
+
 def _texture(rgb, win=5):
     """Local luminance standard deviation, the same way `fit.dropout_vs_texture` measures
     it on the real frames — the two have to agree or the calibration means nothing."""
-    import cv2
     lum = rgb.astype(np.float32).mean(-1) / 255.0
-    mu = cv2.blur(lum, (win, win))
-    return np.sqrt(np.maximum(cv2.blur(lum * lum, (win, win)) - mu * mu, 0.0))
+    mu = _box_mean(lum, win)
+    return np.sqrt(np.maximum(_box_mean(lum * lum, win) - mu * mu, 0.0))
 
 
 def _dropout(valid, rgb, rng, fill=0.60, blob=0.35):
