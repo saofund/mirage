@@ -85,7 +85,7 @@ def noise_floor(rgb, radius=1.6, mask=None):
 
 
 def apply(rgb, grain=0.0, chroma_blur=0.0, shadow_grain=1.8, sharpen=0.0, vignette=0.0,
-          seed=7):
+          saturation=1.0, seed=7):
     """Put the image through an imaging chain.
 
     `chroma_blur` — blur the colour difference channels only, leaving luma untouched. This
@@ -98,6 +98,12 @@ def apply(rgb, grain=0.0, chroma_blur=0.0, shadow_grain=1.8, sharpen=0.0, vignet
 
     `sharpen` — a touch of unsharp, standing in for the sharpening every camera pipeline
     applies. `vignette` — corner falloff, in stops at the corner.
+
+    `saturation` — every consumer imaging pipeline pushes colour, and a render that skips
+    that step comes out muted against the photograph even when every material is right.
+    Measured on case 26: mean (max-min) 0.109 against 0.140, a flat 22% short across the
+    whole frame, which is the signature of a missing gain rather than of N wrong materials.
+    Applied about LUMA so it changes saturation and not brightness.
     """
     img = np.asarray(rgb, float)
     img = img / 255.0 if img.max() > 1.5 else img
@@ -118,6 +124,9 @@ def apply(rgb, grain=0.0, chroma_blur=0.0, shadow_grain=1.8, sharpen=0.0, vignet
         gain = 1.0 + (shadow_grain - 1.0) * np.clip(1.0 - y / 0.5, 0, 1)
         gain *= np.clip((1.0 - y) / 0.15, 0, 1)
         img = np.clip(img + (grain * n * gain)[..., None], 0, 1)
+    if saturation != 1.0:
+        y = img @ _W
+        img = np.clip(y[..., None] + (img - y[..., None]) * saturation, 0, 1)
     if vignette > 0:
         h, w = img.shape[:2]
         yy, xx = np.mgrid[0:h, 0:w]
@@ -203,4 +212,12 @@ def match(render, reference, mask=None, radius=1.6, max_grain=0.14):
             if got <= a["chroma_hf"]:
                 break
             cb *= 1.45
-    return {"grain": round(grain, 4), "chroma_blur": round(cb, 2)}
+    # saturation: one gain, solved directly from the ratio of mean chroma magnitudes
+    ra = np.asarray(reference, float); ra = ra / 255.0 if ra.max() > 1.5 else ra
+    rb = np.asarray(render, float); rb = rb / 255.0 if rb.max() > 1.5 else rb
+    if mask is not None:
+        ra, rb = ra[mask], rb[mask]
+    sa = float((ra.max(-1) - ra.min(-1)).mean())
+    sb = float((rb.max(-1) - rb.min(-1)).mean())
+    sat = round(float(np.clip(sa / max(sb, 1e-6), 0.5, 2.0)), 3)
+    return {"grain": round(grain, 4), "chroma_blur": round(cb, 2), "saturation": sat}

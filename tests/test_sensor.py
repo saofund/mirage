@@ -107,3 +107,30 @@ def test_fit_tone_does_not_crush_the_middle_to_buy_the_ends():
     from mirage.sensor import fit_tone, tone_curve
     out = tone_curve(render, **fit_tone(render, photo))
     assert abs(np.percentile(out.mean(-1), 50) - np.percentile(photo.mean(-1), 50)) < 0.05
+
+
+def test_saturation_gain_changes_colour_not_brightness():
+    from mirage.sensor import apply
+    rng = np.random.default_rng(21)
+    img = np.clip(rng.random((80, 120, 3)) * 0.6 + 0.2, 0, 1)
+    out = apply(img, saturation=1.4)
+    w = np.array([0.2126, 0.7152, 0.0722])
+    assert np.allclose(img @ w, out @ w, atol=2e-3), "a saturation gain must not move luma"
+    before = float((img.max(-1) - img.min(-1)).mean())
+    after = float((out.max(-1) - out.min(-1)).mean())
+    assert 1.3 < after / before < 1.45
+
+
+def test_match_solves_a_saturation_gain():
+    from mirage.sensor import apply, match
+    rng = np.random.default_rng(22)
+    photo = np.clip(rng.random((80, 120, 3)) * 0.6 + 0.2, 0, 1)
+    w = np.array([0.2126, 0.7152, 0.0722])
+    y = photo @ w
+    render = np.clip(y[..., None] + (photo - y[..., None]) * 0.7, 0, 1)   # 30% desaturated
+    par = match(render, photo)
+    assert 1.25 < par["saturation"] < 1.55
+    out = apply(render, saturation=par["saturation"])
+    a = float((photo.max(-1) - photo.min(-1)).mean())
+    b = float((out.max(-1) - out.min(-1)).mean())
+    assert abs(a - b) / a < 0.08

@@ -371,7 +371,15 @@ def render(prog, out, spp, w, h, extra=()):
                        # supply detail the grain used to be standing in for, so it
                        # comes down (floor was overshooting 0.0356 against 0.0289),
                        # and the chroma blur was over-correcting past the photograph.
-                       grain=0.0195, chroma_blur=0.6)
+                       # grain solved AFTER the whole chain, not before it: sensor.match
+                       # measures the render as handed to it, and the saturation gain and
+                       # the chroma blur both move the noise floor afterwards. Solved
+                       # 0.0208, which landed 0.0366 against the photograph's 0.0289;
+                       # 0.0134 lands it. Saturation 1.275: every consumer pipeline
+                       # pushes colour, and the frame was a flat 22% short of the
+                       # reference (0.109 against 0.140) with every material measured
+                       # right, which is a missing gain and not N wrong materials.
+                       grain=0.0134, chroma_blur=1.0, saturation=1.275)
     Image.fromarray((img * 255 + 0.5).astype(np.uint8)).save(png)
     return png
 
