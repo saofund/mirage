@@ -75,6 +75,11 @@ def _text(d, xy, s, px, fill, anchor="mm", spacing=0.0):
 
 # Linear-space palette (see the module docstring on why these look dark as sRGB).
 NAVY = (86, 118, 214)     # banners: 0.230, 0.335, 0.470, against the photograph's 0.554
+# The LIGHTBOX gets its own, darker. It shared NAVY with the banners, so three rounds of
+# lifting a banner that measured too dark also lifted a sign that was already too light —
+# 0.578 against 0.396. Two objects with different targets cannot share one constant.
+SIGN_NAVY = (30, 50, 128)
+SIGN_NAVY_D = (20, 34, 96)
 NAVY_D = (40, 62, 150)
 RED = (150, 20, 14)
 RED_D = (110, 12, 9)
@@ -110,11 +115,11 @@ def _pump_sign(W, H):
     _text(d, ((cx + r + W - m) / 2 + 4, cy), "海湾石油 · 联河加油站", int(hdr * 0.30), (40, 40, 44))
     # the blue field
     fy0, fy1 = top + hdr + int(H * 0.008), H - m - 4
-    d.rectangle([m + 4, fy0, W - m - 4, fy1], fill=NAVY)
+    d.rectangle([m + 4, fy0, W - m - 4, fy1], fill=SIGN_NAVY)
     for k in range(9):                                  # a faint vertical gradient/sheen
         d.rectangle([m + 4, fy0 + int((fy1 - fy0) * k / 9), W - m - 4,
                      fy0 + int((fy1 - fy0) * (k + 1) / 9)],
-                    fill=tuple(int(c * (1.0 + 0.13 * (4 - k) / 4)) for c in NAVY))
+                    fill=tuple(int(c * (1.0 + 0.13 * (4 - k) / 4)) for c in SIGN_NAVY))
     big = int(W * 0.180)   # sized to FIT: 4 chars + tracking must clear the blue field
     _text(d, (W / 2, fy0 + (fy1 - fy0) * 0.115), "油卡支付", big, WHITE, spacing=W * 0.010)
     _text(d, (W / 2, fy0 + (fy1 - fy0) * 0.225), "超划算", big, WHITE, spacing=W * 0.010)
@@ -290,7 +295,7 @@ def _recipe_id(name: str) -> str:
     parts += [repr(c) for c in (fn.__code__.co_consts or ()) if c is not None]
     for helper in (_text, font):
         parts.append(hashlib.sha1(helper.__code__.co_code).hexdigest()[:8])
-    parts += [repr(c) for c in (NAVY, RED, ORANGE, YELLOW, WHITE, OFFWHITE, BLACK)]
+    parts += [repr(c) for c in (NAVY, SIGN_NAVY, RED, ORANGE, YELLOW, WHITE, OFFWHITE, BLACK)]
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
 
 
