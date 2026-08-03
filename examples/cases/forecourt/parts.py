@@ -898,17 +898,20 @@ def van():
     Y = 0.99
     ROOF = 1.95
     lower = ([[-3.70, 0.62], [-3.64, 0.50], [-3.00, 0.47]]
-             + arch(RA, 0.50, 0.47)
+             + arch(RA, 0.62, 0.47)
              + [[-0.30, 0.47]]
-             + arch(FA, 0.50, 0.47)
+             + arch(FA, 0.62, 0.47)
              + [[3.24, 0.48], [3.46, 0.56], [3.58, 0.78]])
-    upper = [[-3.70, 1.78], [-3.54, ROOF], [1.55, ROOF - 0.01], [1.88, ROOF - 0.07],
-             [2.50, 1.32], [2.82, 1.20], [3.30, 1.06], [3.58, 0.98]]
+    # A SHORT, BLUNT nose. It was a wedge tapering over a metre and a half, which is a
+    # nose no van has: measured off the crop the reference's bonnet drops from the
+    # windscreen top to the grille in about 0.9 m and the front face is nearly vertical.
+    upper = [[-3.70, 1.80], [-3.52, ROOF], [1.98, ROOF - 0.01], [2.34, ROOF - 0.10],
+             [2.86, 1.44], [3.16, 1.24], [3.46, 1.16], [3.58, 1.10]]
 
     def hw(x, z):
         t = max(0.0, min(1.0, (z - 0.47) / (ROOF - 0.47)))
         w = Y - 0.46 * (t - 0.42) ** 2 / 0.34 - 0.15 * max(0.0, t - 0.72) / 0.28
-        return w * (1.0 - 0.36 * max(0.0, (x - 2.60) / 1.00) ** 2)
+        return w * (1.0 - 0.22 * max(0.0, (x - 3.05) / 0.55) ** 2)
 
     p = MeshProgram()
     p.place(loft_grid(lower, upper, hw, n_smooth=2), material=BODY_WH)
@@ -919,7 +922,7 @@ def van():
     def flank(x, z, out=0.0):
         return hw(x, z) + out
 
-    GZ, GH = 1.52, 0.42                      # the window band: centre and height
+    GZ, GH = 1.34, 0.56                      # measured off the crop: z 1.06 .. 1.62
     for s in (-1, 1):
         p.place(cbox(4.70, 0.03, GH, 0.012), at=[-1.10, s * flank(-1.10, GZ, -0.012), GZ],
                 material=GLASS)
@@ -933,7 +936,7 @@ def van():
         p.place(cbox(4.80, 0.02, 0.030, 0.006), at=[-1.05, s * flank(-1.05, GZ - GH / 2, 0.004),
                                                     GZ - GH / 2], material=trim)
         # the heavy dark rocker: in the photograph it is a third of the body's height
-        p.place(cbox(6.60, 0.05, 0.30, 0.012), at=[-0.20, s * flank(-0.20, 0.70, -0.004), 0.70],
+        p.place(cbox(6.90, 0.05, 0.32, 0.012), at=[-0.20, s * flank(-0.20, 0.63, 0.000), 0.63],
                 material=body)
         p.place(cbox(5.60, 0.03, 0.020, 0.008), at=[-0.30, s * flank(-0.30, 1.02, 0.006), 1.02],
                 material=mat((0.60, 0.605, 0.61), 0.0, 0.30))
@@ -969,7 +972,7 @@ def van():
             material=mat((0.30, 0.30, 0.31), 0.6, 0.5))
     for x in (FA, RA):
         for s in (-1, 1):
-            p.place(wheel(WR, 0.26), at=[x, s * flank(x, WR + 0.30, -0.14), WR])
+            p.place(wheel(WR, 0.26), at=[x, s * flank(x, WR + 0.30, -0.045), WR])
     return p
 
 
@@ -1035,7 +1038,7 @@ def suv():
             material=mat((0.30, 0.305, 0.31), 0.0, 0.42))
     for x in (FA, RA):
         for s in (-1, 1):
-            p.place(wheel(WR, 0.24), at=[x, s * flank(x, WR + 0.28, -0.13), WR])
+            p.place(wheel(WR, 0.24), at=[x, s * flank(x, WR + 0.28, -0.04), WR])
             p.place(tube_along(arc([x, s * flank(x, WR + 0.32, -0.02), 0.36], 0.46,
                                    8, 172, (1, 0, 0), (0, 0, 1), 10), 0.028, 7),
                     material=mat((0.18, 0.185, 0.19), 0.0, 0.55))
