@@ -103,12 +103,12 @@ CONCRETE = mat((0.245, 0.246, 0.238), 0.0, 0.72)
 CLAD      = mat((0.300, 0.302, 0.300), 0.0, 0.38, maps=TEX["clad_panel"], uv_scale=1.5)
 WALL_TILE = mat((0.86, 0.865, 0.85), 0.0, 0.35, maps=TEX["shop_tile"], uv_scale=1.15)
 SEAM      = mat((0.24, 0.24, 0.24), 0.0, 0.45)      # the shadow line between clad panels
-# REVERTED to this after a round that trusted seventeen hand-placed world samples on the
-# kerb's front face ("0.113 too dark") over the 36,000-pixel plinth mask, which had it right
-# to 0.003. The samples were landing on the hoop rail in one image and the kerb in the other:
-# a world point is only the same SURFACE in both frames if nothing has moved in front of it,
-# and something always has. Brightening from here took the mask to +0.088 and "too light".
-KERB      = mat((0.409, 0.379, 0.330), 0.0, 0.66)
+# Its LUMA is right -- the plinth mask reads 0.379 against 0.372, and an earlier round that
+# brightened this on the strength of seventeen hand-placed samples took it to +0.088 and
+# "too light". What the mask says is wrong is the chroma: 0.093 against 0.157. So the spread
+# widens and the luma stays where it is (0.3856 against 0.3819), which is a different edit
+# from the one that failed and is testable separately.
+KERB      = mat((0.442, 0.377, 0.302), 0.0, 0.66)
 
 # ---- painted metal and plastic --------------------------------------------------- #
 # Also reverted, and for the same reason: ten samples on the upper front face said the blue
@@ -118,7 +118,11 @@ KERB      = mat((0.409, 0.379, 0.330), 0.0, 0.66)
 PUMP_BL   = mat((0.094, 0.118, 0.238), 0.0, 0.30)   # the dispenser's blue
 PUMP_BL_D = mat((0.054, 0.074, 0.176), 0.0, 0.34)
 PANEL_WH  = mat((0.80, 0.80, 0.79), 0.0, 0.34)
-RED       = mat((0.215, 0.062, 0.115), 0.0, 0.40)
+# The new `sat` column's first catch. On its paint pixels the reference's cabinet is
+# 0.509/0.226/0.057 and this was rendering 0.540/0.308/0.120 -- half again the green and
+# twice the blue, which is the difference between scarlet and brown. In linear terms the
+# photograph's red carries almost no blue at all, and this had more blue than green.
+RED       = mat((0.235, 0.038, 0.012), 0.0, 0.40)
 RED_D     = mat((0.30, 0.028, 0.020), 0.0, 0.44)
 ORANGE_S  = mat((0.72, 0.26, 0.03), 0.0, 0.42)
 YELLOW    = mat((0.74, 0.55, 0.03), 0.0, 0.44)
