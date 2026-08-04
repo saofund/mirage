@@ -31,9 +31,15 @@ CAP_BLACK   = mat((0.019, 0.019, 0.021), 0.0, 0.42)
 CAP_BLACK_G = mat((0.026, 0.026, 0.029), 0.0, 0.26)   # glossier, newer moulding
 CAP_BLACK_M = mat((0.016, 0.016, 0.017), 0.0, 0.62)   # matt / weathered
 CAP_GREY    = mat((0.055, 0.055, 0.058), 0.0, 0.45)   # the grey-plastic caps
-# The aluminium caps (a minority — two in ninety in the by-car sample).
-CAP_ALU     = mat((0.62, 0.62, 0.60), 1.0, 0.30)
+# The metal caps — about one in ten of the by-car sample, not the two I first counted.
+# They are BRUSHED aluminium, not chrome: a partial metal with a wide highlight, which is
+# why a fully metallic mirror finish looks wrong on them. The dark variant is the anodised
+# grey one; both are far darker than raw aluminium's 0.9 because they are anodised and
+# have spent years in a filler pocket.
+CAP_ALU     = mat((0.26, 0.26, 0.255), 0.82, 0.38)
+CAP_ALU_D   = mat((0.155, 0.155, 0.16), 0.78, 0.46)
 CAP_CHROME  = mat((0.78, 0.78, 0.79), 1.0, 0.12)
+CAP_METAL_FAMILY = (CAP_ALU, CAP_ALU_D)
 
 CAP_FAMILY = (CAP_BLACK, CAP_BLACK_G, CAP_BLACK_M, CAP_GREY)
 
@@ -48,6 +54,12 @@ WELL_METAL   = mat((0.085, 0.085, 0.088), 0.35, 0.55)  # bare painted metal well
 NECK_STEEL   = mat((0.115, 0.113, 0.110), 0.75, 0.52)
 SEAL_RUBBER  = mat((0.020, 0.019, 0.019), 0.0, 0.80)
 SEAL_RED     = mat((0.115, 0.020, 0.016), 0.0, 0.70)   # the orange-red gasket
+# Pocket hardware, all of it visible in the reference photographs and none of it modelled
+# until now: the sprung catch that holds the door, the screws through the liner, the
+# rubber grommet where a drain or a cable passes, the striker the door latches onto.
+CATCH_STEEL  = mat((0.22, 0.22, 0.225), 0.80, 0.30)
+SCREW_STEEL  = mat((0.30, 0.30, 0.305), 0.85, 0.26)
+GROMMET      = mat((0.014, 0.014, 0.015), 0.0, 0.86)
 TETHER       = mat((0.020, 0.020, 0.022), 0.0, 0.65)
 GRIME        = mat((0.045, 0.042, 0.038), 0.0, 0.75)
 

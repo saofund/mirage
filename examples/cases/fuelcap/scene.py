@@ -100,6 +100,11 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # `fit.complexity` says is missing between 6 and 24 mm
         well_ribs=int(rng.choice([0, 3, 4, 4, 5, 6])),
         well_drain=bool(rng.random() < 0.7),
+        # pocket hardware — screws, the door catch, a rubber grommet. All of it is in the
+        # reference photographs and none of it was in the model.
+        n_screws=int(rng.choice([0, 1, 2, 2, 3])),
+        n_catches=int(rng.choice([0, 1, 1, 2])),
+        n_grommets=int(rng.choice([0, 0, 1, 1, 2])),
         squareness=float(rng.choice([1.0, 1.0, 2.6, 3.4, 4.2, 5.0])),
         # the BODY, which is most of the ROI and was a flat rectangle
         crown=_lerp(rng, 0.006, 0.030), crown_ax=_lerp(rng, 0.0, math.pi),
@@ -132,7 +137,12 @@ def sample(rng, camera="orbbec640", domain="wide"):
         paint=str(rng.choice(M.PAINT_NAMES)),
         tether=bool(rng.random() < 0.7), tether_az=_lerp(rng, 0.0, 360.0),
         tether_r=_lerp(rng, 0.0016, 0.0028), tether_kinks=int(rng.choice([1, 2, 2, 3])),
-        alu=bool(rng.random() < 0.08),
+        # About one in ten of the ninety reference cars has a metal cap, and a handful
+        # have a petal-edged rim rather than a round one — a plan, not a section, so the
+        # generalised lathe does it in one line.
+        alu=bool(rng.random() < 0.11),
+        lobes=int(rng.choice([0, 0, 0, 0, 0, 6, 8, 10, 12])),
+        lobe_depth=_lerp(rng, 0.035, 0.085),
         # Lighting. Bounded well below what the tracer will happily accept: the subject is
         # a black object inside a shadowed hole, and the exposure that makes IT readable is
         # one that blows the surrounding paint. Real frames of this scene are exactly that
@@ -215,8 +225,9 @@ def build(v):
     real annotation files use."""
     rng = np.random.default_rng(abs(hash((v["paint"], round(v["d_cap"], 6)))) % (2 ** 31))
     paint = M.jitter(M.PAINTS[v["paint"]], rng, dc=0.10, dr=0.08)
-    cap_mat = M.CAP_ALU if v["alu"] else M.jitter(
-        M.CAP_FAMILY[int(rng.integers(0, len(M.CAP_FAMILY)))], rng)
+    cap_mat = (M.jitter(M.CAP_METAL_FAMILY[int(rng.integers(0, len(M.CAP_METAL_FAMILY)))],
+                        rng, dc=0.12, dr=0.14) if v["alu"]
+               else M.jitter(M.CAP_FAMILY[int(rng.integers(0, len(M.CAP_FAMILY)))], rng))
     well_mat = M.jitter(M.WELL_METAL if v["well_metal"] else M.WELL_PLASTIC, rng, dc=0.22)
 
     # The CAP FACE is the world origin, and everything is placed relative to it. That is
@@ -269,19 +280,23 @@ def build(v):
                                          gap=v["seam_gap"], step=v["seam_step"],
                                          material=paint),
                           at=tuple(cap_c + axis * body_z), rotate=body_rot)
-    if v["well_ribs"] or v["well_drain"]:
+    if v["well_ribs"] or v["well_drain"] or v["n_screws"] or v["n_catches"]:
         # the ribs and drain live down in the trench, whose floor the section puts at
         # roughly -33 mm scaled
         trench = 0.0326 * v["z_gain"]
         prog = prog.place(obj=P.well_details(pocket_r * 0.46, v["d_cap"] + 0.014, trench,
                                              ribs=v["well_ribs"], drain=v["well_drain"],
+                                             screws=v["n_screws"], catches=v["n_catches"],
+                                             grommets=v["n_grommets"],
+                                             seed=int(v["cap_spin"] * 13) % 9999,
                                              material=well_mat),
                           at=tuple(cap_c), rotate=tilt)
     cap_prog = P.cap(d=v["d_cap"], flange=v["flange"], rib_len=v["rib_len"], rib_w=v["rib_w"],
                      rib_h=v["rib_h"], rib_draft=v["rib_draft"], rib_slot=v["rib_slot"],
                      dome=v["dome"], chamfer=v["chamfer"], teeth=v["teeth"],
                      skirt=v["skirt"], neck_d=v["d_cap"] * 0.62, spin=v["cap_spin"],
-                     grip=v["grip"], material=cap_mat)
+                     grip=v["grip"], lobes=v["lobes"], lobe_depth=v["lobe_depth"],
+                     printing=not v["alu"], material=cap_mat)
     # rotate=tilt ONLY. The spin is already baked into the cap about its own axis; passing
     # it here as well would swing the axis instead of turning the cap (see parts.cap).
     prog = prog.place(obj=cap_prog, at=tuple(cap_c), rotate=tilt)

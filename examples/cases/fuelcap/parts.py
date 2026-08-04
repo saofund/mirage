@@ -25,8 +25,8 @@ import numpy as np
 from mirage.meshlang import MeshProgram
 
 from .materials import (
-    CAP_ALU, CAP_BLACK, CAP_CHROME, GRIME, NECK_STEEL, SEAL_RED, SEAL_RUBBER, TETHER,
-    WELL_METAL, WELL_PLASTIC, mat,
+    CAP_ALU, CAP_ALU_D, CAP_BLACK, CAP_CHROME, CATCH_STEEL, GRIME, GROMMET, NECK_STEEL,
+    SCREW_STEEL, SEAL_RED, SEAL_RUBBER, TETHER, WELL_METAL, WELL_PLASTIC, mat,
 )
 
 TAU = 2.0 * math.pi
@@ -145,9 +145,27 @@ def resample_by_angle(poly, n):
             u = cr(ax, ay, dx, dy) / den
             if t > 1e-12 and -1e-9 <= u <= 1 + 1e-9 and (best is None or t < best):
                 best = t
-        rr = best if best is not None else 0.0
-        out.append((cx + rr * dx, cy + rr * dy))
+        if best is None:
+            # No hit: float noise on a ray that grazes a vertex, or a centroid that is not
+            # strictly inside a very flat outline. Falling back to zero puts the sample ON
+            # the centroid, which collapses a quad into a degenerate face and kills the
+            # whole build — so fall back to the nearest vertex's radius instead, which is
+            # wrong by a fraction of a segment and always valid.
+            best = min(math.hypot(px - cx, py - cy) for px, py in poly)
+        out.append((cx + best * dx, cy + best * dy))
     return out
+
+
+def lobe_plan(lobes, depth, steps, phase=0.0):
+    """A `spin` plan with `lobes` rounded bumps round it — the petal-edged cap.
+
+    A handful of the reference cars have a cap whose rim is not a circle but a ring of
+    shallow lobes you grip with your fingertips. That is a plan, not a section, so it is
+    exactly what the generalised lathe is for: same profile, different plan, one line.
+    Normalised so adding lobes does not also change the cap's diameter."""
+    ks = [1.0 + depth * math.cos(lobes * (TAU * j / steps) + phase) for j in range(steps)]
+    m = sum(ks) / len(ks)
+    return [k / m for k in ks]
 
 
 def slotted_face(r, slot, z_top, z_floor, draft=0.8, ring=44, mark="cap_body"):
@@ -190,8 +208,15 @@ def slotted_face(r, slot, z_top, z_floor, draft=0.8, ring=44, mark="cap_body"):
 
 
 def stadium(length, width, arc=10):
-    """A rounded-rectangle plan (CCW): the grip rib seen from above."""
-    a, r = max(1e-6, (length - width) / 2.0), width / 2.0
+    """A rounded-rectangle plan (CCW): the grip rib seen from above.
+
+    `length` is clamped above `width`, because a stadium shorter than it is wide is not a
+    shape — its two end arcs land on top of each other and every point is duplicated,
+    which the kernel correctly rejects as a degenerate face. Callers derive both from
+    ratios of the cap, so the combination does arise; better to round it to the circle it
+    is trying to be than to fail a whole frame."""
+    length = max(length, width * 1.02)
+    a, r = (length - width) / 2.0, width / 2.0
     pts = []
     for i in range(arc + 1):
         t = -math.pi / 2 + math.pi * i / arc
@@ -207,8 +232,8 @@ def stadium(length, width, arc=10):
 # --------------------------------------------------------------------------- #
 def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draft=0.66,
         rib_slot=0.0, dome=0.0008, chamfer=0.0025, teeth=0, skirt=0.020, neck_d=0.048,
-        spin=0.0, printing=True, grip="rib", material=None, rib_material=None,
-        steps=48):
+        spin=0.0, printing=True, grip="rib", lobes=0, lobe_depth=0.06,
+        material=None, rib_material=None, steps=48):
     """The inner fuel cap: a lathed disc with a raised grip rib across it.
 
     Everything about this part that a 6D-pose network can see is in three numbers — the
@@ -264,7 +289,10 @@ def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draf
         (rn * 0.72, -flange - skirt),
         (0.0, -flange - skirt),
     ]
-    p = lathe(section, steps=steps, mark="cap_body").material({"by": "tag", "name": "cap_body"}, **material)
+    plan = lobe_plan(lobes, lobe_depth, steps, math.radians(spin)) if lobes else None
+    p = (MeshProgram().profile([(rr, zz) for rr, zz in section], plane="xz", closed=False)
+         .spin(axis="z", steps=steps, plan=plan, plan_from=r * 0.72, mark="cap_body")
+         .material({"by": "tag", "name": "cap_body"}, **material))
 
     if teeth:
         # The ratchet ring — the clicking torque limiter. On the OUTER RIM, where a camera
@@ -308,7 +336,7 @@ def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draf
                                      draft=max(rib_draft, 0.74), mark="cap_slot"),
                     at=(0.0, 0.0, 0.0), material=material)
         # the pad in the floor of the well — every photographed slot has one
-        p = p.place(obj=frustum(turn(stadium(rib_len * 0.32, rib_w * 0.50)),
+        p = p.place(obj=frustum(turn(stadium(rib_len * 0.44, rib_w * 0.40)),
                                 dome + land - depth, dome + land - depth * 0.45, 0.86,
                                 mark="cap_rib"),
                     at=(0.0, 0.0, 0.0), material=rib_material)
@@ -359,7 +387,44 @@ def superellipse(rx, ry, n=4.0, seg=48):
     return pts
 
 
-def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, material=None):
+def screw(r=0.0035, head_h=0.0016, slot=True, material=None):
+    """A pan-head screw. Two or three of them go through the liner on most of the
+    reference cars, and at 7 mm across they are a fifth the size of the cap — small, but
+    they are metal in a matt black hole, so they are among the brightest things in it."""
+    p = lathe([(0.0, head_h), (r * 0.72, head_h), (r, head_h * 0.35), (r, 0.0),
+               (r * 0.45, -0.002), (0.0, -0.002)], steps=16, mark="well")
+    p = p.material({"by": "tag", "name": "well"}, **(material or SCREW_STEEL))
+    if slot:
+        p = p.place(obj=prism([(-r * 0.78, -r * 0.13), (r * 0.78, -r * 0.13),
+                               (r * 0.78, r * 0.13), (-r * 0.78, r * 0.13)],
+                              head_h * 0.45, head_h + 1e-4, mark="well"),
+                    at=(0.0, 0.0, 0.0), material=mat([c * 0.35 for c in
+                                                      (material or SCREW_STEEL)["color"]],
+                                                     0.7, 0.5))
+    return p
+
+
+def catch(w=0.016, h=0.026, t=0.005, material=None):
+    """The sprung steel catch / striker the fuel door latches onto — the bright L-shaped
+    bracket standing off the pocket wall in several of the reference frames."""
+    base = prism([(-w / 2, -t / 2), (w / 2, -t / 2), (w / 2, t / 2), (-w / 2, t / 2)],
+                 0.0, h, mark="well")
+    arm = prism([(-w / 2, -t / 2), (w / 2, -t / 2), (w / 2, t / 2), (-w / 2, t / 2)],
+                0.0, t * 1.6, mark="well")
+    p = base.place(obj=arm, at=(0.0, h * 0.30, h - t * 0.8), rotate=(90.0, 0.0, 0.0))
+    return p.material({"by": "all"}, **(material or CATCH_STEEL))
+
+
+def grommet(r=0.006, h=0.004, material=None):
+    """A rubber grommet — the soft black plug where a drain tube or a cable leaves the
+    pocket. Matt where everything around it is at least slightly glossy."""
+    return lathe([(0.0, h), (r * 0.55, h), (r, h * 0.45), (r, 0.0), (0.0, 0.0)],
+                 steps=18, mark="well").material({"by": "tag", "name": "well"},
+                                                 **(material or GROMMET))
+
+
+def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, screws=2,
+                 catches=1, grommets=1, seed=0, material=None):
     """The furniture down the recess: stiffening ribs, a step, a drain notch.
 
     None of this is decoration. `fit.complexity` measures the ratio of plane residual at
@@ -386,6 +451,27 @@ def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, material=N
         # the notch at the low point, where water is meant to leave
         p = p.place(obj=prism(superellipse(0.008, 0.0045, 2.6, 14), 0.0, 0.011, mark="well"),
                     at=(0.0, -(rf - 0.005), -depth - 0.001), material=GRIME)
+    # The hardware. Scattered on a deterministic pseudo-random ring rather than at fixed
+    # angles: on the reference cars these sit wherever the moulding allowed, and a fixed
+    # arrangement would be one more constant for a network to learn instead of the pose.
+    import random
+    rr = random.Random(seed)
+    for i in range(screws):
+        a = rr.uniform(0, TAU)
+        rad = rim_r * rr.uniform(0.80, 0.94)
+        p = p.place(obj=screw(r=rr.uniform(0.0028, 0.0042)),
+                    at=(rad * math.cos(a), rad * math.sin(a), -depth * rr.uniform(0.05, 0.35)))
+    for i in range(catches):
+        a = rr.uniform(0, TAU)
+        rad = rim_r * 0.92
+        p = p.place(obj=catch(w=rr.uniform(0.013, 0.020), h=rr.uniform(0.020, 0.032)),
+                    at=(rad * math.cos(a), rad * math.sin(a), -depth * 0.55),
+                    rotate=(0.0, 0.0, math.degrees(a) + 90.0))
+    for i in range(grommets):
+        a = rr.uniform(0, TAU)
+        rad = rim_r * rr.uniform(0.55, 0.80)
+        p = p.place(obj=grommet(r=rr.uniform(0.0045, 0.0075)),
+                    at=(rad * math.cos(a), rad * math.sin(a), -depth + 0.001))
     return p
 
 
@@ -748,6 +834,30 @@ def tether(start, end, sag=0.030, r=0.0022, n=90, kinks=2, seed=0, material=None
                        + (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
             path.append([float(x) for x in q])
     path.append(list(e))
+    # Drop points the spline put on top of each other. A Catmull-Rom through jittered
+    # controls can double back within a fraction of a millimetre, and `sweep` turns two
+    # coincident path points into a zero-area quad — which fails the whole frame for a
+    # cord that is three pixels wide.
+    clean = [path[0]]
+    for q in path[1:]:
+        d = sum((q[k] - clean[-1][k]) ** 2 for k in range(3)) ** 0.5
+        if d > r * 0.9:
+            clean.append(q)
+    # A sweep also degenerates where the path turns back on itself sharply: the ring at
+    # the corner sweeps through zero area. Drop points whose turn exceeds ~100 degrees.
+    out2 = clean[:1]
+    for k in range(1, len(clean) - 1):
+        a = [clean[k][j] - out2[-1][j] for j in range(3)]
+        b = [clean[k + 1][j] - clean[k][j] for j in range(3)]
+        na = sum(x * x for x in a) ** 0.5
+        nb = sum(x * x for x in b) ** 0.5
+        if na < 1e-9 or nb < 1e-9:
+            continue
+        cosang = sum(a[j] * b[j] for j in range(3)) / (na * nb)
+        if cosang > -0.17:
+            out2.append(clean[k])
+    out2.append(clean[-1])
+    path = out2 if len(out2) >= 4 else (clean if len(clean) >= 4 else path[:4])
     ring = [(r * math.cos(TAU * k / 8), r * math.sin(TAU * k / 8)) for k in range(8)]
     return (MeshProgram().profile(ring, plane="xy", closed=True).sweep(path, mark="tether")
             .material({"by": "tag", "name": "tether"}, **(material or TETHER)))
