@@ -307,6 +307,36 @@ def well(rim_r=0.062, floor_d=0.098, depth=0.052, neck_d=0.052, neck_len=0.055, 
     return p
 
 
+_KS_CACHE = {}
+
+
+def _KS(n, steps):
+    key = (round(float(n), 4), int(steps))
+    if key not in _KS_CACHE:
+        _KS_CACHE[key] = _norm_superellipse(n, steps)
+    return _KS_CACHE[key]
+
+
+def _norm_superellipse(n, steps):
+    """Superellipse radii for `steps` directions, scaled so their MEAN is 1.
+
+    Shared by `panel` and `pocket_shaped` so the two meet edge to edge. They used the raw
+    form and the normalised one respectively, which differ by 8% at n=3.6 — so the panel's
+    hole and the pocket's outer ring were the same nominal size and different shapes, and
+    the gap between them let the pocket's outer skirt show through. In the depth map that
+    is a wall where the body should be, and it dragged the measured recess depth from +8 mm
+    to -0.2."""
+    if n <= 1.0:
+        return [1.0] * steps
+    ks = []
+    for j in range(steps):
+        a = TAU * j / steps
+        c, s_ = math.cos(a), math.sin(a)
+        ks.append((abs(c) ** n + abs(s_) ** n) ** (-1.0 / n))
+    m = sum(ks) / len(ks)
+    return [k / m for k in ks]
+
+
 def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48,
           squareness=1.0, crown=0.0, crown_ax=0.0):
     """The body panel around the pocket: an annular plate, not a plate with a hole in it.
@@ -337,7 +367,7 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48
             c, sn = math.cos(a), math.sin(a)
             # `squareness` 1 = a circle, 4-5 = the rounded rectangle over half the reference
             # cars actually have. A perfect circle is the one aperture shape none of them is.
-            k = (abs(c) ** squareness + abs(sn) ** squareness) ** (-1.0 / squareness)                 if squareness > 1.0 else 1.0
+            k = _KS(squareness, ring)[i]
             px, py = rh * c * k, rh * sn * k
             verts.append((px, py, z_of(px, py, z)))
         for i in range(ring):
@@ -416,13 +446,7 @@ def pocket_shaped(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.
     # the measured recess depth from +7.8 mm to -0.6. Dividing by the mean keeps the mean
     # radius of every ring exactly what the measured section says it is, and changes only
     # the shape.
-    _ks = []
-    for j in range(steps):
-        a = TAU * j / steps
-        c, s_ = math.cos(a), math.sin(a)
-        _ks.append((abs(c) ** squareness + abs(s_) ** squareness) ** (-1.0 / squareness))
-    _kmean = sum(_ks) / len(_ks)
-    _ks = [k / _kmean for k in _ks]
+    _ks = _KS(squareness, steps)
     verts, faces = [], []
     nr = len(sec)
     for r, z in sec:
