@@ -202,15 +202,16 @@ def build(v):
     # three hand-built parts this replaces could not reach that shape between them — see
     # parts.MEASURED_SECTION_MM.
     pocket_r = 0.100 * v["r_gain"]
-    prog = prog.place(obj=P.pocket(cap_r=v["d_cap"] / 2.0, r_gain=v["r_gain"],
-                                   z_gain=v["z_gain"], neck_r=v["d_cap"] * 0.34,
-                                   neck_len=0.050, out_r=pocket_r + 0.012,
-                                   material=well_mat),
+    prog = prog.place(obj=P.pocket_shaped(cap_r=v["d_cap"] / 2.0, r_gain=v["r_gain"],
+                                          z_gain=v["z_gain"], neck_r=v["d_cap"] * 0.34,
+                                          neck_len=0.050, squareness=v["pan_sq"],
+                                          blend_from=0.055 * v["r_gain"],
+                                          material=well_mat),
                       at=tuple(cap_c), rotate=tilt)
     # The body panel meets the pocket at its outer radius, and sits where the measured
     # section says the paint is: 10.5 mm above the cap face, scaled with z_gain.
     body_z = MEASURED_BODY_MM * 1e-3 * v["z_gain"]
-    prog = prog.place(obj=P.panel(size=panel_size, hole_d=2 * (pocket_r + 0.010),
+    prog = prog.place(obj=P.panel(size=panel_size, hole_d=2 * pocket_r * 0.995,
                                   thick=0.009, material=paint,
                                   squareness=v["pan_sq"], crown=v["crown"],
                                   crown_ax=v["crown_ax"]),
