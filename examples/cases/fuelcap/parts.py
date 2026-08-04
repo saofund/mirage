@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
+
 from mirage.meshlang import MeshProgram
 
 from .materials import (
@@ -108,6 +110,85 @@ def frustum(poly, z0, z1, shrink, mark=None):
     return MeshProgram().mesh(verts=verts, faces=faces, mark=mark)
 
 
+def resample_by_angle(poly, n):
+    """Re-sample a closed plan outline at `n` EVENLY SPACED ANGLES about its centroid.
+
+    Needed whenever two outlines have to be joined ring-to-ring. A stadium is parameterised
+    by arc length, not by angle, so pairing its points with a circle's by index — or by
+    rounding an angle to an index — pairs the wrong ones and the quads between them
+    self-intersect. On a cap that showed up as a grip well whose mouth was sealed over by
+    its own surrounding face."""
+    cx = sum(x for x, _ in poly) / len(poly)
+    cy = sum(y for _, y in poly) / len(poly)
+    # A real ray-segment intersection. Interpolating a (angle, radius) table looks simpler
+    # and is wrong on any outline with a STRAIGHT edge: a stadium's flat side runs from
+    # 45 to 135 degrees at a constant y, so interpolating its endpoint radii gives 21 mm
+    # at 90 degrees where the true answer is 15. Every grip slot in this kit has flat
+    # sides.
+    #
+    #   t*d = A + u*(B-A)  ->  t = cross(A, B-A) / cross(d, B-A),  u = cross(A, d) / same
+    cr = lambda ax, ay, bx, by: ax * by - ay * bx
+    m = len(poly)
+    out = []
+    for k in range(n):
+        a = TAU * k / n
+        dx, dy = math.cos(a), math.sin(a)
+        best = None
+        for i in range(m):
+            ax, ay = poly[i][0] - cx, poly[i][1] - cy
+            bx, by = poly[(i + 1) % m][0] - cx, poly[(i + 1) % m][1] - cy
+            ex, ey = bx - ax, by - ay
+            den = cr(dx, dy, ex, ey)
+            if abs(den) < 1e-15:
+                continue
+            t = cr(ax, ay, ex, ey) / den
+            u = cr(ax, ay, dx, dy) / den
+            if t > 1e-12 and -1e-9 <= u <= 1 + 1e-9 and (best is None or t < best):
+                best = t
+        rr = best if best is not None else 0.0
+        out.append((cx + rr * dx, cy + rr * dy))
+    return out
+
+
+def slotted_face(r, slot, z_top, z_floor, draft=0.8, ring=44, mark="cap_body"):
+    """A disc with a WELL sunk into it — an annular top, drafted walls, and a floor.
+
+    `place` composes by UNION, so a well cannot be made by placing a block where the
+    material should be missing: that just adds a block, which is why the first recessed
+    grip rendered as a raised pad. Without reaching for a boolean (slow, and it has to
+    succeed on every frame of a dataset) the answer is to build the face WITH the hole in
+    it: a ring of quads from the outer circle in to the slot outline, the slot outline
+    swept down to the floor, and the floor capped."""
+    slot = resample_by_angle(slot, ring)         # same count, same angles as the circle
+    n = ring
+    verts, faces = [], []
+    for i in range(ring):                                   # 0: outer circle, at z_top
+        a = TAU * i / ring
+        verts.append((r * math.cos(a), r * math.sin(a), z_top))
+    for x, y in slot:                                       # ring: slot mouth, at z_top
+        verts.append((x, y, z_top))
+    cx = sum(x for x, _ in slot) / n
+    cy = sum(y for _, y in slot) / n
+    for x, y in slot:                                       # ring+n: slot floor, drafted in
+        verts.append((cx + (x - cx) * draft, cy + (y - cy) * draft, z_floor))
+    verts.append((cx, cy, z_floor))
+    mid = len(verts) - 1
+    for i in range(ring):                                   # the annular top
+        j = (i + 1) % ring
+        faces.append([i, j, ring + j, ring + i])
+    for i in range(n):
+        # The slot WALL, wound so its normal faces INTO the well. A well is seen from
+        # inside it, so a wall wound the other way presents its back face to the only
+        # camera that will ever look at it — which shades black and reads as no well at
+        # all, on top of a cap that then looks like a flat disc with a pad on it.
+        j = (i + 1) % n
+        faces.append([ring + i, ring + j, ring + n + j, ring + n + i])
+    for i in range(n):                                      # the floor
+        j = (i + 1) % n
+        faces.append([ring + n + i, ring + n + j, mid])
+    return MeshProgram().mesh(verts=verts, faces=faces, mark=mark)
+
+
 def stadium(length, width, arc=10):
     """A rounded-rectangle plan (CCW): the grip rib seen from above."""
     a, r = max(1e-6, (length - width) / 2.0), width / 2.0
@@ -126,7 +207,8 @@ def stadium(length, width, arc=10):
 # --------------------------------------------------------------------------- #
 def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draft=0.66,
         rib_slot=0.0, dome=0.0008, chamfer=0.0025, teeth=0, skirt=0.020, neck_d=0.048,
-        spin=0.0, printing=True, material=None, rib_material=None, steps=48):
+        spin=0.0, printing=True, grip="rib", material=None, rib_material=None,
+        steps=48):
     """The inner fuel cap: a lathed disc with a raised grip rib across it.
 
     Everything about this part that a 6D-pose network can see is in three numbers — the
@@ -185,31 +267,68 @@ def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draf
     p = lathe(section, steps=steps, mark="cap_body").material({"by": "tag", "name": "cap_body"}, **material)
 
     if teeth:
-        # ratchet teeth: little wedges around the skirt, arrayed by placing them.
-        tw, th = TAU * rn / teeth * 0.55, 0.0022
+        # The ratchet ring — the clicking torque limiter. On the OUTER RIM, where a camera
+        # can see it: this used to put the teeth on the skirt, which is down inside the
+        # filler neck and hidden by the cap itself in every frame ever rendered. In the
+        # reference photographs the teeth are a fine scalloped edge right round the
+        # silhouette, and on an obliquely-viewed cap they are most of what says "this is a
+        # moulding you twist" rather than "this is a disc".
+        tw = TAU * r / teeth * 0.55
         for i in range(teeth):
             a = TAU * i / teeth
-            p = p.place(obj=prism([(-tw / 2, -th), (tw / 2, -th), (tw / 2, th), (-tw / 2, th)],
-                                  0.0, 0.006, mark="cap_teeth"),
-                        at=(rn * math.cos(a), rn * math.sin(a), -flange - skirt * 0.55),
+            # shallow: the teeth are a scalloped edge a millimetre proud, not a gear. The
+            # first version stood 2 mm out on a 39 mm radius and turned the cap into a
+            # cog — recognisable, but not this part.
+            p = p.place(obj=prism([(-tw / 2, -0.0010), (tw / 2, -0.0010),
+                                   (tw / 2 * 0.66, 0.0010), (-tw / 2 * 0.66, 0.0010)],
+                                  0.0, flange * 0.72, mark="cap_teeth"),
+                        at=(r * 0.9975 * math.cos(a), r * 0.9975 * math.sin(a), -flange * 0.74),
                         rotate=(0.0, 0.0, math.degrees(a)), material=material)
 
-    # the grip rib, turned about the cap's own axis by `spin`
+    # The grip, turned about the cap's own axis by `spin`. TWO families, both common:
+    #
+    #   grip="rib"   a raised bar across the face — what this kit had
+    #   grip="slot"  a rectangular WELL sunk into the face, with walls and a small pad in
+    #                its floor — about a quarter of the reference cars, and the shape is
+    #                not a rib at all. Building it as a rib and hoping was the same mistake
+    #                as everywhere else on this part: it is a different surface, not a
+    #                parameter of the one I already had.
     sa, ca = math.sin(math.radians(spin)), math.cos(math.radians(spin))
     turn = lambda pl: [(x * ca - y * sa, x * sa + y * ca) for x, y in pl]
+
+    if grip == "slot":
+        # The land has to be TALL and the well can only be as deep as the land, because
+        # what is underneath is the cap body's own solid top face. Sinking the floor past
+        # it just buries the well: the body's face is what the camera then sees, which is
+        # why this rendered as a flat disc with a pad on it through three attempts.
+        land = max(rib_h * 0.95, 0.008)
+        depth = land * 0.90
+        p = p.place(obj=slotted_face(r - chamfer * 0.8, turn(stadium(rib_len, rib_w, arc=22)),
+                                     dome + land, dome + land - depth,
+                                     draft=max(rib_draft, 0.74), mark="cap_slot"),
+                    at=(0.0, 0.0, 0.0), material=material)
+        # the pad in the floor of the well — every photographed slot has one
+        p = p.place(obj=frustum(turn(stadium(rib_len * 0.32, rib_w * 0.50)),
+                                dome + land - depth, dome + land - depth * 0.45, 0.86,
+                                mark="cap_rib"),
+                    at=(0.0, 0.0, 0.0), material=rib_material)
+        return p
+
     plan = turn(stadium(rib_len, rib_w))
-    if rib_slot > 0:
-        # the groove down the rib's spine: an inner stadium walked back the other way makes
-        # the plan concave, which is exactly why prism() ear-clips.
-        pass
     p = p.place(obj=frustum(plan, dome * 0.5, rib_h, rib_draft, mark="cap_rib"),
                 at=(0.0, 0.0, 0.0), material=rib_material)
     if rib_slot > 0:
-        sl, sw = rib_len * 0.72, rib_w * rib_draft * 0.34
-        p = p.place(obj=frustum(turn(stadium(sl, sw)), rib_h - min(rib_slot, rib_h * 0.55),
-                                rib_h + 1e-4, 1.25, mark="cap_slot"),
-                    at=(0.0, 0.0, 0.0), material=mat([c * 0.55 for c in material["color"]],
-                                                     material["metallic"], material["roughness"]))
+        # The groove down the spine of a raised bar — the double-decker variant, and very
+        # common. Sunk into the bar's TOP, narrower than the bar and stopping short of its
+        # ends, so the bar reads as two rails rather than as one block.
+        sl = rib_len * rib_draft * 0.80
+        sw = rib_w * rib_draft * 0.42
+        d2 = min(rib_slot, rib_h * 0.45)
+        p = p.place(obj=frustum(turn(stadium(sl, sw)), rib_h + 1e-4, rib_h - d2, 0.88,
+                                mark="cap_slot"),
+                    at=(0.0, 0.0, 0.0),
+                    material=mat([c * 0.68 for c in material["color"]],
+                                 material["metallic"], min(0.95, material["roughness"] * 1.15)))
     return p
 
 
@@ -593,21 +712,54 @@ def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None,
     return p
 
 
-def tether(start, end, sag=0.030, coils=3.0, r=0.0022, n=64, material=None):
-    """The curly cord from the cap to the pocket. Swept, not assembled from arcs.
+def tether(start, end, sag=0.030, r=0.0022, n=90, kinks=2, seed=0, material=None):
+    """The cord from the cap to the pocket — swept along a path that actually hangs.
 
-    A helix that hangs — the coil is stretched along the chord and pulled down by gravity,
-    which is what makes it read as a cord rather than as a spring in a catalogue."""
-    sx, sy, sz = start
-    ex, ey, ez = end
+    Rebuilt against the photographs. The old one was a neat stretched helix, which reads as
+    a spring in a catalogue; a real tether is a short moulded cord that has been bent the
+    same way ten thousand times, so it hangs with two or three lazy kinks in it and no
+    periodicity at all. It is also thicker than it looks — 2 to 3 mm — and it is one of the
+    few BRIGHT-edged things in a pocket full of matt black, so its silhouette matters.
+
+    Built as a Catmull-Rom spline through a few jittered control points rather than as a
+    formula, because a formula is exactly what made the old one look manufactured."""
+    import random
+    rng = random.Random(seed)
+    s_, e = np.asarray(start, float) if False else list(start), list(end)
+    ctrl = [list(s_)]
+    for i in range(1, kinks + 2):
+        t = i / (kinks + 2)
+        base = [s_[k] + (e[k] - s_[k]) * t for k in range(3)]
+        amp = math.sin(math.pi * t)
+        base[0] += rng.uniform(-0.014, 0.014) * amp
+        base[1] += rng.uniform(-0.016, 0.016) * amp
+        base[2] -= sag * amp * rng.uniform(0.75, 1.25)
+        ctrl.append(base)
+    ctrl.append(list(e))
+    # Catmull-Rom through the control points
+    pad = [ctrl[0]] + ctrl + [ctrl[-1]]
     path = []
-    for i in range(n + 1):
-        t = i / n
-        a = TAU * coils * t
-        px = sx + (ex - sx) * t
-        py = sy + (ey - sy) * t + 0.010 * math.sin(a) * math.sin(math.pi * t)
-        pz = sz + (ez - sz) * t - sag * math.sin(math.pi * t) + 0.006 * (math.cos(a) - 1) * math.sin(math.pi * t)
-        path.append((px, py, pz))
+    for i in range(len(pad) - 3):
+        p0, p1, p2, p3 = (np.array(pad[i + k], float) for k in range(4))
+        for j in range(n // (len(pad) - 3)):
+            t = j / max(1, n // (len(pad) - 3))
+            t2, t3 = t * t, t * t * t
+            q = 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+                       + (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+            path.append([float(x) for x in q])
+    path.append(list(e))
     ring = [(r * math.cos(TAU * k / 8), r * math.sin(TAU * k / 8)) for k in range(8)]
     return (MeshProgram().profile(ring, plane="xy", closed=True).sweep(path, mark="tether")
             .material({"by": "tag", "name": "tether"}, **(material or TETHER)))
+
+
+def cap_boss(r_cap, spin=0.0, material=None):
+    """The little lug on the cap's rim that the tether is moulded onto.
+
+    Small, and present on every cap in the reference set that has a cord. Without it the
+    cord appears to grow out of a smooth disc, which is the sort of detail that is invisible
+    until it is missing."""
+    a = math.radians(spin)
+    return (prism([(-0.006, -0.004), (0.006, -0.004), (0.005, 0.004), (-0.005, 0.004)],
+                  0.0, 0.005, mark="cap_body")
+            .material({"by": "all"}, **(material or CAP_BLACK)))

@@ -73,9 +73,14 @@ def sample(rng, camera="orbbec640", domain="wide"):
         d_cap=d_cap, flange=_lerp(rng, 0.007, 0.013),
         rib_len=rib_len, rib_w=rib_w,
         rib_h=_lerp(rng, 0.011, 0.019), rib_draft=_lerp(rng, 0.68, 0.90),
-        rib_slot=float(rng.random() < 0.45) * _lerp(rng, 0.002, 0.005),
+        rib_slot=float(rng.random() < 0.5) * _lerp(rng, 0.002, 0.006),
         dome=_lerp(rng, 0.0, 0.0018), chamfer=_lerp(rng, 0.0015, 0.0035),
-        teeth=int(rng.choice([0, 0, 24, 28, 32])), skirt=_lerp(rng, 0.014, 0.028),
+        # Grip family, from the reference sheet: about a quarter of the ninety cars have a
+        # sunk rectangular well rather than a raised bar, and many raised bars carry a
+        # groove down the spine. Teeth are on now by default and on the OUTER rim, where
+        # they are actually visible.
+        grip=str(rng.choice(["rib", "rib", "rib", "slot"])),
+        teeth=int(rng.choice([0, 30, 36, 42, 48])), skirt=_lerp(rng, 0.014, 0.028),
         # The pocket. The aperture is only a little wider than the cap — on every one of
         # the ninety reference cars the cap very nearly fills its hole. Allowing it to be
         # 48 mm wider, as the first draft did, turns the recess into a funnel whose sloped
@@ -125,7 +130,8 @@ def sample(rng, camera="orbbec640", domain="wide"):
         door_open=_lerp(rng, 95.0, 165.0),
         door_w=_lerp(rng, 0.115, 0.160), door_h=_lerp(rng, 0.115, 0.165),
         paint=str(rng.choice(M.PAINT_NAMES)),
-        tether=bool(rng.random() < 0.55),
+        tether=bool(rng.random() < 0.7), tether_az=_lerp(rng, 0.0, 360.0),
+        tether_r=_lerp(rng, 0.0016, 0.0028), tether_kinks=int(rng.choice([1, 2, 2, 3])),
         alu=bool(rng.random() < 0.08),
         # Lighting. Bounded well below what the tracer will happily accept: the subject is
         # a black object inside a shadowed hole, and the exposure that makes IT readable is
@@ -275,7 +281,7 @@ def build(v):
                      rib_h=v["rib_h"], rib_draft=v["rib_draft"], rib_slot=v["rib_slot"],
                      dome=v["dome"], chamfer=v["chamfer"], teeth=v["teeth"],
                      skirt=v["skirt"], neck_d=v["d_cap"] * 0.62, spin=v["cap_spin"],
-                     material=cap_mat)
+                     grip=v["grip"], material=cap_mat)
     # rotate=tilt ONLY. The spin is already baked into the cap about its own axis; passing
     # it here as well would swing the axis instead of turning the cap (see parts.cap).
     prog = prog.place(obj=cap_prog, at=tuple(cap_c), rotate=tilt)
@@ -289,12 +295,18 @@ def build(v):
                                  ribs=v["door_ribs"]),
                       at=tuple(cap_c + axis * (body_z + 0.004)), rotate=body_rot)
     if v["tether"]:
-        a = math.radians(v["cap_spin"])
-        s = cap_c + R @ np.array([0.40 * v["d_cap"] * math.cos(a),
-                                  0.40 * v["d_cap"] * math.sin(a), -0.004])
+        a = math.radians(v["cap_spin"] + v["tether_az"])
+        prog = prog.place(obj=P.cap_boss(v["d_cap"] / 2, material=cap_mat),
+                          at=tuple(cap_c + R @ np.array([0.46 * v["d_cap"] * math.cos(a),
+                                                         0.46 * v["d_cap"] * math.sin(a),
+                                                         -0.002])),
+                          rotate=(v["tilt_x"], v["tilt_y"], v["cap_spin"] + v["tether_az"]))
+        s = cap_c + R @ np.array([0.47 * v["d_cap"] * math.cos(a),
+                                  0.47 * v["d_cap"] * math.sin(a), 0.001])
         e = np.array([pocket_r * 0.55, 0.010, -0.020 * v["z_gain"]])
-        prog = prog.place(obj=P.tether(tuple(s), tuple(e), sag=0.010 + 0.020 * v["z_gain"],
-                                       coils=rng.uniform(2.0, 4.0)))
+        prog = prog.place(obj=P.tether(tuple(s), tuple(e), sag=0.008 + 0.016 * v["z_gain"],
+                                       r=v["tether_r"], kinks=v["tether_kinks"],
+                                       seed=int(v["cap_spin"] * 7) % 9999))
 
     cam = _camera(v, cap_c, R)
     gt = dict(variant=v, cap_centre=cap_c.tolist(), cap_normal=axis.tolist(),

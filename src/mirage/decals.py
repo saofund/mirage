@@ -274,13 +274,22 @@ def _fuelcap_face(w, h):
     smaller on the opposite side. It is the single most recognisable thing about this part
     in a colour image and the synthetic caps had none of it.
 
-    Drawn on a transparent-black field so the cap's own material shows through everywhere
-    the ink is not — the decal is pinned to the cap's +z face, so anything opaque here
-    would repaint the whole disc."""
-    im = Image.new("RGB", (w, h), (0, 0, 0))
+    The background is the CAP'S OWN COLOUR, not black. A decal here is an albedo map, not
+    an overlay: whatever it contains replaces the material inside its rectangle, and the
+    rectangle covers the whole disc. Painted on black, it therefore drove the albedo of
+    every unlettered part of the cap — including the inside of a recessed grip — to zero,
+    and a well whose walls return no light at all is indistinguishable from no well. That
+    cost four rounds of debugging geometry that was correct the whole time.
+    And the values are LINEAR, as everything in this module is — 0.02 albedo is byte 5,
+    not byte 38. Writing the sRGB number made the cap eight times too bright and turned a
+    black moulding into a white one, which is the same class of error as painting it black
+    and just as easy to make while thinking about something else."""
+    im = Image.new("RGB", (w, h), (5, 5, 6))
     d = ImageDraw.Draw(im)
     cx, cy = w / 2, h / 2
-    ink = (168, 168, 162)
+    # Worn light-grey printing: linear 0.28, not the paper-white it would be in sRGB. On
+    # the reference caps the ink is half rubbed away and reads well below the highlights.
+    ink = (72, 72, 68)
     for text, radius, start, size, step in (
             ("ATTENZIONE  RIMUOVERE PIANO", 0.415, -128.0, 0.050, 6.0),
             ("WARNING  REMOVE SLOWLY", 0.415, 52.0, 0.050, 6.0),
