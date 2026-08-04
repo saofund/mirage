@@ -657,7 +657,7 @@ def island():
     # 2.9 x 1.95, not 2.06 x 1.40: the grating segments out of the photograph at roughly
     # 3.1 x 2.5 m, and an island that small was most of why the whole assembly read as a
     # model of a petrol pump rather than a petrol pump.
-    p.place(grate_plinth(2.90, 1.95, 0.15), mark="plinth")
+    p.place(grate_plinth(2.50, 1.60, 0.15), mark="plinth")
     p.place(clad_column(), at=[0.02, 0.46, Z], mark="column")
     p.place(pump_sign(), at=[0.02, 0.02, Z + 2.34], mark="sign")
     p.place(dispenser(), at=[0, 0.06, Z], mark="dispenser")
@@ -864,18 +864,98 @@ def broom(h=1.35):
     return p
 
 
-def person(h=1.70, top=(0.10, 0.11, 0.13), leg=(0.06, 0.06, 0.07)):
-    """A worker across the yard. At forty pixels tall a figure is a silhouette — but an
-    empty forecourt at half past nine on a Saturday is its own kind of wrong."""
+def person(h=1.70, top=(0.10, 0.11, 0.13), leg=(0.06, 0.06, 0.07),
+           skin=(0.34, 0.22, 0.16), hair=(0.045, 0.035, 0.030)):
+    """A worker across the yard, built as a SILHOUETTE rather than as parts.
+
+    The previous one was two cylinders, a box, two more cylinders and a sphere — a shop
+    mannequin, and it read as one at every size. What makes a figure read as a person at
+    forty pixels is its OUTLINE: the notch under the arm, the taper from shoulder to waist
+    and back out at the hip, knees narrower than thighs, a neck. None of those exist in a
+    stack of primitives, and no amount of extra primitives creates them, because the thing
+    that is wrong is the shape of the boundary.
+
+    So it is a `loft` of the front-view outline with a half-width that varies down the body:
+    a head deeper than it is wide, a chest deeper still, a waist that comes in, arms of
+    roughly circular section. Three pieces rather than one, split at the waist and the neck,
+    because the only thing that survives to forty pixels besides the silhouette is where the
+    trousers stop and the shirt starts.
+    """
+    H = h
+
+    def half(pts):
+        """Mirror a right-hand profile (top of head down to the crotch) into a closed loop.
+
+        x arrives in units of the figure's HEIGHT, like z, so one number changes the size and
+        the proportions stay put."""
+        return ([[x * H, z] for x, z in pts]
+                + [[-x * H, z] for x, z in reversed(pts[1:-1])])
+    # --- legs: hip to sole, with knees and shoes ------------------------------------- #
+    legs = half([[0.000, 0.575 * H],
+                 [0.101, 0.570 * H], [0.104, 0.520 * H], [0.096, 0.455 * H],
+                 [0.086, 0.380 * H], [0.076, 0.300 * H],           # thigh into the knee
+                 [0.071, 0.255 * H], [0.073, 0.205 * H],           # the knee itself
+                 [0.068, 0.140 * H], [0.060, 0.075 * H],           # calf to ankle
+                 [0.062, 0.038 * H], [0.075, 0.012 * H], [0.076, 0.000],
+                 [0.021, 0.000], [0.019, 0.055 * H], [0.024, 0.190 * H],
+                 [0.030, 0.330 * H], [0.032, 0.440 * H], [0.000, 0.470 * H]])
+
+    def hw_legs(x, z):
+        t = z / H
+        if t < 0.045:                                   # the shoe, wider than the ankle
+            return 0.058 * H
+        return (0.052 + 0.040 * max(0.0, t - 0.20) / 0.38) * H
+
+    # --- torso and arms: waist to the base of the neck -------------------------------- #
+    torso = half([[0.000, 0.885 * H],
+                  [0.036, 0.882 * H], [0.038, 0.868 * H],          # the neck
+                  [0.078, 0.858 * H], [0.132, 0.848 * H],          # trapezius, shoulder
+                  [0.155, 0.828 * H], [0.160, 0.788 * H],          # deltoid
+                  [0.154, 0.722 * H], [0.150, 0.662 * H],          # upper arm to elbow
+                  [0.143, 0.606 * H], [0.150, 0.578 * H],          # forearm, wrist
+                  [0.134, 0.548 * H], [0.113, 0.562 * H],          # the hand
+                  [0.109, 0.616 * H], [0.113, 0.700 * H],          # back up the inner arm
+                  [0.101, 0.762 * H],                              # the armpit
+                  [0.094, 0.720 * H], [0.083, 0.655 * H],          # ribcage into the waist
+                  [0.090, 0.600 * H], [0.103, 0.562 * H],          # and out again at the hip
+                  [0.000, 0.556 * H]])
+
+    def hw_torso(x, z):
+        t = z / H
+        if abs(x) > 0.104 * H:                          # an arm: roughly circular
+            return 0.046 * H
+        if t > 0.862:
+            return 0.055 * H                            # the neck
+        if t > 0.775:
+            return (0.055 + 0.055 * (0.862 - t) / 0.087) * H       # shoulders filling out
+        if t > 0.660:
+            return 0.110 * H                            # chest
+        if t > 0.600:
+            return (0.110 - 0.022 * (0.660 - t) / 0.060) * H       # waist
+        return 0.100 * H                                # hips
+
+    # --- head ------------------------------------------------------------------------- #
+    head = half([[0.000, 1.000 * H],
+                 [0.031, 0.997 * H], [0.052, 0.985 * H], [0.062, 0.962 * H],
+                 [0.062, 0.936 * H], [0.054, 0.916 * H], [0.043, 0.903 * H],
+                 [0.036, 0.893 * H], [0.037, 0.878 * H], [0.000, 0.874 * H]])
+
+    def hw_head(x, z):
+        t = (z / H - 0.874) / 0.126
+        return (0.038 + 0.036 * math.sin(math.pi * min(max(t, 0.0), 1.0) ** 0.7)) * H
+
     p = MeshProgram()
-    for s in (-1, 1):
-        p.place(cyl(0.058, h * 0.47, 8), at=[s * 0.075, 0, h * 0.235], material=mat(leg, 0.0, 0.6))
-    p.place(cbox(0.34, 0.20, h * 0.32, 0.03), at=[0, 0, h * 0.63], material=mat(top, 0.0, 0.62))
-    for s in (-1, 1):
-        p.place(cyl(0.043, h * 0.30, 8), at=[s * 0.20, 0.01, h * 0.63], rotate=[6, 0, 0],
-                material=mat(top, 0.0, 0.62))
-    p.place(MeshProgram().uv_sphere(segments=14, rings=9, radius=0.098), at=[0, 0, h * 0.87],
-            material=mat((0.22, 0.16, 0.13), 0.0, 0.55))
+    p.place(loft(legs, hw_legs, n_smooth=1), material=mat(leg, 0.0, 0.60))
+    p.place(loft(torso, hw_torso, n_smooth=1), material=mat(top, 0.0, 0.62))
+    p.place(loft(head, hw_head, n_smooth=1), material=mat(skin, 0.0, 0.55))
+    # the hair is a cap over the crown, not a colour on the whole head
+    p.place(lathe([[0.001, 0.960 * H], [0.056, 0.958 * H], [0.062, 0.980 * H],
+                   [0.030, 0.999 * H], [0.001, 1.001 * H]], steps=16),
+            material=mat(hair, 0.0, 0.48))
+    # shoes, which at this size are the darkest thing on the figure and anchor it to the ground
+    for sx in (-1, 1):
+        p.place(cbox(0.098, 0.135, 0.052, 0.014), at=[sx * 0.048 * H, 0.012, 0.026],
+                material=mat((0.030, 0.028, 0.030), 0.0, 0.42))
     return p
 
 
