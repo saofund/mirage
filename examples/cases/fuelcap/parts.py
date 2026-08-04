@@ -410,6 +410,19 @@ def pocket_shaped(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.
     if len(sec) < 4:
         raise ValueError("cap covers the whole measured section")
     r_in, r_out = sec[0][0], sec[-1][0]
+    # Normalise the superellipse so squaring the plan does not also INFLATE it. Raw
+    # k(theta) is 1 on the axes and 1.17 on the diagonals at n=3.6, so a "square" ring is
+    # a ring 8% bigger on average — which pushed the whole outer wall outward and dropped
+    # the measured recess depth from +7.8 mm to -0.6. Dividing by the mean keeps the mean
+    # radius of every ring exactly what the measured section says it is, and changes only
+    # the shape.
+    _ks = []
+    for j in range(steps):
+        a = TAU * j / steps
+        c, s_ = math.cos(a), math.sin(a)
+        _ks.append((abs(c) ** squareness + abs(s_) ** squareness) ** (-1.0 / squareness))
+    _kmean = sum(_ks) / len(_ks)
+    _ks = [k / _kmean for k in _ks]
     verts, faces = [], []
     nr = len(sec)
     for r, z in sec:
@@ -417,10 +430,8 @@ def pocket_shaped(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.
         t = 0.0 if r <= blend_from else min(1.0, (r - blend_from) / max(r_out - blend_from, 1e-6))
         for j in range(steps):
             a = TAU * j / steps
-            c, s = math.cos(a), math.sin(a)
-            k = (abs(c) ** squareness + abs(s) ** squareness) ** (-1.0 / squareness)
-            kk = 1.0 + (k - 1.0) * t
-            verts.append((r * c * kk, r * s * kk, z))
+            kk = 1.0 + (_ks[j] - 1.0) * t
+            verts.append((r * math.cos(a) * kk, r * math.sin(a) * kk, z))
     for i in range(nr - 1):
         for j in range(steps):
             j2 = (j + 1) % steps
