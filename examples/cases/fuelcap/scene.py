@@ -101,7 +101,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         pan_sq=float(rng.choice([2.4, 3.0, 3.6, 4.4, 5.5])),
         seam=bool(rng.random() < 0.75), seam_gap=_lerp(rng, 0.0035, 0.0075),
         seam_step=_lerp(rng, 0.002, 0.005), seam_side=float(rng.choice([-1.0, 1.0])),
-        door_rim=_lerp(rng, 0.008, 0.018), door_ribs=int(rng.choice([0, 2, 3, 3, 4])),
+        door_rim=_lerp(rng, 0.004, 0.009), door_ribs=int(rng.choice([0, 2, 3, 3, 4])),
         # the filler neck is not square to the body panel on any real car
         tilt_x=_lerp(rng, -14.0, 14.0), tilt_y=_lerp(rng, -16.0, 10.0),
         cap_spin=_lerp(rng, 0.0, 360.0),        # a screw cap stops wherever it stops
@@ -109,7 +109,11 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # A fuel door is only a little bigger than the hole it covers — it is not a hatch.
         # Sized at 180-205 mm it stands out 200 mm from a panel the camera is 400 mm from
         # and takes over the frame, which is what the first draft did.
-        door_open=_lerp(rng, 80.0, 125.0),
+        # Opened wide, and THIN. A fuel door is a pressing a few millimetres deep, not a
+        # box: at an 18 mm return flange it renders as a tray held out toward the camera.
+        # And a real one is usually swung well back toward the wing rather than standing
+        # square, so it presents its edge, not its face.
+        door_open=_lerp(rng, 95.0, 165.0),
         door_w=_lerp(rng, 0.115, 0.160), door_h=_lerp(rng, 0.115, 0.165),
         paint=str(rng.choice(M.PAINT_NAMES)),
         tether=bool(rng.random() < 0.55),
