@@ -402,6 +402,42 @@ def compare(real_dir, synth_dir, png=None):
         print("wrote", png)
 
 
+def recess_depth(files, limit=120):
+    """How far the body surface stands proud of the cap face, in mm.
+
+    The single most important dimension in this scene, and the one nothing measured until a
+    human looked at a render and said it looked like a box hung on a wall. It was: the
+    model had the body 42 mm above the cap where the real cars average 8. Five times too
+    deep, through fourteen statistics that all stayed green — because every one of them was
+    about the cap itself or about depth-map noise, and the cap was fine. It was sitting at
+    the bottom of a well nobody had measured.
+
+    Measured in the cap's own frame (its plane fixes the axis), over the annulus from 60 to
+    100 mm out, which is past the aperture on every vehicle here and therefore body."""
+    out = []
+    for f in files[:limit]:
+        d = np.load(f)
+        P = d["xyz"].astype(np.float64)
+        cap = P[d["label"] == 1]
+        if len(cap) < 700:
+            continue
+        c = cap.mean(0)
+        _, _, V = np.linalg.svd(cap - c, full_matrices=False)
+        n = V[2]
+        if n[2] > 0:
+            n = -n
+        t = np.array([0.0, 0.0, 1.0]) if abs(n[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+        u = np.cross(t, n); u /= np.linalg.norm(u)
+        v = np.cross(n, u)
+        L = np.stack([(P - c) @ u, (P - c) @ v, (P - c) @ n], 1)
+        r = np.hypot(L[:, 0], L[:, 1])
+        band = (r > 0.060) & (r < 0.100) & (np.abs(L[:, 2]) < 0.080)
+        if band.sum() < 300:
+            continue
+        out.append(float(np.median(L[band, 2])) * 1000)
+    return {"recess_depth_mm": float(np.median(out))} if out else {}
+
+
 def complexity(files, limit=40, k=12):
     """How much STRUCTURE the cloud has — the axis eleven cap dimensions cannot see.
 
@@ -535,6 +571,7 @@ def audit(synth_dir, real_dir="orbbec_clouds"):
         out["cap_frac"] = float(np.median([
             float((np.load(f)["label"] == 1).mean()) for f in files[:80]]))
         out.update(complexity(files))
+        out.update(recess_depth(files))
         return out
 
     A, B = block(rf), block(sf)
@@ -542,7 +579,8 @@ def audit(synth_dir, real_dir="orbbec_clouds"):
     print(f"{'':18s} {'real':>10s} {'synth':>10s} {'ratio':>8s}")
     shape = ("disc_u_mm", "disc_v_mm", "rib_h_mm", "rib_len_mm", "rib_wid_mm")
     for k in shape + ("dist_m", "obliquity_deg", "cap_px", "noise_mm", "pts_per_frame",
-                      "cap_frac", "normal_var_deg", "rough_ratio", "hole_run_px"):
+                      "cap_frac", "recess_depth_mm", "normal_var_deg", "rough_ratio",
+                      "hole_run_px"):
         va, vb = A.get(k), B.get(k)
         if va is None or vb is None:
             continue
