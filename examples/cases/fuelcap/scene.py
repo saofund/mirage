@@ -271,13 +271,19 @@ def build(v):
                                   squareness=v["pan_sq"], crown=v["crown"],
                                   crown_ax=v["crown_ax"],
                                   hole_stretch=1.0 / max(math.cos(bt), 0.35),
-                                  hole_ax=baz),
+                                  # The panel hinges ABOUT the axis at `baz`, so the
+                                  # foreshortening — and therefore the ellipse — runs
+                                  # PERPENDICULAR to it. Stretching along `baz` instead
+                                  # leaves the hole misaligned with the pocket by the full
+                                  # tilt, and the panel then slices across the recess: in
+                                  # an id map, the well comes out as a crescent.
+                                  hole_ax=baz + math.pi / 2),
                       at=tuple(cap_c + axis * body_z), rotate=body_rot)
     if v["seam"]:
         sx = v["seam_side"] * (pocket_r + v["door_w"] + 0.040)
-        prog = prog.place(obj=P.shutline(panel_size, min(sx, panel_size / 2 - 0.02)
-                                         if v["seam_side"] > 0 else sx,
-                                         gap=v["seam_gap"], step=v["seam_step"],
+        sx = max(-panel_size / 2 + 0.03, min(sx, panel_size / 2 - 0.03))
+        prog = prog.place(obj=P.shutline(panel_size, sx, gap=v["seam_gap"],
+                                         step=v["seam_step"], side=v["seam_side"],
                                          material=paint),
                           at=tuple(cap_c + axis * body_z), rotate=body_rot)
     if v["well_ribs"] or v["well_drain"] or v["n_screws"] or v["n_catches"]:

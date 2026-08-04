@@ -725,7 +725,7 @@ def door_pan(outer=0.150, depth=0.011, hole_r=0.048, squareness=4.0, wall=0.014,
         {"by": "tag", "name": "panel"}, **material)
 
 
-def shutline(panel_size, seam_x, gap=0.005, step=0.0035, material=None):
+def shutline(panel_size, seam_x, gap=0.005, step=0.0035, side=1.0, material=None):
     """The car's own panel gap — one sheet lapped over another with a slot between them.
 
     Built as a second skin standing `step` proud of the body panel and stopping `gap/2`
@@ -737,8 +737,16 @@ def shutline(panel_size, seam_x, gap=0.005, step=0.0035, material=None):
     This is the single largest piece of what `fit.complexity` says is missing. The recess's
     own furniture is small; the ROI is mostly *body*, and a real body is not one plane."""
     s = panel_size / 2.0
-    return (prism([(seam_x + gap / 2, -s), (s, -s), (s, s), (seam_x + gap / 2, s)],
-                  0.0, step, mark="panel")
+    # The skin lies on ONE side of the seam — the side away from the pocket. It used to
+    # always run from the seam toward +x, so with the seam placed at negative x the sheet
+    # covered the pocket instead of sitting beside it: a 3 mm slab straight over the
+    # recess, which in a render is a crescent of well peeping out from under a panel and
+    # in an id map looks like the pocket itself is broken. It is not; it is buried.
+    if side >= 0:
+        poly = [(seam_x + gap / 2, -s), (s, -s), (s, s), (seam_x + gap / 2, s)]
+    else:
+        poly = [(-s, -s), (seam_x - gap / 2, -s), (seam_x - gap / 2, s), (-s, s)]
+    return (prism(poly, 0.0, step, mark="panel")
             .material({"by": "all"}, **(material or {"color": [0.3, 0.3, 0.3],
                                                      "metallic": 0.6, "roughness": 0.15})))
 
