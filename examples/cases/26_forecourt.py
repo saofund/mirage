@@ -203,6 +203,9 @@ def forecourt():
     #
     # What would settle it: a second unoccluded anchor on the same rigid body. The bollard
     # row was that for the building line. Nothing here has one yet.
+    ring = MeshProgram()
+    ring.place(MeshProgram().cylinder(sides=80, radius=1.42, height=0.006), material=LINE_W)
+    ring.place(MeshProgram().cylinder(sides=80, radius=1.24, height=0.014), material=APRON)
     p.place(ring, at=[PLACEMENTS()['island'][1][0] - 0.08,
                       PLACEMENTS()['island'][1][1] - 1.39, 0.004])
     p.place(P.box(0.15, 2.0, 0.006), at=[9.0, 9.4, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
