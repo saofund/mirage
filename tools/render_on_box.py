@@ -33,10 +33,18 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# Only the OUTPUTS by default. Pulling all of docs/gallery drags back the scripts that
-# live there too, and a Linux checkout hands them over with LF endings, so every render
-# turns into a diff full of files nothing touched.
-DEFAULT_PULL = ["examples/cases/outputs/26_forecourt"]
+# The outputs directory, AND the gallery still by name.
+#
+# The gallery still used to be left behind entirely: the box writes it, the pull list did not
+# mention it, and the local copy therefore sat at whatever was last committed. A whole
+# session's work — a van remeasured and moved three metres, the ground relaid, the bays
+# rebuilt — was invisible in the only two places anybody actually looks, the local checkout
+# and GitHub, and the picture there was a day old while the score said it had improved.
+#
+# By NAME and not the directory: a Linux checkout hands the scripts in docs/gallery over with
+# LF endings, so pulling the folder turns every render into a diff full of files nothing
+# touched. Entries with a suffix are copied as files, the rest as directories.
+DEFAULT_PULL = ["examples/cases/outputs/26_forecourt", "docs/gallery/forecourt.png"]
 PUSH_ASSETS = ["assets/decals"]
 
 
@@ -124,8 +132,12 @@ def main():
     sh("ssh", "-o", "BatchMode=yes", box, " && ".join(steps))
 
     for p in pull:
-        (ROOT / p).mkdir(parents=True, exist_ok=True)
-        sh("scp", "-q", "-r", f"{box}:{box_dir}/{p}/.", str(ROOT / p) + "/")
+        if Path(p).suffix:                    # a single file, not a directory
+            (ROOT / p).parent.mkdir(parents=True, exist_ok=True)
+            sh("scp", "-q", f"{box}:{box_dir}/{p}", str(ROOT / p))
+        else:
+            (ROOT / p).mkdir(parents=True, exist_ok=True)
+            sh("scp", "-q", "-r", f"{box}:{box_dir}/{p}/.", str(ROOT / p) + "/")
         print(f"[box] pulled {p}")
 
 
