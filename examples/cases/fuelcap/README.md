@@ -66,29 +66,33 @@ Everything below is measured by `fit.py` against clouds pulled from
 `192.168.111.3:/data/.../fuelcap_6dpose` (read-only; nothing on that host was touched).
 Reference clouds live in `_ref/` and are gitignored — re-pull them to re-run the audit.
 
-| | real | synth | |
+| | real | synth | ratio |
 |---|---|---|---|
-| cap disc | 73.6 × 69.4 mm | 75.2 × 72.3 | ±4% |
-| grip rib | 60.3 × 43.8 × 17.7 mm | 57.0 × 44.6 × 17.5 | ±5% |
-| camera distance | 0.41 m | 0.44 | |
-| obliquity | 16.8° | 15.0° | |
-| cap width | 64.9 px | 67.5 | |
-| depth noise (8 mm patch) | 0.44 mm | 0.41 | |
-| points per frame | 39 329 | 37 662 | 0.96 |
-| **rough_ratio** (24 mm ÷ 6 mm residual) | **2.13** | **1.99** | 0.94 |
-| **hole_run** (median missing-pixel run) | **12 px** | **10** | 0.83 |
-| normal spread in a 6 mm ball | 16.0° | 24.0° | **1.50 — open** |
+| cap disc | 73.6 × 69.4 mm | 74.4 × 70.3 | 1.01 / 1.01 |
+| grip rib | 60.3 × 43.8 × 17.7 mm | 55.0 × 42.2 × 18.1 | 0.91 / 0.96 / 1.02 |
+| **recess depth** (body surface above cap face) | **7.3 mm** | 7.8 – 9.9 | 1.07 – 1.36 |
+| camera distance / obliquity / cap px | 0.41 m / 16.8° / 64.9 px | 0.44 / 15.6 / 57 | |
+| depth noise (8 mm patch) | 0.44 mm | 0.42 | 0.94 |
+| points per frame | 39 329 | 25 700 – 37 700 | 0.65 – 0.96 |
+| rough_ratio (24 mm ÷ 6 mm residual) | 2.13 | 1.66 – 1.99 | 0.78 – 0.94 |
+| hole_run (median missing-pixel run) | 12 px | 8 – 15 | 0.67 – 1.29 |
+| normal spread in a 6 mm ball | 16.0° | 17.4 | 1.09 |
 
-The last three are `fit.complexity`, and they exist because the first eleven did not
-catch what a human caught in one look at `sheet.py roi`: every one of them measures the
-CAP, and all of them can match while the frame around it is a coloured rectangle with a
-hole in it. Which it was.
+Ranges where several runs disagree are given as ranges rather than as the prettiest one;
+at 60–160 frames per run the viewpoint rows carry real sampling spread.
 
-`normal_var` is the one still open. The likely cause is that a block matcher fails on
-steeply slanted surfaces — the two views see different foreshortening — so a real cloud is
-biased toward the flat parts of the scene, while `SURVIVAL` here is keyed on texture only
-and keeps the recess walls. Modelling dropout against surface slant is the next thing to
-try.
+**`recess_depth` is the row to read first, and it exists because of a mistake.** Nothing
+measured how deep the pocket was, so nothing noticed the model had the body surface 42 mm
+above the cap where real cars average 8 — five times too deep. Fourteen statistics stayed
+green through it, because every one of them was about the cap itself or about depth-map
+noise, and the cap was fine; it was just at the bottom of a hole nobody had measured. A
+human looked at a render and said it read as a box hung on a wall.
+
+Fixing it also settled `normal_var`, which had sat at 1.5 with a confident explanation
+attached (a block matcher failing on slanted surfaces, biasing real clouds toward flat
+regions). The explanation was wrong. The scene was a five-times-too-deep hole, so most of
+what the sensor saw *was* slanted wall; at the right depth the number came to 1.09 on its
+own. A hypothesis that survives because nothing tests it is not evidence.
 
 Three sets were measured, and they disagree usefully:
 
