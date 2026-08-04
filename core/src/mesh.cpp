@@ -1226,7 +1226,8 @@ Mesh bisect(const Mesh& mesh, const std::array<double, 3>& point, const std::arr
     return m;
 }
 
-Mesh spin(const Mesh& mesh, const std::string& axis, int steps, double angle, const std::string& mark) {
+Mesh spin(const Mesh& mesh, const std::string& axis, int steps, double angle,
+          const std::vector<double>& plan, double plan_from, const std::string& mark) {
     constexpr double PI = 3.14159265358979323846;
     const int k = axis == "x" ? 0 : axis == "y" ? 1 : 2;
     const int i = (k + 1) % 3, j = (k + 2) % 3;   // axes perpendicular to `axis`
@@ -1240,17 +1241,36 @@ Mesh spin(const Mesh& mesh, const std::string& axis, int steps, double angle, co
     std::vector<char> on_axis(nv);
     for (int v = 0; v < nv; ++v) on_axis[v] = (pos[v][i] * pos[v][i] + pos[v][j] * pos[v][j]) < eps;
 
+    // `plan` generalises the lathe: a per-step radius multiplier, so the section comes
+    // from the profile and the PLAN from this table. Empty = a circle, i.e. exactly the
+    // classical lathe, bit for bit — which the differential test against the Python
+    // kernel checks on every build.
+    std::vector<double> rad(nv);
+    double rmax = 0.0;
+    for (int v = 0; v < nv; ++v) {
+        rad[v] = std::sqrt(pos[v][i] * pos[v][i] + pos[v][j] * pos[v][j]);
+        rmax = std::max(rmax, rad[v]);
+    }
+    const double span = std::max(rmax - plan_from, 1e-12);
+
     std::vector<A3> np;
     std::vector<int> base(nv);
     for (int v = 0; v < nv; ++v) {
         base[v] = static_cast<int>(np.size());
         if (on_axis[v]) { np.push_back(pos[v]); continue; }   // a pole: one shared copy
+        const double t = plan.empty() ? 0.0
+                       : std::min(1.0, std::max(0.0, (rad[v] - plan_from) / span));
         for (int r = 0; r < rings; ++r) {
             const double theta = angle * PI / 180.0 * r / steps;
             const double c = std::cos(theta), s = std::sin(theta);
             A3 p = pos[v];
             p[i] = pos[v][i] * c - pos[v][j] * s;
             p[j] = pos[v][i] * s + pos[v][j] * c;
+            if (!plan.empty()) {
+                const double m = 1.0 + (plan[r % static_cast<int>(plan.size())] - 1.0) * t;
+                p[i] *= m;
+                p[j] *= m;
+            }
             np.push_back(p);
         }
     }

@@ -1138,13 +1138,33 @@ def _rotate_onto(v, t0, t1):
 
 
 def spin(mesh: Mesh, axis: str = "z", steps: int = 24, angle: float = 360.0,
+         plan: list[float] | None = None, plan_from: float = 0.0,
          mark: str | None = None) -> Mesh:
     """Revolve a profile around an axis (the lathe). The profile is the BOUNDARY edge
     loops of an open mesh; each boundary edge sweeps into a ring of quads. A vertex on
     the axis is welded to a single shared point (a pole), so a profile that touches the
     axis closes cleanly. angle>=360 wraps into a watertight surface of revolution
     (vase / tube); a partial angle leaves an open swept sheet. Output verts: per input
-    vertex, its angular copies in order (1 if on-axis)."""
+    vertex, its angular copies in order (1 if on-axis).
+
+    `plan` GENERALISES the lathe: a per-step radius multiplier, so the swept solid takes
+    the SECTION from the profile and the PLAN from this table. `None` (the default) is a
+    multiplier of 1 everywhere, i.e. a circle and exactly the classical lathe — the
+    behaviour and the vertex order are unchanged, so nothing that predates this moves.
+
+    Most manufactured round-ish parts are not surfaces of revolution: a pressed recess, an
+    oval tube, a rounded-rectangle housing, a bottle with flats on it. Each has one
+    cross-section and a plan that is not a circle, and building them out of a lathe plus
+    correction parts is how you get a shape whose *features* are right and whose surfaces
+    between the features are wrong.
+
+    `plan_from` is a radius: inside it the plan is ignored (still circular) and outside it
+    the multiplier fades in linearly to full strength at the profile's greatest radius.
+    That is what lets one part be turned at its centre and pressed at its rim, which is
+    what a filler recess, a hub cap and a saucepan all are.
+
+    Note the plan does not have to average 1 — but if it does not, it scales the part as
+    well as shaping it. `mirage.reverse.superellipse_plan` normalises for that reason."""
     import math
     k = "xyz".index(axis)
     i, j = (k + 1) % 3, (k + 2) % 3              # the two axes perpendicular to `axis`
@@ -1155,12 +1175,17 @@ def spin(mesh: Mesh, axis: str = "z", steps: int = 24, angle: float = 360.0,
     pos = [list(v.co) for v in mesh.verts]
     on_axis = [(pos[v][i] ** 2 + pos[v][j] ** 2) < eps for v in range(len(pos))]
 
+    rad = [math.hypot(pos[v][i], pos[v][j]) for v in range(len(pos))]
+    rmax = max(rad) if rad else 0.0
+    span = max(rmax - plan_from, 1e-12)
+
     new_pos, base = [], {}
     for v in range(len(pos)):
         base[v] = len(new_pos)
         if on_axis[v]:
             new_pos.append(list(pos[v]))         # a pole: one shared copy
             continue
+        t = 0.0 if plan is None else min(1.0, max(0.0, (rad[v] - plan_from) / span))
         for r in range(rings):
             theta = math.radians(angle) * r / steps
             c, s = math.cos(theta), math.sin(theta)
@@ -1168,6 +1193,10 @@ def spin(mesh: Mesh, axis: str = "z", steps: int = 24, angle: float = 360.0,
             ci, cj = pos[v][i], pos[v][j]
             p[i] = ci * c - cj * s
             p[j] = ci * s + cj * c
+            if plan is not None:
+                m = 1.0 + (plan[r % len(plan)] - 1.0) * t
+                p[i] *= m
+                p[j] *= m
             new_pos.append(p)
 
     def outid(v, r):

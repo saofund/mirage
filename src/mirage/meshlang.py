@@ -673,8 +673,14 @@ class MeshProgram:
         return self.add(**_cmd("array", mark=mark, count=count, offset=list(offset)))
     def bisect(self, point=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0), fill=False, mark=None):
         return self.add(**_cmd("bisect", mark=mark, point=list(point), normal=list(normal), fill=fill))
-    def spin(self, axis="z", steps=24, angle=360.0, mark=None):
-        return self.add(**_cmd("spin", mark=mark, axis=axis, steps=steps, angle=angle))
+    def spin(self, axis="z", steps=24, angle=360.0, plan=None, plan_from=0.0, mark=None):
+        """The lathe, and — with `plan` — the generalised lathe: section from the profile,
+        plan from a per-step radius table. See kernel.spin."""
+        c = _cmd("spin", mark=mark, axis=axis, steps=steps, angle=angle)
+        if plan is not None:
+            c["plan"] = [float(x) for x in plan]
+            c["plan_from"] = float(plan_from)
+        return self.add(**c)
     def sweep(self, path, closed=False, twist=0.0, mark=None):
         """Sweep the current profile along a 3-D polyline (the general lathe). The profile
         is authored in the XY plane and carried on a parallel-transport frame, so a hose,
@@ -900,7 +906,7 @@ class MeshProgram:
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "spin":
                     mesh = spin(mesh, cmd.get("axis", "z"), cmd.get("steps", 24), cmd.get("angle", 360.0),
-                                mark=out_tag)
+                                cmd.get("plan"), cmd.get("plan_from", 0.0), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "sweep":
                     mesh = sweep(mesh, cmd.get("path", []), cmd.get("closed", False),

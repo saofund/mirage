@@ -284,8 +284,12 @@ Mesh make_profile(const std::vector<std::array<double, 2>>& points, const std::s
 // spin (lathe): revolve a profile's boundary edges around an axis. Axis verts weld
 // to a pole; angle>=360 wraps into a watertight surface of revolution, a partial
 // angle leaves an open swept sheet.
+// `plan` (empty = a circle) is a per-step radius multiplier: the section comes from the
+// profile and the plan from the table, which is what a pressed or oval part needs and a
+// pure revolve cannot express. `plan_from` is the radius the plan starts fading in at.
 Mesh spin(const Mesh& mesh, const std::string& axis = "z", int steps = 24,
-          double angle = 360.0, const std::string& mark = "");
+          double angle = 360.0, const std::vector<double>& plan = {},
+          double plan_from = 0.0, const std::string& mark = "");
 // screw (helical sweep — thread/spring/auger): like spin, but each angular step also
 // advances along the axis, so the profile climbs into a helix. `turns` full revolutions,
 // `height` is the axial rise per turn. Always open (the helix never wraps closed).

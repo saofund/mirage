@@ -422,73 +422,25 @@ MEASURED_SECTION_MM = [
 
 def pocket_shaped(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.045,
                   squareness=3.6, blend_from=0.055, steps=56, material=None, mark="well"):
-    """The measured section swept round a plan that MORPHS from circular to squarish.
+    """The measured section, spun with a plan — three lines of engine, not a hand-built mesh.
 
-    A real filler pocket is two shapes at once: the trench around the cap is turned, so it
-    is round, and the dish the door lies in is a pressing, so it is a rounded rectangle.
-    A pure lathe can only be the first, and pairing a lathe with a superellipse hole in the
-    panel puts a round part in a square opening — which shows up as a rim standing proud
-    all the way around, and reads in a render as a boss bolted onto the car rather than a
-    filler let into it.
-
-    So the plan radius is modulated per direction, blending from a circle at `blend_from`
-    to a superellipse of `squareness` at the outermost ring. Same measured heights, same
-    section — only the plan changes with radius, which is what the real pressing does.
+    This used to assemble its own vertex grid here in the case. It does not need to: the
+    section is what `spin` takes, and the round-inside/pressed-outside plan is what
+    `spin(plan=..., plan_from=...)` does. `mirage.reverse` supplies both, and the C++ kernel
+    builds it identically, which a hand-rolled vertex list in a case never would.
     """
+    from mirage.reverse import section_to_profile, superellipse_plan
+
     sec = [(r / 1000.0 * r_gain, z / 1000.0 * z_gain) for r, z in MEASURED_SECTION_MM]
     sec = [(r, z) for r, z in sec if r > cap_r * 0.92]
     if len(sec) < 4:
         raise ValueError("cap covers the whole measured section")
-    r_in, r_out = sec[0][0], sec[-1][0]
-    # Normalise the superellipse so squaring the plan does not also INFLATE it. Raw
-    # k(theta) is 1 on the axes and 1.17 on the diagonals at n=3.6, so a "square" ring is
-    # a ring 8% bigger on average — which pushed the whole outer wall outward and dropped
-    # the measured recess depth from +7.8 mm to -0.6. Dividing by the mean keeps the mean
-    # radius of every ring exactly what the measured section says it is, and changes only
-    # the shape.
-    _ks = _KS(squareness, steps)
-    verts, faces = [], []
-    nr = len(sec)
-    for r, z in sec:
-        # 0 at blend_from and inside it, 1 at the outer ring
-        t = 0.0 if r <= blend_from else min(1.0, (r - blend_from) / max(r_out - blend_from, 1e-6))
-        for j in range(steps):
-            a = TAU * j / steps
-            kk = 1.0 + (_ks[j] - 1.0) * t
-            verts.append((r * math.cos(a) * kk, r * math.sin(a) * kk, z))
-    for i in range(nr - 1):
-        for j in range(steps):
-            j2 = (j + 1) % steps
-            faces.append([i * steps + j, i * steps + j2,
-                          (i + 1) * steps + j2, (i + 1) * steps + j])
-    # the neck bore below the innermost ring, closed at the bottom so it is a solid
-    base = len(verts)
-    for j in range(steps):
-        a = TAU * j / steps
-        verts.append((neck_r * math.cos(a), neck_r * math.sin(a), sec[0][1] - 0.004))
-    for j in range(steps):
-        a = TAU * j / steps
-        verts.append((neck_r * math.cos(a), neck_r * math.sin(a), -neck_len))
-    verts.append((0.0, 0.0, -neck_len))
-    cap_i = len(verts) - 1
-    for j in range(steps):
-        j2 = (j + 1) % steps
-        faces.append([j2, j, base + j, base + j2])                       # rim down to bore
-        faces.append([base + j2, base + j, base + steps + j, base + steps + j2])
-        faces.append([base + steps + j, base + steps + j2, cap_i])       # bore floor
-    # a skirt off the outer ring so the pocket has thickness where the panel meets it
-    o = len(verts)
-    for j in range(steps):
-        x, y, _ = verts[(nr - 1) * steps + j]
-        verts.append((x, y, sec[0][1] - 0.030))
-    verts.append((0.0, 0.0, sec[0][1] - 0.030))
-    fl = len(verts) - 1
-    for j in range(steps):
-        j2 = (j + 1) % steps
-        faces.append([(nr - 1) * steps + j2, (nr - 1) * steps + j, o + j, o + j2])
-        faces.append([o + j2, o + j, fl])
-    return MeshProgram().mesh(verts=verts, faces=faces, mark=mark).material(
-        {"by": "tag", "name": mark}, **(material or WELL_PLASTIC))
+    prof = section_to_profile(sec, floor=min(z for _, z in sec) - neck_len,
+                              outer=sec[-1][0] * 1.02)
+    p = (MeshProgram().profile(prof, plane="xz")
+         .spin(axis="z", steps=steps, plan=superellipse_plan(squareness, steps),
+               plan_from=blend_from, mark=mark))
+    return p.material({"by": "tag", "name": mark}, **(material or WELL_PLASTIC))
 
 
 def pocket(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.045,

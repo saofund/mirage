@@ -282,7 +282,7 @@ const std::map<std::string, std::vector<std::string>>& num_fields() {
         {"extrude", {"distance"}}, {"inset", {"thickness"}}, {"bevel", {"width", "depth"}},
         {"edge_bevel", {"width"}}, {"solidify", {"thickness"}},
         {"array", {"count", "offset"}}, {"bisect", {"point", "normal"}},
-        {"spin", {"steps", "angle"}}, {"screw", {"steps", "turns", "height", "angle"}},
+        {"spin", {"steps", "angle", "plan_from"}}, {"screw", {"steps", "turns", "height", "angle"}},
         {"subdivide", {"levels"}}, {"crease", {"weight"}},
         {"material", {"color", "metallic", "roughness"}},
         {"translate", {"by"}}, {"scale", {"by"}}, {"place", {"translate", "rotate", "scale"}},
@@ -765,8 +765,12 @@ Mesh Program::build(std::string* last_tag_out) const {
                 mesh = mirage::bisect(mesh, p, nrm, cmd.value("fill", false), out_tag);
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "spin") {
+                std::vector<double> plan;
+                if (cmd.contains("plan"))
+                    for (const auto& q : cmd["plan"]) plan.push_back(q.get<double>());
                 mesh = mirage::spin(mesh, cmd.value("axis", std::string("z")), cmd.value("steps", 24),
-                                    cmd.value("angle", 360.0), out_tag);
+                                    cmd.value("angle", 360.0), plan,
+                                    cmd.value("plan_from", 0.0), out_tag);
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "sweep") {
                 std::vector<std::array<double, 3>> path;
