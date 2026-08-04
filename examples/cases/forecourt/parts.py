@@ -657,7 +657,7 @@ def island():
     # 2.9 x 1.95, not 2.06 x 1.40: the grating segments out of the photograph at roughly
     # 3.1 x 2.5 m, and an island that small was most of why the whole assembly read as a
     # model of a petrol pump rather than a petrol pump.
-    p.place(grate_plinth(2.50, 1.60, 0.15), mark="plinth")
+    p.place(grate_plinth(2.60, 1.70, 0.15), mark="plinth")
     p.place(clad_column(), at=[0.02, 0.46, Z], mark="column")
     p.place(pump_sign(), at=[0.02, 0.02, Z + 2.34], mark="sign")
     p.place(dispenser(), at=[0, 0.06, Z], mark="dispenser")

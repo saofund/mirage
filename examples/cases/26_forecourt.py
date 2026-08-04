@@ -77,13 +77,13 @@ def PLACEMENTS():
         # the rule is now explicit -- fit_ground is a HINT, and the overlay and the render
         # are the verdict. It earns its keep on isolated objects (the speed hump, alone on
         # bare concrete, went 10.78 -> 2.47 and was right).
-        "island":  (P.island, [-2.637, -1.427, 0], ANG),
+        "island":  (P.island, [-2.56, -0.58, 0], -14.0),
         # RIGIDLY tied to the island: in the photograph the hoop stands 1.25 m in front of
         # the plinth and always will. fit_ground moved it 2.5 m the other way and improved
         # its chamfer doing it, because it landed in the hose tangle -- exactly the failure
         # photomatch.chamfer_per_object documents ("an object sitting in clutter is near
         # SOMETHING no matter where you put it"). The overlay caught it; the number did not.
-        "rail":    (lambda: P.hazard_rail(2.20, 0.74), [-2.68, -2.68, 0], ANG - 1),
+        "rail":    (lambda: P.hazard_rail(2.20, 0.74), [-2.60, -1.83, 0], -15.0),
         # Solved by `layout.fit_contacts` (see `place.py --measure`) against two things the
         # photograph states outright: the line its tyres' contacts trace, row 109 at column
         # 760 falling to 94 at 1100, and the columns its body spans, 762..1120. 1.2 px rms.
@@ -193,15 +193,19 @@ def forecourt():
     # and fitted algebraically, give centre (-2.637, -1.427) and radius 1.625 m with residuals
     # of 1 to 3 cm. The model had it at (-3.200, -2.440) and 1.42.
     #
-    # And it is CONCENTRIC with the island, which the old code did not assume: it carried a
-    # hand-set (-0.08, -1.39) offset between the two, so the ring and the island were free to
-    # disagree and did. One position now, and the plinth comes down to 2.50 x 1.60 because a
-    # 2.90 x 1.95 rectangle has a half-diagonal of 1.75 m and would push its corners out
-    # through a ring of 1.625.
+    # It is NOT concentric with the island, which is worth stating because assuming it was
+    # made the render visibly worse in one step: the island moved 0.38 m TOWARD the camera and
+    # grew. In the photograph the grating sits well above the ring's centre, so the island
+    # stands about 0.85 m behind it -- drawing candidate footprints on the reference at 1.39,
+    # 1.10 and 0.85 m puts the near edge of the 0.85 one on the boundary the light plate makes
+    # with the apron, where the other two are 40 and 70 px past it.
+    #
+    # So the ring is the anchor and the island hangs off it, rather than the other way round.
     ring = MeshProgram()
     ring.place(MeshProgram().cylinder(sides=80, radius=1.625, height=0.006), material=LINE_W)
     ring.place(MeshProgram().cylinder(sides=80, radius=1.445, height=0.014), material=APRON)
-    p.place(ring, at=[PLACEMENTS()['island'][1][0], PLACEMENTS()['island'][1][1], 0.004])
+    p.place(ring, at=[PLACEMENTS()['island'][1][0] - 0.077,
+                      PLACEMENTS()['island'][1][1] - 0.847, 0.004])
     p.place(P.box(0.15, 2.0, 0.006), at=[9.0, 9.4, 0.004], rotate=[0, 0, ANG], material=YELLOWP)
     for s in (-1, 1):
         p.place(P.box(0.15, 0.95, 0.006), at=[9.0 + s * 0.28, 8.55, 0.004],
