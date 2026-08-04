@@ -121,8 +121,27 @@ def main():
     # Also retry the pull once — a transient "flush packet" from the remote should not cost a
     # whole render, and worse, should not leave a STALE image on disk for the next step to
     # score and report as if it were new.
+    # The box is a RUNNER: a clone of origin/main with nothing authored on it, so when its
+    # history diverges the right answer is to throw the box's away. That happens whenever
+    # somebody rebases this branch — the box keeps the pre-rewrite hashes, `pull --ff-only`
+    # says "cannot fast-forward" and every render in the repository stops until a human
+    # notices. Measured once: 34 ahead, 35 behind, and the box's HEAD tree byte-identical to
+    # origin's, so nothing was at stake but the tool could not say so.
+    #
+    # It resets ONLY with a clean tracked tree. If anyone has actually edited a file there,
+    # this refuses and says so, because that is the one case where the box's copy is worth
+    # something and `reset --hard` would be the wrong instinct.
+    reset = ("git fetch -q origin && "
+             "if ! git merge-base --is-ancestor HEAD origin/main; then "
+             "  if [ -n \"$(git status --porcelain | grep -v '^??')\" ]; then "
+             "    echo 'box has uncommitted tracked changes; refusing to reset' >&2; exit 1; "
+             "  fi; "
+             "  echo '[box] history diverged, resetting to origin/main'; "
+             "  git reset --hard -q origin/main; "
+             "fi")
     steps = [f"cd {box_dir}", f"export {env} MIRAGE_THREADS={args.threads}",
              "git checkout -- docs/gallery 2>/dev/null || true",
+             reset,
              "git pull --ff-only -q || (sleep 3 && git pull --ff-only -q)"]
     if not args.no_build:
         steps.append("cmake --build core/build -j >/dev/null")
