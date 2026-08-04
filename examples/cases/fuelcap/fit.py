@@ -506,7 +506,20 @@ def recess_depth(files, limit=120):
         band = (r > 0.060) & (r < 0.100) & (np.abs(L[:, 2]) < 0.080)
         if band.sum() < 300:
             continue
-        out.append(float(np.median(L[band, 2])) * 1000)
+        # FIT A PLANE to the body annulus and read its height on the cap's axis — do not
+        # take the annulus median. The filler axis sits ~14 degrees off the body normal on
+        # a real car, so the annulus runs high on one side and low on the other and its
+        # median drifts toward zero no matter how proud the body actually is. That is a
+        # property of the measurement, not of the pocket: it reported 0.6 mm on a set whose
+        # depth maps plainly show the body standing above the cap, and it sent four rounds
+        # of modelling after a number that was never about the model.
+        B = L[band]
+        A = np.c_[B[:, 0], B[:, 1], np.ones(len(B))]
+        try:
+            coef, *_ = np.linalg.lstsq(A, B[:, 2], rcond=None)
+        except np.linalg.LinAlgError:
+            continue
+        out.append(float(coef[2]) * 1000)          # the plane's height at the cap's centre
     return {"recess_depth_mm": float(np.median(out))} if out else {}
 
 
