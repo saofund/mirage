@@ -708,8 +708,16 @@ class MeshProgram:
         subdivision levels, so weight >= levels stays hard all the way down."""
         return self.add(**_cmd("crease", on=on, weight=weight))
     def tag(self, on, name): return self.add(**_cmd("tag", on=on, name=name))
-    def material(self, on, color=(0.8, 0.8, 0.8), metallic=0.0, roughness=0.5):
-        return self.add(**_cmd("material", on=on, color=list(color), metallic=metallic, roughness=roughness))
+    def material(self, on, color=(0.8, 0.8, 0.8), metallic=0.0, roughness=0.5, **maps):
+        """Paint the selected faces. `maps` carries the texture keys — `albedo_map`,
+        `decal_origin/du/dv`, `uv_scale`, `emission`, `tex` — which the C++ side has always
+        accepted here and the Python side silently could not, so artwork could only be
+        attached by routing a part through `place`. Two kernels, one op, different
+        capabilities is the kind of gap that only shows up as a confusing TypeError."""
+        c = _cmd("material", on=on, color=list(color), metallic=metallic, roughness=roughness)
+        for k, v in maps.items():
+            c[k] = v
+        return self.add(**c)
     def translate(self, on, by): return self.add(**_cmd("translate", on=on, by=list(by)))
     def scale(self, on, by): return self.add(**_cmd("scale", on=on, by=list(by)))
 
@@ -944,6 +952,9 @@ class MeshProgram:
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
                     mat = {"color": list(cmd.get("color", [0.8, 0.8, 0.8])),
                            "metallic": cmd.get("metallic", 0.0), "roughness": cmd.get("roughness", 0.5)}
+                    for k in _MAP_KEYS + ("emission", "tex", "tex_scale", "tex2"):
+                        if k in cmd:
+                            mat[k] = cmd[k]
                     for f in sel:
                         f.attrs["material"] = mat
                     outs = sel

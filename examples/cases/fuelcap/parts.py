@@ -126,7 +126,7 @@ def stadium(length, width, arc=10):
 # --------------------------------------------------------------------------- #
 def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draft=0.66,
         rib_slot=0.0, dome=0.0008, chamfer=0.0025, teeth=0, skirt=0.020, neck_d=0.048,
-        spin=0.0, material=None, rib_material=None, steps=48):
+        spin=0.0, printing=True, material=None, rib_material=None, steps=48):
     """The inner fuel cap: a lathed disc with a raised grip rib across it.
 
     Everything about this part that a 6D-pose network can see is in three numbers — the
@@ -157,6 +157,15 @@ def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draf
     material = material or CAP_BLACK
     rib_material = rib_material or material
     r = d / 2.0
+    if printing:
+        # The warning text round the annulus. Four 460 px reference photographs all have
+        # it and none of the synthetic caps did — it is the most recognisable single
+        # feature of this part in a colour image, and it is free: the tracer pins the
+        # artwork to a rectangle on the cap's own +z face.
+        from mirage.decals import ensure_decals
+        from .materials import with_decal
+        art = ensure_decals(["fuelcap_face"])["fuelcap_face"]
+        material = with_decal(material, art, d * 1.02, d * 1.02, dome + 1e-4)
     rn = min(neck_d / 2.0, r - 0.004)
     c = min(chamfer, flange * 0.45, r * 0.08)
 

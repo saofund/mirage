@@ -25,6 +25,7 @@ Needs Pillow.
 from __future__ import annotations
 
 import hashlib
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -265,7 +266,42 @@ def _shutter_slat(W, H):
 
 # name -> (pixel width, pixel height, painter). The pixel aspect should match the panel's
 # real-world aspect or the artwork arrives stretched.
+def _fuelcap_face(w, h):
+    """The printing on an inner fuel cap, set on a curve around its annulus.
+
+    Straight off four 460 px reference photographs: warning text runs ROUND the rim, not
+    across it, in a light grey that is nearly worn out, with a maker's part number set
+    smaller on the opposite side. It is the single most recognisable thing about this part
+    in a colour image and the synthetic caps had none of it.
+
+    Drawn on a transparent-black field so the cap's own material shows through everywhere
+    the ink is not — the decal is pinned to the cap's +z face, so anything opaque here
+    would repaint the whole disc."""
+    im = Image.new("RGB", (w, h), (0, 0, 0))
+    d = ImageDraw.Draw(im)
+    cx, cy = w / 2, h / 2
+    ink = (168, 168, 162)
+    for text, radius, start, size, step in (
+            ("ATTENZIONE  RIMUOVERE PIANO", 0.415, -128.0, 0.050, 6.0),
+            ("WARNING  REMOVE SLOWLY", 0.415, 52.0, 0.050, 6.0),
+            ("注意  使用 92 号及以上汽油", 0.325, 150.0, 0.044, 7.4)):
+        f = font(int(size * h))
+        a = start
+        for ch in text:
+            r = radius * min(w, h)
+            th = math.radians(a)
+            gx, gy = cx + r * math.cos(th), cy + r * math.sin(th)
+            g = Image.new("RGB", (int(size * h * 1.9), int(size * h * 1.9)), (0, 0, 0))
+            ImageDraw.Draw(g).text((g.width / 2, g.height / 2), ch, font=f, fill=ink,
+                                   anchor="mm")
+            g = g.rotate(-(a + 90.0), resample=Image.BICUBIC)
+            im.paste(g, (int(gx - g.width / 2), int(gy - g.height / 2)), g.convert("L"))
+            a += step
+    return im
+
+
 _LIBRARY = {
+    "fuelcap_face": (512, 512, _fuelcap_face),
     "pump_sign":    (512, 1116, _pump_sign),
     "fire_cabinet": (420, 820, _fire_cabinet),
     "fire_bucket":  (360, 300, _fire_bucket),
