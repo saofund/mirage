@@ -369,6 +369,57 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48
         {"by": "tag", "name": "panel"}, **material)
 
 
+# The pocket's section, MEASURED — median height above the cap face against radius, over
+# 376 real frames (`fit.radial_profile`). Millimetres.
+#
+# Read it before changing anything here. Outside the cap's own rim the surface drops to
+# -33 mm at r = 44, climbs back through -16 at r = 56, crosses the cap's own plane at
+# r = 63, and levels off on the body at +10. That is a deep annular trench around the cap,
+# and it is most of what a depth sensor at this range actually sees.
+#
+# The hand-built version of this part had that whole span between -1 and -6 mm: a shallow
+# saucer. Every feature in it was individually defensible and the shape between the
+# features was flat, which is why the renders had a cap sitting alone on a coloured plate
+# with nothing around it. A lathe IS a radius-to-height table and the clouds contain that
+# table directly, so there was never a reason for it to come out of anyone's head.
+MEASURED_SECTION_MM = [
+    (34.0, -12.0), (36.0, -15.6), (40.0, -21.9), (44.0, -32.6), (48.0, -28.8),
+    (52.0, -25.5), (56.0, -16.0), (60.0, -5.9), (64.0, 0.9), (68.0, 4.1),
+    (72.0, 5.0), (76.0, 7.1), (80.0, 7.9), (84.0, 9.5), (88.0, 9.1),
+    (92.0, 10.5), (96.0, 11.0), (100.0, 10.5),
+]
+
+
+def pocket(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.045,
+           out_r=0.115, steps=56, material=None, mark="well"):
+    """The whole pocket as ONE lathe, straight off the measured section.
+
+    Replaces the well / dish / aperture stack, which tried to reach this shape by adding
+    three hand-built parts and could not: the trench is a single continuous surface and
+    was being approximated by a saucer, a step and a flat panel.
+
+    `r_gain` and `z_gain` are the generalisation — they scale the measured section
+    radially and in depth, so one real vehicle's profile becomes a family. `cap_r` slides
+    where the section starts, since a bigger cap covers more of the trench's inner wall.
+    Imitate first, then generalise; the defaults imitate.
+    """
+    sec = [(r / 1000.0 * r_gain, z / 1000.0 * z_gain) for r, z in MEASURED_SECTION_MM]
+    sec = [(r, z) for r, z in sec if r > cap_r * 0.92]      # the cap covers the rest
+    if len(sec) < 4:
+        raise ValueError("cap covers the whole measured section")
+    z_deep = min(z for _, z in sec) - 0.006
+    outer = max(out_r, sec[-1][0] + 0.004)
+    # One polyline, axis to axis: out along the underside, up the outer edge, IN along the
+    # measured surface, then down the neck bore and back to the axis under it.
+    section = [(0.0, z_deep - 0.010), (outer, z_deep - 0.010), (outer, sec[-1][1])]
+    section += [(r, z) for r, z in reversed(sec)]
+    section += [(max(neck_r, 0.004), sec[0][1] - 0.004),
+                (max(neck_r, 0.004), -neck_len),
+                (0.0, -neck_len)]
+    p = lathe(section, steps=steps, mark=mark)
+    return p.material({"by": "tag", "name": mark}, **(material or WELL_PLASTIC))
+
+
 def door_pan(outer=0.150, depth=0.011, hole_r=0.048, squareness=4.0, wall=0.014,
              ring=48, material=None):
     """The shallow squarish dish the fuel DOOR sits in, with the filler aperture in its floor.

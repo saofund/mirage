@@ -402,6 +402,78 @@ def compare(real_dir, synth_dir, png=None):
         print("wrote", png)
 
 
+def radial_profile(files, limit=120, rmax=0.105, step=0.002):
+    """Height above the cap face against radius — the pocket's SECTION, measured.
+
+    This is the drawing the kit should have been built from. `parts.well` and
+    `parts.door_pan` are both lathes, and a lathe *is* a radius-to-height table; the real
+    clouds contain that table directly, so there is no reason for it to have come out of
+    anyone's head. Every earlier number here described one feature in isolation (disc
+    diameter, rib height, recess depth). A profile describes how they join, which is what
+    was wrong: the features were individually plausible and the shape between them was not.
+
+    Measured in the cap's own frame, per frame, then reduced across frames by median — so
+    a frame that saw only half the annulus contributes only where it saw."""
+    cols = int(rmax / step)
+    acc = []
+    for f in files[:limit]:
+        d = np.load(f)
+        P = d["xyz"].astype(np.float64)
+        cap = P[d["label"] == 1]
+        if len(cap) < 700:
+            continue
+        c = cap.mean(0)
+        _, _, V = np.linalg.svd(cap - c, full_matrices=False)
+        n = V[2]
+        if n[2] > 0:
+            n = -n
+        t = np.array([0.0, 0.0, 1.0]) if abs(n[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+        u = np.cross(t, n); u /= np.linalg.norm(u)
+        v = np.cross(n, u)
+        L = np.stack([(P - c) @ u, (P - c) @ v, (P - c) @ n], 1)
+        r = np.hypot(L[:, 0], L[:, 1])
+        keep = (r < rmax) & (np.abs(L[:, 2]) < 0.070)
+        if keep.sum() < 500:
+            continue
+        b = (r[keep] / step).astype(int)
+        h = np.full(cols, np.nan)
+        for k in range(cols):
+            m = b == k
+            if m.sum() >= 6:
+                h[k] = np.median(L[keep][m, 2])
+        acc.append(h)
+    if not acc:
+        return None
+    A = np.array(acc)
+    with np.errstate(all="ignore"):
+        med = np.nanmedian(A, 0) * 1000.0
+    return med
+
+
+def print_profiles(real_files, synth_files, step=0.002):
+    """The two sections side by side, in millimetres, with a sparkline."""
+    a = radial_profile(real_files)
+    b = radial_profile(synth_files) if synth_files else None
+    if a is None:
+        print("no real profile")
+        return
+    print(f"\n{'r mm':>6} {'real':>8} {'synth':>8} {'diff':>8}   profile (- = below cap face)")
+    lo = np.nanmin([np.nanmin(a)] + ([np.nanmin(b)] if b is not None else []))
+    hi = np.nanmax([np.nanmax(a)] + ([np.nanmax(b)] if b is not None else []))
+    for k in range(0, len(a), 2):                 # every 4 mm
+        r = k * step * 1000
+        va = a[k]
+        vb = b[k] if b is not None and k < len(b) else np.nan
+        d = vb - va if not (np.isnan(va) or np.isnan(vb)) else np.nan
+        bar = ""
+        for val, ch in ((va, "R"), (vb, "s")):
+            if not np.isnan(val):
+                pos = int((val - lo) / max(hi - lo, 1e-6) * 46)
+                bar = bar.ljust(max(len(bar), pos + 1))
+                bar = bar[:pos] + ch + bar[pos + 1:]
+        print(f"{r:6.0f} {va:8.1f} {vb:8.1f} {d:8.1f}   |{bar:<48}|")
+
+
 def recess_depth(files, limit=120):
     """How far the body surface stands proud of the cap face, in mm.
 

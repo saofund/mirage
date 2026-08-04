@@ -29,6 +29,9 @@ from mirage.meshlang import MeshProgram
 from . import materials as M
 from . import parts as P
 
+# where the measured section puts the paint, relative to the cap face
+MEASURED_BODY_MM = 10.5
+
 # The two real cameras in this dataset are both Orbbec Gemini 330: 640x480 at fx=fy=367.4
 # and 1280x800 at fx=fy=611.5, principal point centred to within half a pixel in both. Same
 # lens, so the same 66.4-degree vertical field — which is the only intrinsic a pinhole
@@ -78,15 +81,14 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # 48 mm wider, as the first draft did, turns the recess into a funnel whose sloped
         # wall faces the sky and blows out to near-white, which is the opposite of the
         # light trap a real pocket is.
-        d_well=d_cap + _lerp(rng, 0.010, 0.030),
+
         # Depth from the DISH FLOOR to the cap face. Tiny, and it has to be: measured on
         # 349 real frames, the body surface stands a median of 8 mm proud of the cap face
         # (p10 -13, p90 17) — the whole pocket, dish and recess together, is about a
         # centimetre deep. This was 22-65 mm, which with the dish on top put the model at
         # 42 mm, five times too deep, and is most of why the renders read as a box hung on
         # a wall rather than a filler let into a wing. See fit.recess_depth.
-        depth_well=_lerp(rng, 0.002, 0.009),
-        well_lip=_lerp(rng, 0.003, 0.010),
+
         neck=bool(rng.random() < 0.75),
         well_metal=bool(rng.random() < 0.25),
         # the furniture down the recess, and the shape of the aperture — both are what
@@ -97,7 +99,9 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # the BODY, which is most of the ROI and was a flat rectangle
         crown=_lerp(rng, 0.006, 0.030), crown_ax=_lerp(rng, 0.0, math.pi),
         # the outer dish the door lies in — the structure that actually falls inside the ROI
-        pan=_lerp(rng, 0.128, 0.180), pan_depth=_lerp(rng, 0.006, 0.016),
+        # The generalisation of the measured section: scale it radially and in depth.
+        # Imitation is r_gain = z_gain = 1.
+        r_gain=_lerp(rng, 0.88, 1.14), z_gain=_lerp(rng, 0.75, 1.30),
         pan_sq=float(rng.choice([2.4, 3.0, 3.6, 4.4, 5.5])),
         seam=bool(rng.random() < 0.75), seam_gap=_lerp(rng, 0.0035, 0.0075),
         seam_step=_lerp(rng, 0.002, 0.005), seam_side=float(rng.choice([-1.0, 1.0])),
@@ -174,15 +178,18 @@ def build(v):
         M.CAP_FAMILY[int(rng.integers(0, len(M.CAP_FAMILY)))], rng)
     well_mat = M.jitter(M.WELL_METAL if v["well_metal"] else M.WELL_PLASTIC, rng, dc=0.22)
 
-    # `depth_well` is the recess as a camera sees it: panel plane down to the CAP FACE.
-    # The well's floor is one flange-thickness deeper, so the cap sits ON it rather than
-    # being sunk into it.
-    depth, tilt = v["depth_well"], (v["tilt_x"], v["tilt_y"], 0.0)
-    rim_r = v["d_well"] / 2.0
+    # The CAP FACE is the world origin, and everything is placed relative to it. That is
+    # not a convenience: the measured section is a height-above-the-cap-face table, so
+    # putting the cap anywhere else means converting on every use. It also makes the pose
+    # label trivially exact — the thing being labelled is at the origin by construction.
+    #
+    # `tilt` then orients the whole assembly, pocket and body together. The measured
+    # section already averages over whatever angle the real body makes with the filler
+    # axis, so it is self-consistent to treat them as square to each other here.
+    tilt = (v["tilt_x"], v["tilt_y"], 0.0)
     R = _rot_xyz(*tilt)
-    # The cap's face centre in WORLD: down the tilted neck axis from the aperture centre.
     axis = R @ np.array([0.0, 0.0, 1.0])
-    cap_c = -axis * depth - np.array([0.0, 0.0, v["pan_depth"]])
+    cap_c = np.zeros(3)
 
     prog = MeshProgram()
     # Panel first: it is the biggest thing and it is what everything else is a hole in.
@@ -190,32 +197,39 @@ def build(v):
     # panel leaves the car floating in a square of sky, and every pixel of that sky is a
     # pixel of background a real frame would have had car in.
     panel_size = max(0.55, 3.0 * v["dist"])
-    pan_r = max(v["pan"] / 2.0, rim_r + 0.018)
-    prog = prog.place(obj=P.panel(size=panel_size, hole_d=2 * pan_r,
+    # ONE lathe from the measured section carries the whole pocket: the trench around the
+    # cap, its outer wall, the dish the door lies in, and the run out onto the body. The
+    # three hand-built parts this replaces could not reach that shape between them — see
+    # parts.MEASURED_SECTION_MM.
+    pocket_r = 0.100 * v["r_gain"]
+    prog = prog.place(obj=P.pocket(cap_r=v["d_cap"] / 2.0, r_gain=v["r_gain"],
+                                   z_gain=v["z_gain"], neck_r=v["d_cap"] * 0.34,
+                                   neck_len=0.050, out_r=pocket_r + 0.012,
+                                   material=well_mat),
+                      at=tuple(cap_c), rotate=tilt)
+    # The body panel meets the pocket at its outer radius, and sits where the measured
+    # section says the paint is: 10.5 mm above the cap face, scaled with z_gain.
+    body_z = MEASURED_BODY_MM * 1e-3 * v["z_gain"]
+    prog = prog.place(obj=P.panel(size=panel_size, hole_d=2 * (pocket_r + 0.010),
                                   thick=0.009, material=paint,
                                   squareness=v["pan_sq"], crown=v["crown"],
-                                  crown_ax=v["crown_ax"]), at=(0.0, 0.0, 0.0))
-    # the shallow dish, with the filler aperture in its floor; the well hangs off that floor
-    prog = prog.place(obj=P.door_pan(outer=2 * pan_r, depth=v["pan_depth"], hole_r=rim_r,
-                                     squareness=v["pan_sq"], material=paint),
-                      at=(0.0, 0.0, 0.0))
+                                  crown_ax=v["crown_ax"]),
+                      at=tuple(cap_c + axis * body_z), rotate=tilt)
     if v["seam"]:
-        # the shut line runs past the pocket, far enough out to clear the door's swing
-        sx = v["seam_side"] * (pan_r + v["door_w"] + 0.040)
+        sx = v["seam_side"] * (pocket_r + v["door_w"] + 0.040)
         prog = prog.place(obj=P.shutline(panel_size, min(sx, panel_size / 2 - 0.02)
                                          if v["seam_side"] > 0 else sx,
                                          gap=v["seam_gap"], step=v["seam_step"],
-                                         material=paint), at=(0.0, 0.0, 0.0))
-    prog = prog.place(obj=P.well(rim_r=rim_r, floor_d=v["d_cap"] + 0.010,
-                                 depth=depth + v["flange"],
-                                 neck_d=v["d_cap"] * 0.66, neck_len=0.055,
-                                 lip=v["well_lip"], neck=v["neck"], material=well_mat),
-                      at=(0.0, 0.0, -v["pan_depth"]), rotate=tilt)
+                                         material=paint),
+                          at=tuple(cap_c + axis * body_z), rotate=tilt)
     if v["well_ribs"] or v["well_drain"]:
-        prog = prog.place(obj=P.well_details(rim_r, v["d_cap"] + 0.010, depth + v["flange"],
+        # the ribs and drain live down in the trench, whose floor the section puts at
+        # roughly -33 mm scaled
+        trench = 0.0326 * v["z_gain"]
+        prog = prog.place(obj=P.well_details(pocket_r * 0.46, v["d_cap"] + 0.014, trench,
                                              ribs=v["well_ribs"], drain=v["well_drain"],
                                              material=well_mat),
-                          at=(0.0, 0.0, -v["pan_depth"]), rotate=tilt)
+                          at=tuple(cap_c), rotate=tilt)
     cap_prog = P.cap(d=v["d_cap"], flange=v["flange"], rib_len=v["rib_len"], rib_w=v["rib_w"],
                      rib_h=v["rib_h"], rib_draft=v["rib_draft"], rib_slot=v["rib_slot"],
                      dome=v["dome"], chamfer=v["chamfer"], teeth=v["teeth"],
@@ -229,16 +243,16 @@ def build(v):
                       at=tuple(cap_c - axis * v["flange"]),
                       rotate=(v["tilt_x"], v["tilt_y"], 0.0))
     prog = prog.place(obj=P.door(w=v["door_w"], h=v["door_h"], open_deg=v["door_open"],
-                                 hinge_x=-(pan_r + 0.006), skin=paint,
+                                 hinge_x=-(pocket_r + 0.004), skin=paint,
                                  liner=well_mat, rim=v["door_rim"],
                                  ribs=v["door_ribs"]),
-                      at=(0.0, 0.0, 0.004))
+                      at=tuple(cap_c + axis * (body_z + 0.004)), rotate=tilt)
     if v["tether"]:
         a = math.radians(v["cap_spin"])
         s = cap_c + R @ np.array([0.40 * v["d_cap"] * math.cos(a),
                                   0.40 * v["d_cap"] * math.sin(a), -0.004])
-        e = np.array([(v["d_well"] / 2) * 0.95, 0.010, -depth * 0.35])
-        prog = prog.place(obj=P.tether(tuple(s), tuple(e), sag=0.012 + depth * 0.25,
+        e = np.array([pocket_r * 0.55, 0.010, -0.020 * v["z_gain"]])
+        prog = prog.place(obj=P.tether(tuple(s), tuple(e), sag=0.010 + 0.020 * v["z_gain"],
                                        coils=rng.uniform(2.0, 4.0)))
 
     cam = _camera(v, cap_c, R)
