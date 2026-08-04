@@ -200,9 +200,88 @@ def roi_sheet(synth_dir, n=8, seed=0):
     print(OUT / "roi.png", sheet.shape)
 
 
+def depth_sheet(synth_dir, n=6, seed=0, span=(-45.0, 20.0)):
+    """Real depth against synthetic depth, same colour scale — the honest side-by-side.
+
+    Statistics can agree while the shapes disagree; that has happened twice on this case.
+    A depth map cannot hide it. Both rows are rendered the same way: rotate each cloud into
+    its own cap's frame, colour by height above the cap face in millimetres, and hold the
+    scale fixed so a colour means the same depth in both rows.
+
+    Height above the CAP, not raw camera distance: raw distance is dominated by how far
+    away the camera happened to be, so two pictures of the same pocket at 0.35 and 0.55 m
+    look nothing alike and two pictures of different pockets at the same range look
+    identical. It is the wrong variable to compare on."""
+    import cv2
+    from .fit import REF
+
+    def height_map(npz, size=190):
+        d = np.load(npz)
+        P = d["xyz"].astype(np.float64)
+        cap = P[d["label"] == 1]
+        if len(cap) < 400:
+            return None
+        c = cap.mean(0)
+        _, _, V = np.linalg.svd(cap - c, full_matrices=False)
+        nrm = V[2]
+        if nrm[2] > 0:
+            nrm = -nrm
+        K, w, h = d["K_norm"], int(d["w"]), int(d["h"])
+        fx, fy = K[0, 0] * w, K[1, 1] * h
+        cx, cy = K[0, 2] * w, K[1, 2] * h
+        uf = P[:, 0] / P[:, 2] * fx + cx
+        vf = P[:, 1] / P[:, 2] * fy + cy
+        half = float(np.median(np.abs(np.mod(uf, 1.0) - 0.5))) < 0.25   # see fit.complexity
+        u = np.floor(uf if half else uf + 0.5).astype(int)
+        v = np.floor(vf if half else vf + 0.5).astype(int)
+        z = (P - c) @ nrm * 1000.0
+        u -= u.min(); v -= v.min()
+        H, W = v.max() + 1, u.max() + 1
+        if H < 8 or W < 8 or H * W > 4_000_000:
+            return None
+        img = np.full((H, W), np.nan, np.float32)
+        img[v, u] = z
+        t = np.clip((img - span[0]) / (span[1] - span[0]), 0, 1)
+        col = cv2.applyColorMap((np.nan_to_num(t) * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+        col[np.isnan(img)] = 0
+        s = size / max(H, W)
+        col = cv2.resize(col, (max(1, int(W * s)), max(1, int(H * s))),
+                         interpolation=cv2.INTER_NEAREST)
+        tile = np.zeros((size, size, 3), np.uint8)
+        tile[:col.shape[0], :col.shape[1]] = col
+        return tile
+
+    rng = np.random.default_rng(seed)
+    rows = []
+    for src, lab in (((Path(REF) / "orbbec_clouds"), "REAL"), (Path(synth_dir), "SYNTH")):
+        fs = sorted(src.glob("[!_]*.npz"))
+        if not fs:
+            continue
+        pick = [fs[i] for i in rng.choice(len(fs), min(n * 3, len(fs)), replace=False)]
+        tiles = [t for t in (height_map(p) for p in pick) if t is not None][:n]
+        if tiles:
+            row = np.hstack(tiles)
+            cv2.putText(row, lab, (6, 18), 0, 0.5, (255, 255, 255), 1)
+            rows.append(row)
+    if not rows:
+        print("nothing to draw")
+        return
+    wmin = min(r.shape[1] for r in rows)
+    sheet = np.vstack([r[:, :wmin] for r in rows])
+    # a colour key, so the picture is readable without the source
+    bar = np.zeros((26, wmin, 3), np.uint8)
+    g = np.linspace(0, 255, wmin).astype(np.uint8)
+    bar[:] = cv2.applyColorMap(np.tile(g, (26, 1)), cv2.COLORMAP_TURBO)
+    for frac, mm in ((0.02, span[0]), (0.5, (span[0] + span[1]) / 2), (0.95, span[1])):
+        cv2.putText(bar, f"{mm:+.0f}mm", (int(frac * wmin), 18), 0, 0.45, (0, 0, 0), 1)
+    OUT.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(OUT / "depth.png"), np.vstack([sheet, bar]))
+    print(OUT / "depth.png", sheet.shape)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=("parts", "scenes", "ids", "roi"))
+    ap.add_argument("what", choices=("parts", "scenes", "ids", "roi", "depth"))
     ap.add_argument("--synth", default=None, help="a generated dataset dir (for roi)")
     ap.add_argument("-n", type=int, default=6)
     ap.add_argument("--seed", type=int, default=3)
@@ -215,6 +294,8 @@ def main(argv=None):
         scenes_sheet(a.n, a.seed, a.domain)
     elif a.what == "roi":
         roi_sheet(a.synth, a.n, a.seed)
+    elif a.what == "depth":
+        depth_sheet(a.synth, a.n, a.seed)
     else:
         ids_sheet(a.seed, max(1, a.n // 3), a.domain)
 

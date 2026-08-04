@@ -102,6 +102,11 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # The generalisation of the measured section: scale it radially and in depth.
         # Imitation is r_gain = z_gain = 1.
         r_gain=_lerp(rng, 0.88, 1.14), z_gain=_lerp(rng, 0.75, 1.30),
+        # The filler axis is not square to the body: measured at a median of 14.4 degrees
+        # over 197 real frames (p10 5, p90 23). Modelling them as parallel is why the
+        # synthetic body reads as one flat height in a depth map while the real one has a
+        # clear gradient across it, and it is worth 6 mm of the recess-depth gap.
+        body_tilt=_lerp(rng, 3.0, 24.0), body_tilt_az=_lerp(rng, 0.0, 360.0),
         pan_sq=float(rng.choice([2.4, 3.0, 3.6, 4.4, 5.5])),
         seam=bool(rng.random() < 0.75), seam_gap=_lerp(rng, 0.0035, 0.0075),
         seam_step=_lerp(rng, 0.002, 0.005), seam_side=float(rng.choice([-1.0, 1.0])),
@@ -155,6 +160,36 @@ def sample(rng, camera="orbbec640", domain="wide"):
 # --------------------------------------------------------------------------- #
 # geometry helpers
 # --------------------------------------------------------------------------- #
+def _compose(tilt, extra_deg, azim_deg):
+    """`tilt` followed by an extra rotation of `extra_deg` about an in-plane axis at
+    `azim_deg` — returned as the XYZ euler triple `place` takes.
+
+    Needed because the body is tilted relative to the filler, not relative to the world:
+    composing the two as separate euler angles would tilt about a world axis and slide the
+    panel sideways as well."""
+    R = _rot_xyz(*tilt)
+    a = math.radians(azim_deg)
+    k = R @ np.array([math.cos(a), math.sin(a), 0.0])       # the hinge, in the tilted plane
+    t = math.radians(extra_deg)
+    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    Rx = np.eye(3) + math.sin(t) * K + (1 - math.cos(t)) * (K @ K)
+    return _euler_xyz(Rx @ R)
+
+
+def _euler_xyz(R):
+    """Rz@Ry@Rx back to (rx, ry, rz) degrees — the convention `place` composes in."""
+    sy = -R[2, 0]
+    if abs(sy) < 0.999999:
+        ry = math.asin(sy)
+        rx = math.atan2(R[2, 1], R[2, 2])
+        rz = math.atan2(R[1, 0], R[0, 0])
+    else:
+        ry = math.copysign(math.pi / 2, sy)
+        rx = math.atan2(-R[1, 2], R[1, 1])
+        rz = 0.0
+    return (math.degrees(rx), math.degrees(ry), math.degrees(rz))
+
+
 def _rot_xyz(rx, ry, rz):
     """The renderer's own place() convention: degrees, applied X then Y then Z."""
     cx, sx = math.cos(math.radians(rx)), math.sin(math.radians(rx))
@@ -211,18 +246,23 @@ def build(v):
     # The body panel meets the pocket at its outer radius, and sits where the measured
     # section says the paint is: 10.5 mm above the cap face, scaled with z_gain.
     body_z = MEASURED_BODY_MM * 1e-3 * v["z_gain"]
+    bt, baz = math.radians(v["body_tilt"]), math.radians(v["body_tilt_az"])
+    # the body is tilted about an axis in its own plane, at azimuth `baz`
+    body_rot = _compose(tilt, v["body_tilt"], v["body_tilt_az"])
     prog = prog.place(obj=P.panel(size=panel_size, hole_d=2 * pocket_r * 0.995,
                                   thick=0.009, material=paint,
                                   squareness=v["pan_sq"], crown=v["crown"],
-                                  crown_ax=v["crown_ax"]),
-                      at=tuple(cap_c + axis * body_z), rotate=tilt)
+                                  crown_ax=v["crown_ax"],
+                                  hole_stretch=1.0 / max(math.cos(bt), 0.35),
+                                  hole_ax=baz),
+                      at=tuple(cap_c + axis * body_z), rotate=body_rot)
     if v["seam"]:
         sx = v["seam_side"] * (pocket_r + v["door_w"] + 0.040)
         prog = prog.place(obj=P.shutline(panel_size, min(sx, panel_size / 2 - 0.02)
                                          if v["seam_side"] > 0 else sx,
                                          gap=v["seam_gap"], step=v["seam_step"],
                                          material=paint),
-                          at=tuple(cap_c + axis * body_z), rotate=tilt)
+                          at=tuple(cap_c + axis * body_z), rotate=body_rot)
     if v["well_ribs"] or v["well_drain"]:
         # the ribs and drain live down in the trench, whose floor the section puts at
         # roughly -33 mm scaled
@@ -247,7 +287,7 @@ def build(v):
                                  hinge_x=-(pocket_r + 0.004), skin=paint,
                                  liner=well_mat, rim=v["door_rim"],
                                  ribs=v["door_ribs"]),
-                      at=tuple(cap_c + axis * (body_z + 0.004)), rotate=tilt)
+                      at=tuple(cap_c + axis * (body_z + 0.004)), rotate=body_rot)
     if v["tether"]:
         a = math.radians(v["cap_spin"])
         s = cap_c + R @ np.array([0.40 * v["d_cap"] * math.cos(a),

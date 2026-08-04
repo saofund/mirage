@@ -338,7 +338,7 @@ def _norm_superellipse(n, steps):
 
 
 def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48,
-          squareness=1.0, crown=0.0, crown_ax=0.0):
+          squareness=1.0, crown=0.0, crown_ax=0.0, hole_stretch=1.0, hole_ax=0.0):
     """The body panel around the pocket: an annular plate, not a plate with a hole in it.
 
     Same reasoning as `well` — the aperture is built, not subtracted. A ring of quads from
