@@ -88,6 +88,14 @@ def sample(rng, camera="orbbec640", domain="wide"):
         well_ribs=int(rng.choice([0, 3, 4, 4, 5, 6])),
         well_drain=bool(rng.random() < 0.7),
         squareness=float(rng.choice([1.0, 1.0, 2.6, 3.4, 4.2, 5.0])),
+        # the BODY, which is most of the ROI and was a flat rectangle
+        crown=_lerp(rng, 0.006, 0.030), crown_ax=_lerp(rng, 0.0, math.pi),
+        # the outer dish the door lies in — the structure that actually falls inside the ROI
+        pan=_lerp(rng, 0.128, 0.180), pan_depth=_lerp(rng, 0.006, 0.017),
+        pan_sq=float(rng.choice([2.4, 3.0, 3.6, 4.4, 5.5])),
+        seam=bool(rng.random() < 0.75), seam_gap=_lerp(rng, 0.0035, 0.0075),
+        seam_step=_lerp(rng, 0.002, 0.005), seam_side=float(rng.choice([-1.0, 1.0])),
+        door_rim=_lerp(rng, 0.008, 0.018), door_ribs=int(rng.choice([0, 2, 3, 3, 4])),
         # the filler neck is not square to the body panel on any real car
         tilt_x=_lerp(rng, -14.0, 14.0), tilt_y=_lerp(rng, -16.0, 10.0),
         cap_spin=_lerp(rng, 0.0, 360.0),        # a screw cap stops wherever it stops
@@ -164,26 +172,40 @@ def build(v):
     R = _rot_xyz(*tilt)
     # The cap's face centre in WORLD: down the tilted neck axis from the aperture centre.
     axis = R @ np.array([0.0, 0.0, 1.0])
-    cap_c = -axis * depth
+    cap_c = -axis * depth - np.array([0.0, 0.0, v["pan_depth"]])
 
     prog = MeshProgram()
     # Panel first: it is the biggest thing and it is what everything else is a hole in.
     # Its size follows the camera distance so it always overfills the frame — a fixed
     # panel leaves the car floating in a square of sky, and every pixel of that sky is a
     # pixel of background a real frame would have had car in.
-    prog = prog.place(obj=P.panel(size=max(0.55, 3.0 * v["dist"]), hole_d=2 * rim_r,
+    panel_size = max(0.55, 3.0 * v["dist"])
+    pan_r = max(v["pan"] / 2.0, rim_r + 0.018)
+    prog = prog.place(obj=P.panel(size=panel_size, hole_d=2 * pan_r,
                                   thick=0.009, material=paint,
-                                  squareness=v["squareness"]), at=(0.0, 0.0, 0.0))
+                                  squareness=v["pan_sq"], crown=v["crown"],
+                                  crown_ax=v["crown_ax"]), at=(0.0, 0.0, 0.0))
+    # the shallow dish, with the filler aperture in its floor; the well hangs off that floor
+    prog = prog.place(obj=P.door_pan(outer=2 * pan_r, depth=v["pan_depth"], hole_r=rim_r,
+                                     squareness=v["pan_sq"], material=paint),
+                      at=(0.0, 0.0, 0.0))
+    if v["seam"]:
+        # the shut line runs past the pocket, far enough out to clear the door's swing
+        sx = v["seam_side"] * (pan_r + v["door_w"] + 0.040)
+        prog = prog.place(obj=P.shutline(panel_size, min(sx, panel_size / 2 - 0.02)
+                                         if v["seam_side"] > 0 else sx,
+                                         gap=v["seam_gap"], step=v["seam_step"],
+                                         material=paint), at=(0.0, 0.0, 0.0))
     prog = prog.place(obj=P.well(rim_r=rim_r, floor_d=v["d_cap"] + 0.010,
                                  depth=depth + v["flange"],
                                  neck_d=v["d_cap"] * 0.66, neck_len=0.055,
                                  lip=v["well_lip"], neck=v["neck"], material=well_mat),
-                      at=(0.0, 0.0, 0.0), rotate=tilt)
+                      at=(0.0, 0.0, -v["pan_depth"]), rotate=tilt)
     if v["well_ribs"] or v["well_drain"]:
         prog = prog.place(obj=P.well_details(rim_r, v["d_cap"] + 0.010, depth + v["flange"],
                                              ribs=v["well_ribs"], drain=v["well_drain"],
                                              material=well_mat),
-                          at=(0.0, 0.0, 0.0), rotate=tilt)
+                          at=(0.0, 0.0, -v["pan_depth"]), rotate=tilt)
     cap_prog = P.cap(d=v["d_cap"], flange=v["flange"], rib_len=v["rib_len"], rib_w=v["rib_w"],
                      rib_h=v["rib_h"], rib_draft=v["rib_draft"], rib_slot=v["rib_slot"],
                      dome=v["dome"], chamfer=v["chamfer"], teeth=v["teeth"],
@@ -197,8 +219,9 @@ def build(v):
                       at=tuple(cap_c - axis * v["flange"]),
                       rotate=(v["tilt_x"], v["tilt_y"], 0.0))
     prog = prog.place(obj=P.door(w=v["door_w"], h=v["door_h"], open_deg=v["door_open"],
-                                 hinge_x=-(rim_r + 0.014), skin=paint,
-                                 liner=well_mat),
+                                 hinge_x=-(pan_r + 0.006), skin=paint,
+                                 liner=well_mat, rim=v["door_rim"],
+                                 ribs=v["door_ribs"]),
                       at=(0.0, 0.0, 0.004))
     if v["tether"]:
         a = math.radians(v["cap_spin"])

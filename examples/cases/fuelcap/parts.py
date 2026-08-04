@@ -308,7 +308,7 @@ def well(rim_r=0.062, floor_d=0.098, depth=0.052, neck_d=0.052, neck_len=0.055, 
 
 
 def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48,
-          squareness=1.0):
+          squareness=1.0, crown=0.0, crown_ax=0.0):
     """The body panel around the pocket: an annular plate, not a plate with a hole in it.
 
     Same reasoning as `well` — the aperture is built, not subtracted. A ring of quads from
@@ -316,6 +316,20 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48
     replaces is the single most expensive thing that could be in this loop."""
     material = material or {"color": [0.3, 0.3, 0.3], "metallic": 0.6, "roughness": 0.15}
     rh, s = hole_d / 2.0, size / 2.0
+
+    # A car's flank is a shallow cylinder, not a plane, and at 0.4 m across a 0.5 m panel
+    # that is 10-20 mm of sag — an order of magnitude more relief than anything inside the
+    # recess. `crown` is that sag at the panel edge, `crown_ax` the direction it bends
+    # about. Zero gives the flat plate this kit started with, which reads in a depth map as
+    # a machined surface plate with a car's fuel cap sitting in it.
+    ca, sa = math.cos(crown_ax), math.sin(crown_ax)
+
+    def z_of(x, y, z0):
+        if not crown:
+            return z0
+        t = (x * ca + y * sa) / max(s, 1e-9)
+        return z0 - crown * t * t
+
     verts, faces = [], []
     for z in (0.0, -thick):
         for i in range(ring):
@@ -324,7 +338,8 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48
             # `squareness` 1 = a circle, 4-5 = the rounded rectangle over half the reference
             # cars actually have. A perfect circle is the one aperture shape none of them is.
             k = (abs(c) ** squareness + abs(sn) ** squareness) ** (-1.0 / squareness)                 if squareness > 1.0 else 1.0
-            verts.append((rh * c * k, rh * sn * k, z))
+            px, py = rh * c * k, rh * sn * k
+            verts.append((px, py, z_of(px, py, z)))
         for i in range(ring):
             # The border walks the SQUARE's perimeter by arc length, not by angle. Mapping
             # a ring of angles onto a square only lands on the corners if a sample happens
@@ -335,7 +350,9 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48
             side, u = int(t) % 8, t % 1.0
             cx_, cy_ = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)][side]
             nx_, ny_ = [(1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0)][side]
-            verts.append((s * (cx_ + (nx_ - cx_) * u), s * (cy_ + (ny_ - cy_) * u), z))
+            px = s * (cx_ + (nx_ - cx_) * u)
+            py = s * (cy_ + (ny_ - cy_) * u)
+            verts.append((px, py, z_of(px, py, z)))
     N = 2 * ring
     for lay, flip in ((0, False), (N, True)):          # top face, bottom face
         for i in range(ring):
@@ -352,7 +369,64 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48
         {"by": "tag", "name": "panel"}, **material)
 
 
-def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None, liner=None):
+def door_pan(outer=0.150, depth=0.011, hole_r=0.048, squareness=4.0, wall=0.014,
+             ring=48, material=None):
+    """The shallow squarish dish the fuel DOOR sits in, with the filler aperture in its floor.
+
+    A car has two recesses here, not one, and this kit only had the inner one. The outer is
+    the pressing the door lies flush in when it is shut — roughly 150 mm across, 10 mm deep,
+    a rounded rectangle — and the round filler aperture is a hole in ITS floor.
+
+    It is the most important thing that was missing, because of where it is: the ROI is the
+    cap's bounding box times 3.9, about 270 mm across, and this dish fills the middle of it.
+    The body structure added before it — crown, shut line — is all further out than that and
+    never appears in a single cropped frame. Structure only counts if it lands inside the
+    crop that ships."""
+    material = material or {"color": [0.3, 0.3, 0.3], "metallic": 0.6, "roughness": 0.15}
+    R = outer / 2.0
+    verts, faces = [], []
+    lips = superellipse(R, R * 0.94, squareness, ring)            # the rim, at z = 0
+    fl = superellipse(R - wall, R * 0.94 - wall, squareness, ring)  # the floor outline
+    for x, y in lips:
+        verts.append((x, y, 0.0))
+    for x, y in fl:
+        verts.append((x, y, -depth))
+    for i in range(ring):                                          # the drafted side wall
+        j = (i + 1) % ring
+        faces.append([i, j, ring + j, ring + i])
+    for i in range(ring):                                          # the floor, out to the hole
+        j = (i + 1) % ring
+        a = TAU * i / ring
+        b = TAU * j / ring
+        verts.append((hole_r * math.cos(a), hole_r * math.sin(a), -depth))
+    base = 2 * ring
+    for i in range(ring):
+        j = (i + 1) % ring
+        faces.append([ring + i, ring + j, base + j, base + i])
+    return MeshProgram().mesh(verts=verts, faces=faces, mark="panel").material(
+        {"by": "tag", "name": "panel"}, **material)
+
+
+def shutline(panel_size, seam_x, gap=0.005, step=0.0035, material=None):
+    """The car's own panel gap — one sheet lapped over another with a slot between them.
+
+    Built as a second skin standing `step` proud of the body panel and stopping `gap/2`
+    short of the seam, so the slot is a REAL slot: rays go down it and the depth map gets a
+    3-4 mm trench, exactly as they do on the reference frames. Painting a dark stripe on a
+    flat panel would look the same in RGB and would be invisible in the cloud, which is the
+    half that matters here.
+
+    This is the single largest piece of what `fit.complexity` says is missing. The recess's
+    own furniture is small; the ROI is mostly *body*, and a real body is not one plane."""
+    s = panel_size / 2.0
+    return (prism([(seam_x + gap / 2, -s), (s, -s), (s, s), (seam_x + gap / 2, s)],
+                  0.0, step, mark="panel")
+            .material({"by": "all"}, **(material or {"color": [0.3, 0.3, 0.3],
+                                                     "metallic": 0.6, "roughness": 0.15})))
+
+
+def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None, liner=None,
+         rim=0.012, ribs=3, hinge=True):
     """The fuel door, hinged open. Two materials: body paint outside, dark liner inside.
 
     It is in this scene because it is in every real frame, and because it is the largest
@@ -373,9 +447,34 @@ def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None,
     body = body.material({"by": "all"}, **liner)
     body = body.material({"by": "normal", "axis": "z", "sign": 1}, **skin)
     body = body.material({"by": "normal", "axis": "z", "sign": -1}, **liner)
+    # A real fuel door is a pressing, not a plate: a skin, a return flange all the way
+    # round, and a couple of stiffening ribs across the inside. That inner face is what
+    # points back at the camera when the door is open, so it is the side the sensor
+    # actually sees — and a flat rectangle there is a flat rectangle in the cloud.
+    if rim > 0:
+        for dx, dy, lx, ly in ((0, -h / 2, w, 0.0), (0, h / 2, w, 0.0),
+                               (0.0, 0, 0.0, h), (w, 0, 0.0, h)):
+            bx = max(lx, 0.004) / 2.0
+            by = max(ly, 0.004) / 2.0
+            body = body.place(obj=prism([(-bx, -by), (bx, -by), (bx, by), (-bx, by)],
+                                        0.0, -rim, mark="door"),
+                              at=(dx if lx else dx, dy, 0.0), material=liner)
+    for i in range(ribs):
+        y = -h / 2 + h * (i + 1) / (ribs + 1)
+        body = body.place(obj=prism([(0.008, -0.0035), (w - 0.008, -0.0035),
+                                     (w - 0.008, 0.0035), (0.008, 0.0035)],
+                                    0.0, -rim * 0.55, mark="door"),
+                          at=(0.0, y, 0.0), material=liner)
     # hinged along the door's own -x edge, swung out about the panel's y axis. The door
     # opens AWAY from the pocket, so `hinge_x` is negative and `open_deg` positive.
-    return MeshProgram().place(obj=body, at=(hinge_x, 0.0, 0.0), rotate=(0.0, -open_deg, 0.0))
+    p = MeshProgram().place(obj=body, at=(hinge_x, 0.0, 0.0), rotate=(0.0, -open_deg, 0.0))
+    if hinge:
+        for sy in (-1, 1):
+            p = p.place(obj=prism([(-0.004, -0.0035), (0.030, -0.0035),
+                                   (0.030, 0.0035), (-0.004, 0.0035)], 0.0, 0.010,
+                                  mark="door"),
+                        at=(hinge_x - 0.004, sy * h * 0.32, -0.004), material=liner)
+    return p
 
 
 def tether(start, end, sag=0.030, coils=3.0, r=0.0022, n=64, material=None):

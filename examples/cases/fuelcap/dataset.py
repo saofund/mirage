@@ -82,8 +82,8 @@ def _read_pfm(p):
 # --------------------------------------------------------------------------- #
 # the sensor
 # --------------------------------------------------------------------------- #
-def degrade_depth(depth, rng, sigma_mm=0.42, jump_mm=12.0, flying=0.35, edge_px=1.6,
-                  quant_mm=0.0, warp_mm=0.55, warp_px=13):
+def degrade_depth(depth, rng, sigma_mm=0.32, jump_mm=12.0, flying=0.35, edge_px=1.6,
+                  quant_mm=0.0, warp_mm=0.6, warp_px=7):
     """Turn a perfect depth map into one a stereo camera would have produced.
 
     Four effects, in the order they happen in a real pipeline:
@@ -140,22 +140,25 @@ def degrade_depth(depth, rng, sigma_mm=0.42, jump_mm=12.0, flying=0.35, edge_px=
         d = np.round(d / (quant_mm * 1e-3)) * (quant_mm * 1e-3)
     d += rng.normal(0.0, sigma_mm * 1e-3, d.shape).astype(np.float32)
     if warp_mm > 0:
-        # LOW-FREQUENCY axial error, on top of the white noise. A real depth map is not a
-        # clean surface plus per-pixel scatter: it also wanders, over tens of pixels, from
-        # calibration residual, rectification error and the matcher's own bias.
+        # BAND-limited low-frequency axial error. A real depth map is not a clean surface
+        # plus per-pixel scatter: it also wanders over tens of pixels, from calibration
+        # residual, rectification error and the matcher's own bias.
         #
-        # Kept small and honest. `fit.complexity` reports the ratio of plane residual at
-        # 24 mm to residual at 6 mm: 2.13 on the real clouds. White noise gives 1.0 by
-        # construction, and this correlated term was added to close the gap — it does not.
-        # Swept over sigma 0.20-0.42 mm and warp 0-1.8 mm at 13-31 px, the ratio never got
-        # past 1.37, because a field smooth at 13 px is smooth at BOTH 6 mm and 24 mm and
-        # lifts the two residuals together.
+        # Measured on the real clouds, plane residual runs 0.25 mm at a 6 mm patch and
+        # 0.68 mm at 24 mm — and crucially it does so ON THE CAP FACE, which is a flat
+        # moulded disc. Flat plastic cannot have 0.56 mm of genuine relief at 24 mm, so
+        # that ratio is the SENSOR, not geometry. (This overturned the previous reading of
+        # the same number, which blamed missing modelling and sent four parts' worth of
+        # detail into the pocket for +0.1 of ratio.)
         #
-        # That is a real answer, not a tuning failure: the missing structure is GEOMETRY —
-        # the steps, ribs, drain and folded sheet a real pocket has between 6 and 24 mm,
-        # which this kit does not model. No sensor model can put it back, and turning this
-        # knob up to make the number move would only be forging the evidence.
-        f = _smooth(rng.normal(0.0, 1.0, d.shape).astype(np.float32), warp_px)
+        # It has to be a band, not a low pass. Smooth white noise once and the field is
+        # still rough at 6 mm; smooth it enough to be flat at 6 mm and it is also nearly
+        # linear across 24 mm, where a plane fit absorbs it — measured, raising warp from
+        # 0.55 to 2.0 mm made the 24 mm residual go DOWN. Subtracting a wider smoothing
+        # from a narrower one keeps only the scales in between, which is where the real
+        # error lives.
+        n = rng.normal(0.0, 1.0, d.shape).astype(np.float32)
+        f = _smooth(n, warp_px) - _smooth(n, warp_px * 3)
         s = float(f.std()) or 1.0
         d += (f / s) * (warp_mm * 1e-3)
 
@@ -184,6 +187,12 @@ def _box_mean(a, win):
     with cv2.blur: generating data is the product and reviewing it is a tool, and the
     product should not need OpenCV installed. Checked against it — bit-identical over the
     interior, differing only on the 2-pixel border, where cv2 reflects and this clamps."""
+    # ODD kernels only. With win = 2k the padding is 2k wide but the window consumes
+    # 2k-1, so the result comes back one row and one column too big — which surfaces as a
+    # broadcast error at the call site if you are lucky, and as a silently misaligned field
+    # if you are not. Forced odd rather than asserted: every caller wants "about this
+    # wide", and none of them cares about the parity.
+    win = int(win) | 1
     p = win // 2
     b = np.pad(a, p, mode="edge").astype(np.float64)
     c = b.cumsum(0).cumsum(1)
@@ -383,11 +392,11 @@ def make_cloud(rgb, ids, depth, gt, rng, cfg):
 # --------------------------------------------------------------------------- #
 # the loop
 # --------------------------------------------------------------------------- #
-DEFAULT_CFG = dict(roi_scale=3.9, fill=0.60, sigma_mm=0.42, jump_mm=12.0, flying=0.35,
+DEFAULT_CFG = dict(roi_scale=3.9, fill=0.60, jump_mm=12.0, flying=0.35,
                    edge_px=1.6, quant_mm=0.0,
                    # correlated depth error + slab-shaped dropout: the two terms that a
                    # per-pixel model cannot produce at all. Both calibrated in fit.complexity.
-                   warp_mm=0.55, warp_px=13, blob_px=9, speckle=0.0,
+                   sigma_mm=0.32, warp_mm=0.6, warp_px=7, blob_px=13, speckle=0.0,
                    rgb_grain=0.012, rgb_chroma_blur=1.2, rgb_saturation=1.12)
 
 

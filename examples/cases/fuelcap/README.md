@@ -6,7 +6,7 @@ pipeline's `datasets/` directory without a converter.
 
 ```bash
 uv run python examples/cases/27_fuelcap.py -n 2000 --out datasets/synth_fuelcap
-python -m fuelcap.fit --audit datasets/synth_fuelcap        # real vs synthetic, 11 rows
+python -m fuelcap.fit --audit datasets/synth_fuelcap        # real vs synthetic, 14 rows
 python -m fuelcap.fit --check-labels datasets/synth_fuelcap # are the labels true?
 python -m fuelcap.sheet parts | scenes | ids | roi          # look at it
 ```
@@ -68,13 +68,27 @@ Reference clouds live in `_ref/` and are gitignored — re-pull them to re-run t
 
 | | real | synth | |
 |---|---|---|---|
-| cap disc | 73.6 × 69.4 mm | 74.4 × 71.9 | ±4% |
-| grip rib | 60.3 × 43.8 × 17.7 mm | 57.9 × 42.2 × 17.8 | ±4% |
+| cap disc | 73.6 × 69.4 mm | 75.2 × 72.3 | ±4% |
+| grip rib | 60.3 × 43.8 × 17.7 mm | 57.0 × 44.6 × 17.5 | ±5% |
 | camera distance | 0.41 m | 0.44 | |
-| obliquity | 16.8° | 15.8° | |
-| cap width | 64.9 px | 61.8 | |
-| depth noise | 0.44 mm | 0.48 | |
-| ROI fill | 0.595 | 0.60 | |
+| obliquity | 16.8° | 15.0° | |
+| cap width | 64.9 px | 67.5 | |
+| depth noise (8 mm patch) | 0.44 mm | 0.41 | |
+| points per frame | 39 329 | 37 662 | 0.96 |
+| **rough_ratio** (24 mm ÷ 6 mm residual) | **2.13** | **1.99** | 0.94 |
+| **hole_run** (median missing-pixel run) | **12 px** | **10** | 0.83 |
+| normal spread in a 6 mm ball | 16.0° | 24.0° | **1.50 — open** |
+
+The last three are `fit.complexity`, and they exist because the first eleven did not
+catch what a human caught in one look at `sheet.py roi`: every one of them measures the
+CAP, and all of them can match while the frame around it is a coloured rectangle with a
+hole in it. Which it was.
+
+`normal_var` is the one still open. The likely cause is that a block matcher fails on
+steeply slanted surfaces — the two views see different foreshortening — so a real cloud is
+biased toward the flat parts of the scene, while `SURVIVAL` here is keyed on texture only
+and keeps the recess walls. Modelling dropout against surface slant is the next thing to
+try.
 
 Three sets were measured, and they disagree usefully:
 
@@ -128,10 +142,14 @@ a labelled point cloud, so this is not fuel-cap-specific machinery.
 * **No printed text on the cap face.** Most real caps carry white warning text around the
   annulus, and it is a strong RGB cue. The decal mechanism (`mirage.decals`,
   `materials.with_decal`) is wired up but no artwork is generated yet.
-* **The body panel is flat and untextured.** Real ones are curved, have reflections, panel
-  gaps and dirt. This matters for an RGB model and not much for a point-cloud one.
+* **The body is modelled but thin.** It now has a crown, a shut line, the shallow dish the
+  door lies in, and a door with a return flange, ribs and hinges. It still has no panel
+  texture, no reflections and no dirt, which matters for an RGB model more than a
+  point-cloud one. Note which of those additions actually paid: the dish, because the ROI
+  is only 3.9x the cap and everything further out than that never appears in a cropped
+  frame. Structure only counts if it lands inside the crop that ships.
 * **One pocket archetype.** The capless filler (Toyota RAV4 style) and the square-aperture
   pocket both appear in the by-car reference and are not modelled.
-* **`cap_frac` sits at 0.75 of real** — the cap is a slightly smaller share of the cloud
+* **`cap_frac` sits at 0.83 of real** — the cap is a slightly smaller share of the cloud
   than in the real set. The remaining gap is cap survival, not cap size (`cap_px` is 0.95),
   and chasing it further risks tuning the sensor model to one reference vehicle.
