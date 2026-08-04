@@ -447,10 +447,14 @@ def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None,
     body = body.material({"by": "all"}, **liner)
     body = body.material({"by": "normal", "axis": "z", "sign": 1}, **skin)
     body = body.material({"by": "normal", "axis": "z", "sign": -1}, **liner)
-    # A real fuel door is a pressing, not a plate: a skin, a return flange all the way
-    # round, and a couple of stiffening ribs across the inside. That inner face is what
-    # points back at the camera when the door is open, so it is the side the sensor
-    # actually sees — and a flat rectangle there is a flat rectangle in the cloud.
+    # A real fuel door is a pressing with a MOULDED LINER clipped into it: an outer skin
+    # in body colour, a return flange round the edge, and one dark plastic panel covering
+    # most of the inside. Not a set of exposed ribs — that reads as a louvre or a tray, and
+    # is what the first version rendered in every frame. The liner sits a few millimetres
+    # inside the flange, so its edge shows as a thin dark step rather than as slats.
+    #
+    # This face matters more than the outside: with the door open it is what points back at
+    # the camera, so it is the side that lands in the cloud.
     if rim > 0:
         for dx, dy, lx, ly in ((0, -h / 2, w, 0.0), (0, h / 2, w, 0.0),
                                (0.0, 0, 0.0, h), (w, 0, 0.0, h)):
@@ -458,13 +462,12 @@ def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None,
             by = max(ly, 0.004) / 2.0
             body = body.place(obj=prism([(-bx, -by), (bx, -by), (bx, by), (-bx, by)],
                                         0.0, -rim, mark="door"),
-                              at=(dx if lx else dx, dy, 0.0), material=liner)
-    for i in range(ribs):
-        y = -h / 2 + h * (i + 1) / (ribs + 1)
-        body = body.place(obj=prism([(0.008, -0.0035), (w - 0.008, -0.0035),
-                                     (w - 0.008, 0.0035), (0.008, 0.0035)],
-                                    0.0, -rim * 0.55, mark="door"),
-                          at=(0.0, y, 0.0), material=liner)
+                              at=(dx, dy, 0.0), material=liner)
+        inset = 0.010
+        body = body.place(obj=prism([(inset, -h / 2 + inset), (w - inset, -h / 2 + inset),
+                                     (w - inset, h / 2 - inset), (inset, h / 2 - inset)],
+                                    -rim * 0.30, -rim * 0.75, mark="door"),
+                          at=(0.0, 0.0, 0.0), material=liner)
     # hinged along the door's own -x edge, swung out about the panel's y axis. The door
     # opens AWAY from the pocket, so `hinge_x` is negative and `open_deg` positive.
     p = MeshProgram().place(obj=body, at=(hinge_x, 0.0, 0.0), rotate=(0.0, -open_deg, 0.0))
