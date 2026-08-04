@@ -396,7 +396,16 @@ DEFAULT_CFG = dict(roi_scale=3.9, fill=0.60, jump_mm=12.0, flying=0.35,
                    edge_px=1.6, quant_mm=0.0,
                    # correlated depth error + slab-shaped dropout: the two terms that a
                    # per-pixel model cannot produce at all. Both calibrated in fit.complexity.
-                   sigma_mm=0.32, warp_mm=0.6, warp_px=7, blob_px=13, speckle=0.0,
+                   sigma_mm=0.32, warp_mm=0.6, warp_px=7, blob_px=17, speckle=0.0,
+                   # ROI fill is drawn PER FRAME, not fixed. Measured on the real set it
+                   # runs p10 0.27, median 0.68, p90 0.80 — standard deviation 0.207, where
+                   # a fixed 0.60 gives 0.034. Whole real frames succeed or fail together
+                   # (exposure, motion, what the pocket happened to be lit by), and that
+                   # frame-to-frame swing is most of what "the dropout comes in big pieces"
+                   # actually was; the within-frame patches are the smaller half. A set
+                   # where every cloud has the same density is separable from a real one on
+                   # a point count alone. Beta(2.8, 1.7) matches those three quantiles.
+                   fill_beta=(2.8, 1.7), fill_clip=(0.12, 0.92),
                    rgb_grain=0.012, rgb_chroma_blur=1.2, rgb_saturation=1.12)
 
 
@@ -427,7 +436,12 @@ def generate(out_dir, n=32, seed=0, camera="orbbec640", domain="wide", spp=48, t
         rgb = (sensor.apply(rgb, grain=cfg["rgb_grain"], chroma_blur=cfg["rgb_chroma_blur"],
                             saturation=cfg["rgb_saturation"], seed=int(rng.integers(1 << 30)))
                * 255 + 0.5).astype(np.uint8)
-        got = make_cloud(rgb, ids, depth, gt, rng, cfg)
+        frame_cfg = cfg
+        if cfg.get("fill_beta"):
+            a, b = cfg["fill_beta"]
+            lo, hi = cfg["fill_clip"]
+            frame_cfg = {**cfg, "fill": float(np.clip(rng.beta(a, b), lo, hi))}
+        got = make_cloud(rgb, ids, depth, gt, rng, frame_cfg)
         if got is None:
             if not quiet:
                 print(f"  [{i}] cap not visible enough, skipped")
