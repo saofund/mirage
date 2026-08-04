@@ -85,7 +85,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # centimetre deep. This was 22-65 mm, which with the dish on top put the model at
         # 42 mm, five times too deep, and is most of why the renders read as a box hung on
         # a wall rather than a filler let into a wing. See fit.recess_depth.
-        depth_well=_lerp(rng, 0.001, 0.008),
+        depth_well=_lerp(rng, 0.002, 0.011),
         well_lip=_lerp(rng, 0.003, 0.010),
         neck=bool(rng.random() < 0.75),
         well_metal=bool(rng.random() < 0.25),
@@ -97,7 +97,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # the BODY, which is most of the ROI and was a flat rectangle
         crown=_lerp(rng, 0.006, 0.030), crown_ax=_lerp(rng, 0.0, math.pi),
         # the outer dish the door lies in — the structure that actually falls inside the ROI
-        pan=_lerp(rng, 0.128, 0.180), pan_depth=_lerp(rng, 0.004, 0.013),
+        pan=_lerp(rng, 0.128, 0.180), pan_depth=_lerp(rng, 0.008, 0.020),
         pan_sq=float(rng.choice([2.4, 3.0, 3.6, 4.4, 5.5])),
         seam=bool(rng.random() < 0.75), seam_gap=_lerp(rng, 0.0035, 0.0075),
         seam_step=_lerp(rng, 0.002, 0.005), seam_side=float(rng.choice([-1.0, 1.0])),
