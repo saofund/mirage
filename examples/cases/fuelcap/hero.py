@@ -80,7 +80,14 @@ CAP_FILL = 0.192
 # principal axis by a constant 37 degrees. Both render measurements are off by that same
 # amount, which is what gives it away.
 ROLL_DEG = 22.5
-RECESS = 9.4 * MM              # cap face below the paint, from the parallax above
+RECESS = 10.5 * MM             # cap face below the paint
+# The cap is NOT concentric with the opening: fitting a superellipse to the aperture with
+# the hinge-strap sector excluded puts its centre 7.6 mm from the cap's, at 143 degrees.
+# That was read as parallax at first, and it is not — parallax displaces a recessed feature
+# along the camera's AZIMUTH, which is perpendicular to the tilt axis, and this displacement
+# is along the tilt axis itself. It is the neck boss sitting off-centre, low and toward the
+# hinge, which is where every off-centre boss in the reference set sits.
+BOSS_OFF = (6.1 * MM, -4.5 * MM)
 DEPTH = 45.0 * MM              # paint to pocket floor
 OPENING_REF = 96.5 * MM        # the radius the opening's plan is authored against
 
@@ -104,9 +111,9 @@ OPENING_PLAN = (
 # the cap's width, where the kit's default is a third, and a bar that width changes the
 # whole silhouette — at this scale the cap reads as a bar with two crescents beside it, not
 # as a disc with a rib on it.
-BAR_W = 0.49                   # bar width / cap diameter, at its base
+BAR_W = 0.46                   # bar width / cap diameter, at its base
 BAR_H = 0.105                  # bar height / cap diameter
-BAR_SHOULDER = 0.56            # where its flat top starts, as a fraction of the half width
+BAR_SHOULDER = 0.42            # where its flat top starts, as a fraction of the half width
 BAR_AZ = -19.0                 # bar angle in the panel, degrees, from the photograph
 FLUTES = 14
 # Shallow. The flutes on this cap do reach the silhouette — you can count the scallops on
@@ -145,33 +152,40 @@ def build(paint=None, cap_material=None, printing=True):
 
     # 2. the liner: flange, fold, wall, ledge, floor
     prog = prog.place(obj=P.liner(plan, OPENING_REF, depth=DEPTH, flange_w=11.0 * MM,
-                                  flange_z=2.0 * MM, fold=5.0 * MM, wall_k=0.745,
-                                  ledge=8.0 * MM, floor_k=0.66, steps=steps,
+                                  # STEEP. At wall_k 0.745 over a 66% floor the pocket is a
+                                  # funnel, and a funnel is not a light trap: its walls face
+                                  # the sky enough to render as a bright gradient where the
+                                  # photograph has near-black. A moulded liner is a box with
+                                  # just enough draft to leave the tool.
+                                  flange_z=2.0 * MM, fold=5.0 * MM, wall_k=0.865,
+                                  ledge=7.0 * MM, floor_k=0.80, steps=steps,
                                   material=liner_mat),
                       at=(0.0, 0.0, 0.0))
 
     # 3. the neck the cap stands on, from the floor up to just under the cap's skirt
     flange = 13.0 * MM
     prog = prog.place(obj=P.neck_stack(CAP_D * 0.46, -DEPTH, -RECESS - flange + 1.0 * MM,
-                                       flare=1.62, material=liner_mat),
-                      at=(0.0, 0.0, 0.0))
+                                       flare=1.30, material=liner_mat),
+                      at=(BOSS_OFF[0], BOSS_OFF[1], 0.0))
 
     # 4. the cap
-    prog = prog.place(obj=cap(cap_mat, printing=printing), at=(0.0, 0.0, -RECESS))
+    prog = prog.place(obj=cap(cap_mat, printing=printing),
+                      at=(BOSS_OFF[0], BOSS_OFF[1], -RECESS))
 
     # 5. the coiled tether. It leaves the cap at about four o'clock and runs out to an anchor
     # on the +x wall — read straight off the rectified photograph, where the coil sits
     # between x = +30 and +85 mm and rises about 15 mm across that run.
     lug_a = math.radians(-26.0)
-    lug = (CAP_D * 0.50 * math.cos(lug_a), CAP_D * 0.50 * math.sin(lug_a), -RECESS - 5.0 * MM)
+    lug = (BOSS_OFF[0] + CAP_D * 0.50 * math.cos(lug_a),
+           BOSS_OFF[1] + CAP_D * 0.50 * math.sin(lug_a), -RECESS - 5.0 * MM)
     anchor = (OPENING_REF * 0.86, -1.0 * MM, -23.0 * MM)
     prog = prog.place(obj=P.coil_cord(lug, anchor, coils=COIL_TURNS, coil_r=COIL_R,
                                       wire_r=COIL_WIRE, up=(0.0, 0.0, 1.0),
                                       material=M.mat((0.024, 0.024, 0.026), 0.0, 0.55)),
                       at=(0.0, 0.0, 0.0))
     prog = prog.place(obj=P.cap_boss(CAP_D / 2.0, spin=-26.0, material=cap_mat),
-                      at=(CAP_D * 0.46 * math.cos(lug_a), CAP_D * 0.46 * math.sin(lug_a),
-                          -RECESS - 5.5 * MM))
+                      at=(BOSS_OFF[0] + CAP_D * 0.46 * math.cos(lug_a),
+                          BOSS_OFF[1] + CAP_D * 0.46 * math.sin(lug_a), -RECESS - 5.5 * MM))
 
     # 6. the door bumper, on the wall opposite the hinge
     prog = prog.place(obj=P.bump_stop(r=6.5 * MM, h=12.0 * MM),
@@ -217,7 +231,7 @@ def door(prog, plan, liner_mat, paint):
     grow = 1.055
     prog = prog.place(obj=P.fuel_door(w=OPENING_REF * 2 * grow, h=OPENING_REF * 2 * grow,
                                       flange=11.0 * MM, face=6.0 * MM, rim=13.0 * MM,
-                                      open_deg=120.0, az=0.0,
+                                      open_deg=134.0, az=0.0,
                                       hinge_r=OPENING_REF * 1.06, gap=3.0 * MM,
                                       steps=96, skin=paint, liner=liner_mat,
                                       strap=False, plan=list(plan)),
