@@ -1168,7 +1168,8 @@ def trim_ring(r_in=0.062, r_out=0.076, thick=0.003, screws=6, steps=44, material
 def fuel_door(w=0.186, h=0.166, sq=4.2, flange=0.014, face=0.007, rim=0.013,
               open_deg=150.0, az=180.0, hinge_r=0.098, gap=0.004, steps=64,
               skin=None, liner=None, strap=True, arm_w=0.020, arm_t=0.0025,
-              latch=True, plan=None, mark="door"):
+              latch=True, plan=None, inside_material=None, inner_details=False,
+              mark="door"):
     """The fuel door: a shallow ROUNDED-RECTANGLE pressing, hinged at one side.
 
     The old part was a flat slab whose plan was a plain rectangle, hinged below the pocket
@@ -1209,9 +1210,25 @@ def fuel_door(w=0.186, h=0.166, sq=4.2, flange=0.014, face=0.007, rim=0.013,
                plan_from=0.0, mark=mark))
     # paint every face first, THEN the two big ones — selecting only +z and -z leaves the
     # turned edge on the renderer's default albedo, a bright rim right round a dark door
-    d = d.material({"by": "all"}, **liner)
+    # The painted outer skin wraps around the turned edge. Painting that edge as liner
+    # removes the white return flange visible around an open white door and leaves a black
+    # slab. The inset -z face and its return are the separate black moulding.
+    d = d.material({"by": "all"}, **skin)
     d = d.material({"by": "normal", "axis": "z", "sign": 1}, **skin)
-    d = d.material({"by": "normal", "axis": "z", "sign": -1}, **liner)
+    d = d.material({"by": "normal", "axis": "z", "sign": -1},
+                   **(inside_material or liner))
+    if inner_details:
+        # Shallow bosses moulded into the inner liner. They catch broad highlights and make
+        # the door read as a stamped automotive assembly instead of a featureless plate.
+        z0 = -face - 0.0002
+        detail_mat = inside_material or liner
+        for cx, cy, sx, sy, dz in (
+                (-ref * 0.20,  ref * 0.22, ref * 0.32, ref * 0.13, 0.0017),
+                ( ref * 0.20, -ref * 0.24, ref * 0.18, ref * 0.10, 0.0012),
+                ( ref * 0.28,  ref * 0.25, ref * 0.08, ref * 0.20, 0.0015)):
+            d = d.place(obj=prism([(-sx, -sy), (sx, -sy), (sx, sy), (-sx, sy)],
+                                  z0, z0 - dz, mark=mark),
+                        at=(cx, cy, 0.0), material=detail_mat)
     if latch:
         # the striker on the free edge, opposite the hinge
         d = d.place(obj=prism([(-0.008, -0.005), (0.008, -0.005), (0.008, 0.005),

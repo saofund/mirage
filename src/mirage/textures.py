@@ -431,6 +431,41 @@ def _painted_metal(res: int, seed: int, col, dirt=0.35, rough_base=0.38):
     return albedo, rough, normal
 
 
+def _moulded_plastic(res: int, seed: int, col, rough_base=0.68, wear=0.35):
+    """Fine injection-moulded grain with handling polish and settled pocket dust.
+
+    This is intentionally a micro-surface, not stone noise painted black. Automotive
+    mouldings are nearly uniform in albedo; their scale comes from the broken specular
+    lobe and from a little dust caught in the grain. Broad colour clouds make a small
+    part look marbled, while a flat roughness makes the same part look like CAD rubber.
+    """
+    grain = _fbm(res, 72, 3, seed)
+    fine = _fbm(res, 150, 2, seed + 7)
+    handling = _fbm(res, 5, 4, seed + 19)
+    dust = np.clip((_fbm(res, 11, 3, seed + 31) - 0.58) * 3.2, 0, 1) * wear
+    base = np.stack(col, -1)[None, None]
+    albedo = base * (0.94 + 0.10 * grain[..., None] + 0.04 * fine[..., None])
+    albedo += dust[..., None] * np.array((0.018, 0.016, 0.013))[None, None]
+    rough = rough_base + 0.12 * (grain - 0.5) + 0.18 * dust - 0.13 * handling
+    height = 0.34 * grain + 0.20 * fine + 0.06 * dust
+    return np.clip(albedo, 0, 1), np.clip(rough, 0.34, 0.92), \
+        _normal_from_height(height, strength=1.15)
+
+
+def _automotive_paint(res: int, seed: int, col, rough_base=0.16):
+    """Subtle orange peel and metallic-flake variation for a clear-coated body panel."""
+    peel = _fbm(res, 46, 3, seed)
+    fine = _fbm(res, 130, 2, seed + 11)
+    flake = np.clip((fine - 0.57) * 4.0, 0, 1)
+    base = np.stack(col, -1)[None, None]
+    albedo = base * (0.985 + 0.025 * (peel[..., None] - 0.5))
+    albedo += flake[..., None] * 0.018
+    rough = rough_base + 0.035 * (peel - 0.5) + 0.020 * flake
+    height = 0.30 * peel + 0.04 * fine
+    return np.clip(albedo, 0, 1), np.clip(rough, 0.09, 0.25), \
+        _normal_from_height(height, strength=0.42)
+
+
 def _wall_tile(res: int, seed: int, col, grout, tiles=10, grout_w=0.055):
     """A tiled shop front: a real grout GRID, per-tile tone variation, and dirt in the
     joints. A tiled wall's signature is the grid — no amount of noise substitutes for it."""
@@ -509,6 +544,8 @@ _LIBRARY = {
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
     "clad_panel":         lambda: _painted_metal(RES, 137, (0.40, 0.405, 0.41), dirt=0.85, rough_base=0.36),
     "shop_tile":          lambda: _wall_tile(RES, 149, (0.72, 0.725, 0.71), (0.30, 0.30, 0.295), tiles=6),
+    "fuelcap_plastic":    lambda: _moulded_plastic(RES, 181, (0.0165, 0.0165, 0.018), rough_base=0.68, wear=0.42),
+    "fuelcap_white_paint": lambda: _automotive_paint(RES, 191, (0.76, 0.765, 0.76), rough_base=0.15),
     # The painted lines were the last flat surface in the frame -- one constant colour over
     # their whole length, where the reference has them clean at one end of the array (luma
     # 0.836) and trodden grey at the other (0.669). Same generator as a bay, because a line

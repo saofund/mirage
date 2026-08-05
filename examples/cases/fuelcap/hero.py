@@ -156,13 +156,13 @@ def _plan(steps):
 
 def build(paint=None, cap_material=None, printing=True):
     """The assembly, in the panel frame: paint at z = 0, outward is +z, cap at the origin."""
-    paint = paint or M.PAINTS["white"]
+    paint = paint or M.PAINT_WHITE_TEXTURED
     # ROUGHNESS is what was making the cap read pale. A fuel cap is moulded
     # polypropylene with a matt grain, and at 0.44 the bar's whole flat top works as
     # one broad mirror onto the sky — 150 sRGB where the photograph has 60. The albedo
     # was never the problem; the specular lobe was.
     cap_mat = cap_material or M.mat((0.021, 0.021, 0.023), 0.0, 0.62)
-    liner_mat = M.mat((0.0165, 0.0165, 0.018), 0.0, 0.62)
+    liner_mat = M.WELL_TEXTURED
 
     steps = 96
     plan = _plan(steps)
@@ -255,12 +255,19 @@ def door(prog, plan, liner_mat, paint):
     # growing w and h — multiplying the plan as well applies the growth twice, which is a
     # door 11% oversize and was the first thing the render showed.
     grow = 1.055
+    from mirage.decals import ensure_decals
+    door_art = ensure_decals(["fuelcap_boyue_door"])["fuelcap_boyue_door"]
+    door_inside = M.with_face_decal(
+        M.mat((0.016, 0.016, 0.018), 0.0, 0.70), door_art,
+        OPENING_REF * 2 * grow, OPENING_REF * 2 * grow,
+        -6.0 * MM - 1e-4)
     prog = prog.place(obj=P.fuel_door(w=OPENING_REF * 2 * grow, h=OPENING_REF * 2 * grow,
                                       flange=11.0 * MM, face=6.0 * MM, rim=13.0 * MM,
                                       open_deg=150.0, az=0.0,
                                       hinge_r=OPENING_REF * 1.06, gap=3.0 * MM,
                                       steps=96, skin=paint, liner=liner_mat,
-                                      strap=False, plan=list(plan)),
+                                      strap=False, plan=list(plan),
+                                      inside_material=door_inside, inner_details=True),
                       at=(0.0, 0.0, 2.0 * MM))
     prog = prog.place(obj=P.door_strap(length=72.0 * MM, w=22.0 * MM, t=3.4 * MM,
                                        bend_at=0.38, bend_deg=26.0,

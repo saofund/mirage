@@ -16,10 +16,21 @@ from __future__ import annotations
 
 import math
 
+from mirage.textures import ensure_textures
 
-def mat(color, metallic=0.0, roughness=0.5):
-    return {"color": [float(c) for c in color], "metallic": float(metallic),
-            "roughness": float(roughness)}
+
+def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
+    m = {"color": [float(c) for c in color], "metallic": float(metallic),
+         "roughness": float(roughness)}
+    if maps:
+        m["albedo_map"] = str(maps["albedo"])
+        m["roughness_map"] = str(maps["rough"])
+        m["normal_map"] = str(maps["normal"])
+        m["uv_scale"] = float(uv_scale)
+    return m
+
+
+TEX = ensure_textures(["fuelcap_plastic", "fuelcap_white_paint"])
 
 
 # --------------------------------------------------------------------------- #
@@ -62,6 +73,10 @@ CAP_FAMILY = (CAP_BLACK, CAP_BLACK_G, CAP_BLACK_M, CAP_GREY)
 # which is what made a deep box render as a pale grey tray. A light trap is made of surfaces
 # that scatter, not surfaces that reflect.
 WELL_PLASTIC = mat((0.020, 0.020, 0.022), 0.0, 0.78)   # the moulded liner
+WELL_TEXTURED = mat((0.0165, 0.0165, 0.018), 0.0, 0.68,
+                    maps=TEX["fuelcap_plastic"], uv_scale=0.032)
+PAINT_WHITE_TEXTURED = mat((0.76, 0.765, 0.76), 0.22, 0.15,
+                           maps=TEX["fuelcap_white_paint"], uv_scale=0.055)
 WELL_METAL   = mat((0.062, 0.062, 0.065), 0.30, 0.68)  # bare painted metal well
 # The filler-neck ring, down a hole under a cap: it is bare steel but it is also the least
 # lit surface in the pocket, so a "correct" bright steel albedo renders as the brightest
@@ -125,6 +140,11 @@ def with_decal(base, art, w, h, origin_z, centre=(0.0, 0.0)):
     m["decal_du"] = [w, 0.0, 0.0]
     m["decal_dv"] = [0.0, h, 0.0]
     return m
+
+
+def with_face_decal(base, art, w, h, origin_z, centre=(0.0, 0.0)):
+    """Artwork on a local xy face; useful for a fuel door's camera-facing inner panel."""
+    return with_decal(base, art, w, h, origin_z, centre)
 
 
 def jitter(m, rng, dc=0.18, dr=0.10):
