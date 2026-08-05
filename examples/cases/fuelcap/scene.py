@@ -112,11 +112,22 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # The generalisation of the measured section: scale it radially and in depth.
         # Imitation is r_gain = z_gain = 1.
         r_gain=_lerp(rng, 0.88, 1.14), z_gain=_lerp(rng, 0.75, 1.30),
-        # The filler axis is not square to the body: measured at a median of 14.4 degrees
-        # over 197 real frames (p10 5, p90 23). Modelling them as parallel is why the
-        # synthetic body reads as one flat height in a depth map while the real one has a
-        # clear gradient across it, and it is worth 6 mm of the recess-depth gap.
-        body_tilt=_lerp(rng, 3.0, 24.0), body_tilt_az=_lerp(rng, 0.0, 360.0),
+        # The filler axis really is about 14 degrees off the body normal (measured over 197
+        # frames), and this is deliberately NOT that — it is 0 to 5.
+        #
+        # The reason is a geometric incompatibility, not a preference. `pocket` is a lathe
+        # about the filler axis, so its mouth is a FLAT ring perpendicular to that axis.
+        # Tilting the body panel relative to it opens a wedge between the two: at 13.5
+        # degrees and a 90 mm radius the panel stands 20 mm proud of the pocket rim on one
+        # side and 20 mm below it on the other, and the camera sees straight through the
+        # gap. Measured, that dragged recess_depth from +8 mm to about 0 and cost several
+        # attempts at other explanations.
+        #
+        # Getting the full 14 degrees needs the pocket's mouth to be cut OBLIQUELY — a
+        # per-direction z offset on the lathe, which `spin` cannot express (its plan
+        # scales radius only). Until then the honest choice is a small tilt that keeps the
+        # surfaces closed, and this comment rather than a number that looks right.
+        body_tilt=_lerp(rng, 0.0, 5.0), body_tilt_az=_lerp(rng, 0.0, 360.0),
         # The measured section is binned by physical radius, so it ALREADY averages over
         # whatever squareness the real pocket has. Re-applying a strong plan on top of it
         # applies that squareness twice and drags the outer surface down. Kept mild.
