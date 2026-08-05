@@ -139,6 +139,11 @@ def with_decal(base, art, w, h, origin_z, centre=(0.0, 0.0)):
     origin plus two edge vectors — turned to face +z."""
     m = dict(base)
     m["albedo_map"] = str(art["albedo"] if isinstance(art, dict) else art)
+    # All image maps share the decal frame. Keeping the moulded-plastic roughness and
+    # micro-normal here preserves the grain on a printed face instead of turning the cap
+    # into a perfectly smooth sticker as soon as warning text is enabled.
+    m["roughness_map"] = str(TEX["fuelcap_plastic"]["rough"])
+    m["normal_map"] = str(TEX["fuelcap_plastic"]["normal"])
     m["decal_origin"] = [centre[0] - w / 2, centre[1] - h / 2, origin_z]
     m["decal_du"] = [w, 0.0, 0.0]
     m["decal_dv"] = [0.0, h, 0.0]
