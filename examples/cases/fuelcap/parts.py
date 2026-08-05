@@ -186,7 +186,7 @@ def lobe_plan(lobes, depth, steps, phase=0.0):
 
 
 def handle(length, w_end, w_mid, height, dish=0.20, sag=0.10, ends_down=0.004,
-           base=0.003, tip=1.0, stations=34, mark="cap_rib"):
+           base=0.003, tip=1.0, shoulder=0.80, stations=34, mark="cap_rib"):
     """The moulded grip across a fuel cap: a WAISTED bar with a TROUGH along its top.
 
     This is the part the old kit got most wrong, and it got it wrong by being a primitive it
@@ -210,17 +210,27 @@ def handle(length, w_end, w_mid, height, dish=0.20, sag=0.10, ends_down=0.004,
     where the bar's flank crosses the face, not an end cap somebody drew.
     """
     hw = w_end / 2.0
-    # The scoop is WIDE and SHALLOW — the shoulders are out at 0.80 of the half width and the
-    # centre is a fifth down, not a third. Narrow and deep it reads as a groove milled down
-    # the bar rather than as a place to put a thumb, and with a smoothed normal it puts two
-    # bright rails and a black valley on a part the photographs show as one soft surface.
+    # The scoop is WIDE and SHALLOW — the centre is a fifth down, not a third. Narrow and
+    # deep it reads as a groove milled down the bar rather than as a place to put a thumb,
+    # and with a smoothed normal it puts two bright rails and a black valley on a part the
+    # photographs show as one soft surface.
+    #
+    # `shoulder` is where the flat top starts, as a fraction of the half width, and `dish`
+    # may be NEGATIVE for a crowned ridge instead of a scooped one. Both matter more than
+    # they look: at 0.80 with a positive dish the bar is a flat plateau with near-vertical
+    # flanks covering two thirds of the cap, the wings shrink to slivers and the printing
+    # ends up on the rim. Photographed caps split roughly half and half between a scooped
+    # bar with a wide top and a crowned ridge whose top is barely half its base, and the
+    # difference is the whole silhouette of the part.
+    sh = max(0.05, min(0.97, shoulder))
+    mid = sh + (1.0 - sh) * 0.45
     prof = [
         (-hw, -base), (hw, -base),                 # buried base, well below the face
-        (hw, height * 0.34), (hw * 0.94, height * 0.88), (hw * 0.80, height),
-        (hw * 0.42, height * (1.0 - dish * 0.40)),
-        (0.0, height * (1.0 - dish)),              # the scoop, across the bar
-        (-hw * 0.42, height * (1.0 - dish * 0.40)),
-        (-hw * 0.80, height), (-hw * 0.94, height * 0.88), (-hw, height * 0.34),
+        (hw, height * 0.34), (hw * (1.0 - (1.0 - sh) * 0.30), height * 0.88), (hw * sh, height),
+        (hw * mid * 0.62, height * (1.0 - dish * 0.40)),
+        (0.0, height * (1.0 - dish)),              # the scoop (or crown) across the bar
+        (-hw * mid * 0.62, height * (1.0 - dish * 0.40)),
+        (-hw * sh, height), (-hw * (1.0 - (1.0 - sh) * 0.30), height * 0.88), (-hw, height * 0.34),
     ]
     waist = max(0.0, 1.0 - w_mid / max(w_end, 1e-6))
     path, scale = [], []
@@ -310,7 +320,8 @@ def stadium(length, width, arc=10):
 def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0.66,
         rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.042,
         skirt=0.020, neck_d=0.048, bevel=0.055, spin=0.0, printing=True, grip="rib",
-        lobes=0, lobe_depth=0.06, waist=0.71, rib_dish=0.20, decal="fuelcap_face",
+        lobes=0, lobe_depth=0.06, waist=0.71, rib_dish=0.20, rib_shoulder=0.80,
+        decal="fuelcap_face",
         material=None, rib_material=None, steps=64):
     """The inner fuel cap: a fluted cylinder with a waisted handle moulded across its face.
 
@@ -453,7 +464,8 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
     # overhang were both wrong (one by 4 mm, one so conservative it cost a fifth of the
     # bar's length), and the mesh is 370 vertices, so it is cheaper to ask it.
     bar = lambda L: handle(L, rib_w, rib_w * waist, rib_h, dish=rib_dish, sag=0.10,
-                           ends_down=rib_h * 1.15, base=0.003, mark="cap_rib")
+                           ends_down=rib_h * 1.15, base=0.003,
+                           shoulder=rib_shoulder, mark="cap_rib")
     lim, L = r * 0.995, rib_len
     for _ in range(4):
         co = [v.co for v in bar(L).build().verts]

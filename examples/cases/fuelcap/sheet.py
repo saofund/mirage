@@ -486,7 +486,7 @@ def hero_part_sheet(size=520, spp=200):
     _grid(tiles, 4, OUT / "hero_cap.png", cell=size)
 
 
-def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52):
+def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52, az=None):
     """The measured reproduction, rendered at the photograph's own obliquity.
 
     `azimuths` renders a strip of candidates instead of the single answer. The cap's ellipse
@@ -508,15 +508,16 @@ def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52):
             tiles.append((img, f"azimuth {az:.0f}"))
         _grid(tiles, len(tiles), OUT / "hero_az.png", cell=size // 2)
         return
-    p = H.pose(dist=dist)
+    p = H.pose(dist=dist, azimuth_deg=az)
     img = _render(prog, tmp / "hero", eye=p["eye"], target=p["target"], up=p["up"],
                   w=size, h=size, spp=spp, fov=fov, env=0.45, sun=0.95)
     import cv2
-    cv2.imwrite(str(OUT / "hero_synth.png"), img[:, :, ::-1])
-    print(OUT / "hero_synth.png")
+    name = "hero_synth.png" if az is None else f"hero_synth_{int(round(az))}.png"
+    cv2.imwrite(str(OUT / name), img[:, :, ::-1])
+    print(OUT / name)
 
 
-def hero_compose(size=760):
+def hero_compose(size=760, synth="hero_synth.png", out="hero.png"):
     """Photograph beside reproduction, framed the same way and exposed the same way.
 
     Both rows are cropped so the OPENING spans the same fraction of the tile, which is the
@@ -539,14 +540,14 @@ def hero_compose(size=760):
         ph = cv2.copyMakeBorder(ph, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
         x0, y0 = x0 + pad, y0 + pad
     real = cv2.resize(ph[y0:y0 + side, x0:x0 + side], (size, size))
-    syn = cv2.imread(str(OUT / "hero_synth.png"))
+    syn = cv2.imread(str(OUT / synth))
     if syn is None:
         raise SystemExit("render hero_synth.png first (sheet hero)")
     syn = cv2.resize(syn, (size, size))
     cv2.putText(real, "PHOTOGRAPH", (10, 30), 0, 0.7, (60, 255, 255), 2)
     cv2.putText(syn, "MIRAGE", (10, 30), 0, 0.7, (60, 255, 255), 2)
-    cv2.imwrite(str(OUT / "hero.png"), np.hstack([real, syn]))
-    print(OUT / "hero.png")
+    cv2.imwrite(str(OUT / out), np.hstack([real, syn]))
+    print(OUT / out)
 
 
 def main(argv=None):
@@ -561,17 +562,22 @@ def main(argv=None):
     ap.add_argument("--skip", type=int, default=0, help="offset into the real-crop row")
     ap.add_argument("--style", default=None, choices=(None, "liner", "dish"),
                     help="force one pocket family (ids)")
+    ap.add_argument("--az", type=float, default=None,
+                    help="camera azimuth round the panel normal (hero)")
     ap.add_argument("--closeup", action="store_true", help="ids at photograph magnification")
     a = ap.parse_args(argv)
     OUT.mkdir(parents=True, exist_ok=True)
     if a.what == "hero":
-        hero_sheet()
+        hero_sheet(az=a.az)
     elif a.what == "heroaz":
         hero_sheet(azimuths=(55.8, 145.8, 235.8, 325.8))
     elif a.what == "herocap":
         hero_part_sheet()
     elif a.what == "herocompose":
-        hero_compose()
+        hero_compose(synth=("hero_synth.png" if a.az is None
+                            else f"hero_synth_{int(round(a.az))}.png"),
+                     out=("hero.png" if a.az is None
+                          else f"hero_{int(round(a.az))}.png"))
     elif a.what == "closeup":
         closeup_sheet(a.n, a.seed, skip=a.skip)
     elif a.what == "wide":

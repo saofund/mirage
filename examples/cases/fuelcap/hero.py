@@ -78,10 +78,15 @@ OPENING_PLAN = (
 # the cap's width, where the kit's default is a third, and a bar that width changes the
 # whole silhouette — at this scale the cap reads as a bar with two crescents beside it, not
 # as a disc with a rib on it.
-BAR_W = 0.49                   # bar width / cap diameter
-BAR_H = 0.075                  # bar height / cap diameter
+BAR_W = 0.49                   # bar width / cap diameter, at its base
+BAR_H = 0.105                  # bar height / cap diameter
+BAR_SHOULDER = 0.56            # where its flat top starts, as a fraction of the half width
 BAR_AZ = -19.0                 # bar angle in the panel, degrees, from the photograph
 FLUTES = 14
+# Shallow. The flutes on this cap do reach the silhouette — you can count the scallops on
+# the lower right of the photograph — but at 1.5% of the radius, not at 3%. At 3% the rim
+# stops reading as a circle at all and the cap renders as a flower.
+FLUTE_DEPTH = 0.016
 
 # The coil. Six and a half turns of roughly 20 mm diameter between the cap's lug and an
 # anchor high on the far wall.
@@ -165,10 +170,10 @@ def cap(material, printing=True):
     d = CAP_D
     return P.cap(d=d, flange=13.0 * MM, rib_len=d * 1.00, rib_w=d * BAR_W,
                  rib_h=d * BAR_H, rib_draft=0.80, dome=-0.4 * MM, chamfer=2.0 * MM,
-                 flutes=FLUTES, flute_depth=0.030, skirt=18.0 * MM,
+                 flutes=FLUTES, flute_depth=FLUTE_DEPTH, skirt=18.0 * MM,
                  neck_d=d * 0.72, bevel=0.048, spin=BAR_AZ, printing=printing,
-                 grip="rib", waist=0.86, rib_dish=0.10, material=material, steps=72,
-                 decal="fuelcap_boyue")
+                 grip="rib", waist=0.86, rib_dish=-0.06, rib_shoulder=BAR_SHOULDER,
+                 material=material, steps=72, decal="fuelcap_boyue")
 
 
 def door(prog, plan, liner_mat, paint):
