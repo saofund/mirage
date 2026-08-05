@@ -381,26 +381,26 @@ def _fuelcap_boyue_door(w, h):
     # Authored in the opposite quadrant because the finished image is rotated for the
     # camera-facing -z side below. After that turn the label sits beside the hinge, which
     # is the part of the open door that remains inside the photograph-matched crop.
-    x0, y0, x1, y1 = int(w * 0.56), int(h * 0.26), int(w * 0.77), int(h * 0.44)
+    x0, y0, x1, y1 = int(w * 0.60), int(h * 0.29), int(w * 0.74), int(h * 0.41)
     d.rounded_rectangle((x0, y0, x1, y1), radius=max(2, w // 90), fill=(6, 6, 7))
     ink = (152, 152, 145)
     lw = max(2, w // 180)
-    bx, by = int(w * 0.585), int(h * 0.288)
-    d.rounded_rectangle((bx, by, bx + int(w * 0.043), by + int(h * 0.071)),
+    bx, by = int(w * 0.617), int(h * 0.308)
+    d.rounded_rectangle((bx, by, bx + int(w * 0.030), by + int(h * 0.050)),
                         radius=lw, outline=ink, width=lw)
-    d.line((bx + int(w * 0.034), by + int(h * 0.017), bx + int(w * 0.055),
-            by + int(h * 0.038), bx + int(w * 0.055), by + int(h * 0.067)),
+    d.line((bx + int(w * 0.024), by + int(h * 0.012), bx + int(w * 0.039),
+            by + int(h * 0.027), bx + int(w * 0.039), by + int(h * 0.047)),
            fill=ink, width=lw)
-    _text(d, (w * 0.695, h * 0.325), ">92", int(h * 0.078), ink)
-    _text(d, (w * 0.670, h * 0.395), "RON", int(h * 0.024), (105, 105, 101))
+    _text(d, (w * 0.690, h * 0.333), ">92", int(h * 0.053), ink)
+    _text(d, (w * 0.670, h * 0.382), "RON", int(h * 0.018), (105, 105, 101))
     # A few faint rub marks stop the full-face decal background reading as perfectly flat.
     for k in range(7):
         yy = int(h * (0.18 + 0.095 * k))
         d.line((int(w * 0.06), yy, int(w * (0.10 + 0.035 * (k % 3))), yy + 1),
                fill=(7, 7, 8), width=1)
-    # The map is viewed from the local -z side of the door. That reverses both image axes
-    # relative to the +z cap decals, so author upright and turn the finished artwork once.
-    return im.transpose(Image.Transpose.ROTATE_180)
+    # The map is viewed from the local -z side of the door. Its v axis is reversed relative
+    # to the +z cap decals, while u is already corrected by the camera-facing back face.
+    return im.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
 
 _LIBRARY = {
