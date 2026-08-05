@@ -70,15 +70,15 @@ def sample(rng, camera="orbbec640", domain="wide"):
     # the full width of the face with its ends buried in it. The cloud-derived numbers this
     # replaces (0.81 x 0.64) described the handle's SHADOW plus the flat face around it,
     # because a radius-binned cloud cannot separate the two.
-    rib_len = d_cap * _lerp(rng, 0.92, 1.02)
-    rib_w = d_cap * _lerp(rng, 0.33, 0.44)
+    rib_len = d_cap * _lerp(rng, 0.84, 0.96)
+    rib_w = d_cap * _lerp(rng, 0.30, 0.42)
     v = dict(
         camera=camera,
         # The visible side wall — 10 to 14 mm on the photographed caps, which is where the
         # flutes live and is most of what says "cylinder" rather than "disc".
         d_cap=d_cap, flange=_lerp(rng, 0.010, 0.016),
         rib_len=rib_len, rib_w=rib_w,
-        rib_h=d_cap * _lerp(rng, 0.070, 0.100), rib_draft=_lerp(rng, 0.68, 0.90),
+        rib_h=d_cap * _lerp(rng, 0.055, 0.086), rib_draft=_lerp(rng, 0.68, 0.90),
         waist=_lerp(rng, 0.62, 0.82),
         rib_slot=float(rng.random() < 0.28) * _lerp(rng, 0.002, 0.005),
         dome=_lerp(rng, 0.0, 0.0018), chamfer=_lerp(rng, 0.0015, 0.0035),

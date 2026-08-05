@@ -185,8 +185,8 @@ def lobe_plan(lobes, depth, steps, phase=0.0):
     return [k / m for k in ks]
 
 
-def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.006,
-           base=0.008, stations=30, mark="cap_rib"):
+def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.004,
+           base=0.003, tip=0.26, stations=34, mark="cap_rib"):
     """The moulded grip across a fuel cap: a WAISTED bar with a TROUGH along its top.
 
     This is the part the old kit got most wrong, and it got it wrong by being a primitive it
@@ -223,9 +223,14 @@ def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.006,
     for j in range(stations):
         u = j / (stations - 1.0)
         s = math.sin(math.pi * u)
+        # `tip` narrows the plan over the last sixth at each end. Without it the bar arrives
+        # at the rim at full width and its corner, tilted by the end dip, pokes OUT past the
+        # cap's silhouette — which is what flattened two chords off an otherwise round cap.
+        t = min(1.0, min(u, 1.0 - u) / 0.16)
         # ends below the face, middle at it: `ends_down` is what buries the open rings
         path.append((length * (u - 0.5), 0.0, -ends_down * (1.0 - s ** 0.55)))
-        scale.append((1.0 - waist * s ** 1.2, 1.0 - sag * s))
+        scale.append(((tip + (1.0 - tip) * t ** 0.55) * (1.0 - waist * s ** 1.2),
+                      1.0 - sag * s))
     return (MeshProgram().profile(prof, plane="xy", closed=True)
             .sweep(path, scale=scale, mark=mark))
 
@@ -335,9 +340,9 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
     material = material or CAP_BLACK
     rib_material = rib_material or material
     r = d / 2.0
-    rib_len = d * 0.98 if rib_len is None else rib_len
-    rib_w = d * 0.38 if rib_w is None else rib_w
-    rib_h = d * 0.085 if rib_h is None else rib_h
+    rib_len = d * 0.90 if rib_len is None else rib_len
+    rib_w = d * 0.36 if rib_w is None else rib_w
+    rib_h = d * 0.070 if rib_h is None else rib_h
     if printing:
         # The warning text round the annulus. Four 460 px reference photographs all have
         # it and none of the synthetic caps did — it is the most recognisable single
@@ -408,9 +413,13 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
                     at=(0.0, 0.0, 0.0), material=rib_material)
         return p
 
-    p = p.place(obj=handle(rib_len, rib_w, rib_w * waist, rib_h,
-                           dish=0.34, sag=0.10, ends_down=rib_h * 0.85,
-                           base=rib_h * 1.1, mark="cap_rib"),
+    # Clamp the bar so its tilted end section cannot reach past the rim: the end dips, so
+    # the section there leans, and the corner of a bar buried `base` deep sticks out by
+    # roughly base/2 beyond the path's last station.
+    half = min(rib_len / 2.0, rf * 0.99 - 0.0018)
+    p = p.place(obj=handle(2.0 * half, rib_w, rib_w * waist, rib_h,
+                           dish=0.34, sag=0.10, ends_down=rib_h * 0.55,
+                           base=0.003, mark="cap_rib"),
                 at=(0.0, 0.0, dome), rotate=(0.0, 0.0, spin), material=rib_material)
     if rib_slot > 0:
         # The groove down the spine of a raised bar — the double-decker variant. Sunk into

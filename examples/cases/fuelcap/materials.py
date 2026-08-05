@@ -36,8 +36,12 @@ CAP_GREY    = mat((0.055, 0.055, 0.058), 0.0, 0.45)   # the grey-plastic caps
 # why a fully metallic mirror finish looks wrong on them. The dark variant is the anodised
 # grey one; both are far darker than raw aluminium's 0.9 because they are anodised and
 # have spent years in a filler pocket.
-CAP_ALU     = mat((0.26, 0.26, 0.255), 0.82, 0.38)
-CAP_ALU_D   = mat((0.155, 0.155, 0.16), 0.78, 0.46)
+# Darker than the first pass by a factor of two. Rendered at the exposure this scene needs —
+# one set for a black cap in a shadowed hole — a 0.26 metal cap comes out as a featureless
+# white blob with no readable geometry at all, which is the same failure as the black cap
+# that read mid-grey, from the other end.
+CAP_ALU     = mat((0.135, 0.135, 0.132), 0.80, 0.44)
+CAP_ALU_D   = mat((0.082, 0.082, 0.085), 0.76, 0.52)
 CAP_CHROME  = mat((0.78, 0.78, 0.79), 1.0, 0.12)
 CAP_METAL_FAMILY = (CAP_ALU, CAP_ALU_D)
 
