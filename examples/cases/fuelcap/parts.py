@@ -310,7 +310,7 @@ def stadium(length, width, arc=10):
 def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0.66,
         rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.042,
         skirt=0.020, neck_d=0.048, bevel=0.055, spin=0.0, printing=True, grip="rib",
-        lobes=0, lobe_depth=0.06, waist=0.71, rib_dish=0.20,
+        lobes=0, lobe_depth=0.06, waist=0.71, rib_dish=0.20, decal="fuelcap_face",
         material=None, rib_material=None, steps=64):
     """The inner fuel cap: a fluted cylinder with a waisted handle moulded across its face.
 
@@ -360,7 +360,10 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
         # artwork to a rectangle on the cap's own +z face.
         from mirage.decals import ensure_decals
         from .materials import with_decal
-        art = ensure_decals(["fuelcap_face"])["fuelcap_face"]
+        # `decal` names the artwork. The generic one carries a plausible cap's markings, and
+        # plausible is the wrong target when the render is going next to the photograph it
+        # is copying — so a reproduction hands in that cap's own transcribed printing.
+        art = ensure_decals([decal])[decal]
         material = with_decal(material, art, d * 1.02, d * 1.02, max(dome, 0.0) + 1e-4)
     # The handle takes the SAME material as the body, decal and all, and it has to. An
     # albedo map REPLACES the flat colour where it hits (raytrace.cpp `alb = tmp`), so a
@@ -1148,7 +1151,7 @@ def trim_ring(r_in=0.062, r_out=0.076, thick=0.003, screws=6, steps=44, material
 def fuel_door(w=0.186, h=0.166, sq=4.2, flange=0.014, face=0.007, rim=0.013,
               open_deg=150.0, az=180.0, hinge_r=0.098, gap=0.004, steps=64,
               skin=None, liner=None, strap=True, arm_w=0.020, arm_t=0.0025,
-              latch=True, mark="door"):
+              latch=True, plan=None, mark="door"):
     """The fuel door: a shallow ROUNDED-RECTANGLE pressing, hinged at one side.
 
     The old part was a flat slab whose plan was a plain rectangle, hinged below the pocket
@@ -1179,8 +1182,13 @@ def fuel_door(w=0.186, h=0.166, sq=4.2, flange=0.014, face=0.007, rim=0.013,
         (ref - rim, -face),                        # the liner face, set inside the flange
         (0.0, -face),
     ]
+    # `plan` lets a caller hand in a MEASURED outline instead of a described one. A door is
+    # the opening's own pressing a few millimetres larger, so when the opening came off a
+    # photograph the door has to come off the same photograph or the two stop matching at
+    # exactly the place — the shut line — where a mismatch is most visible.
     d = (MeshProgram().profile(section, plane="xz", closed=False)
-         .spin(axis="z", steps=steps, plan=rrect_plan(w, h, sq, steps, ref),
+         .spin(axis="z", steps=steps,
+               plan=plan if plan is not None else rrect_plan(w, h, sq, steps, ref),
                plan_from=0.0, mark=mark))
     # paint every face first, THEN the two big ones — selecting only +z and -z leaves the
     # turned edge on the renderer's default albedo, a bright rim right round a dark door
@@ -1350,3 +1358,207 @@ def cap_boss(r_cap, spin=0.0, material=None):
     return (prism([(x * c - y * s, x * s + y * c) for x, y in plan], 0.0, 0.005,
                   mark="cap_body")
             .material({"by": "all"}, **(material or CAP_BLACK)))
+
+
+# --------------------------------------------------------------------------- #
+# parts that only appeared once ONE pocket was measured instead of described
+# --------------------------------------------------------------------------- #
+def measured_plan(table, steps, phase=0.0):
+    """A `spin` plan resampled from a MEASURED radius-vs-angle table.
+
+    `rrect_plan` describes an opening with three numbers, which is the right thing to do
+    when the opening is being *drawn*. It is the wrong thing when the opening has been
+    *photographed*. A body press has unequal corner radii, one edge straighter than the
+    other, and a local flat where a bracket passes; a superellipse fitted to that outline
+    leaves 5 mm of residual with the sign of the error changing from corner to corner —
+    a third of the flange's width, on the one line in the picture that separates paint
+    from shadow. So take the outline itself.
+
+    `table` is radius divided by the profile's own reference radius, evenly spaced over a
+    full turn starting at +x. Resampled with a PERIODIC Catmull-Rom, because a 36-entry
+    measurement driven through a 96-segment lathe by linear interpolation is a 36-sided
+    polygon with rounded corners: the radius is continuous and its slope is not, and a
+    smooth-shaded lathe shows exactly that as 36 faint vertical bands.
+    """
+    n = len(table)
+    out = []
+    for j in range(steps):
+        t = ((TAU * j / steps + phase) % TAU) / TAU * n
+        i = int(math.floor(t))
+        f = t - i
+        p0, p1, p2, p3 = (table[(i - 1) % n], table[i % n],
+                          table[(i + 1) % n], table[(i + 2) % n])
+        out.append(0.5 * (2 * p1 + (-p0 + p2) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f
+                          + (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f))
+    return out
+
+
+def coil_cord(start, end, coils=6.0, coil_r=0.011, wire_r=0.0022, taper=0.22,
+              per_coil=18, sides=8, up=(0.0, 0.0, 1.0), material=None, mark="tether"):
+    """The tether as the HELIX it usually is, not as a hanging cord.
+
+    `tether` builds a cord that droops, and that shape is right for maybe a third of the
+    reference cars. The rest — and most of the ones whose cord is clearly visible — have a
+    coiled lead exactly like a telephone handset's: six or seven tight turns of about 20 mm
+    diameter between two straight ends. Seen from the side that reads as a run of even
+    loops, and it is one of the very few bright, high-frequency things in a pocket that is
+    otherwise a black box, so it carries far more of the picture than its 2 mm section
+    suggests.
+
+    The coil radius is faded in and out by `taper` rather than butted onto straight leads.
+    That is not cosmetic: a straight segment meeting a helix at full radius turns through
+    ninety degrees in a single path step, and `sweep` collapses the ring at a corner that
+    sharp. Fading the radius to zero gives the straight ends for free and keeps the path
+    smooth.
+    """
+    s = [float(x) for x in start]
+    e = [float(x) for x in end]
+    v = [e[k] - s[k] for k in range(3)]
+    L = math.sqrt(sum(x * x for x in v))
+    if L < 1e-6:
+        raise ValueError("coil_cord needs two distinct endpoints")
+    ax = [x / L for x in v]
+    u0 = [float(x) for x in up]
+    d = sum(u0[k] * ax[k] for k in range(3))
+    b1 = [u0[k] - d * ax[k] for k in range(3)]
+    if sum(x * x for x in b1) < 1e-8:                 # the cord runs along `up`
+        u0 = [1.0, 0.0, 0.0]
+        d = ax[0]
+        b1 = [u0[k] - d * ax[k] for k in range(3)]
+    n1 = math.sqrt(sum(x * x for x in b1))
+    b1 = [x / n1 for x in b1]
+    b2 = [ax[1] * b1[2] - ax[2] * b1[1], ax[2] * b1[0] - ax[0] * b1[2],
+          ax[0] * b1[1] - ax[1] * b1[0]]
+
+    n = max(28, int(per_coil * coils) + 2)
+    path = []
+    for k in range(n):
+        t = k / (n - 1.0)
+        g = min(t, 1.0 - t) / max(taper, 1e-6)
+        env = 0.5 - 0.5 * math.cos(math.pi * min(1.0, max(0.0, g)))
+        a = TAU * coils * t
+        r = coil_r * env
+        path.append([s[j] + ax[j] * (L * t) + r * (math.cos(a) * b1[j] + math.sin(a) * b2[j])
+                     for j in range(3)])
+    ring = [(wire_r * math.cos(TAU * k / sides), wire_r * math.sin(TAU * k / sides))
+            for k in range(sides)]
+    return (MeshProgram().profile(ring, plane="xy", closed=True).sweep(path, mark=mark)
+            .material({"by": "tag", "name": mark}, **(material or TETHER)))
+
+
+def pip(r=0.0028, h=0.0013, steps=12, material=None, mark="well"):
+    """One of the little round moulding pips on a liner's flange.
+
+    Six or eight of them go round the rim of an injection-moulded pocket — ejector-pin
+    witnesses and locating bosses. Individually they are a millimetre high and pointless;
+    together they are the only thing that says the flange is a moulding rather than a flat
+    black band drawn round the opening, which is what it renders as without them.
+    """
+    return lathe([(0.0, h), (r * 0.55, h), (r, 0.0), (0.0, 0.0)], steps=steps,
+                 mark=mark).material({"by": "tag", "name": mark},
+                                     **(material or WELL_PLASTIC))
+
+
+def bump_stop(r=0.0065, h=0.011, material=None, mark="well"):
+    """The rubber stop the closed door rests on, standing off the pocket wall.
+
+    Built along +z and placed by the caller, like everything else here. Stepped rather than
+    plain: the real ones are a soft cap on a hard stem, and the step is what catches a
+    highlight and stops it reading as a smudge on the wall.
+    """
+    return lathe([(0.0, h), (r * 0.62, h), (r * 0.80, h * 0.86), (r * 0.80, h * 0.46),
+                  (r * 0.52, h * 0.38), (r * 0.52, 0.0), (0.0, 0.0)],
+                 steps=20, mark=mark).material({"by": "tag", "name": mark},
+                                               **(material or SEAL_RUBBER))
+
+
+def neck_stack(cap_r, floor_z, top_z, flare=1.55, material=None, mark="neck"):
+    """The filler neck standing off the pocket floor, carrying the cap's landing.
+
+    The reason this part has to exist: measured against the body panel, the cap's face is
+    only about 10 mm down, while the pocket floor around it is 45. A model that stands the
+    cap on the floor therefore has to make the pocket 10 mm deep to keep the cap where the
+    measurement puts it — and a 10 mm pocket is a saucer. The cap is near the top of a deep
+    box because it is standing on this.
+    """
+    r = cap_r
+    h = top_z - floor_z
+    return lathe([(0.0, top_z), (r * 1.02, top_z), (r * 1.10, top_z - h * 0.16),
+                  (r * flare * 0.86, floor_z + h * 0.22), (r * flare, floor_z),
+                  (0.0, floor_z)], steps=44,
+                 mark=mark).material({"by": "tag", "name": mark},
+                                     **(material or WELL_PLASTIC))
+
+
+def liner(plan, ref, depth=0.045, flange_w=0.011, flange_z=0.002, fold=0.005,
+          wall_k=0.745, ledge=0.008, floor_k=0.66, back=0.010, steps=96,
+          material=None, mark="well"):
+    """The moulded pocket liner, as the five distinct surfaces a photograph of one shows.
+
+    `filler_box` has three: a floor, one drafted wall, and a lip. Reading inwards from the
+    paint, the reference actually has
+
+        1. a flat FLANGE about 11 mm wide, parallel to the body and just below it,
+        2. a crisp FOLD where that flange turns down — the brightest line in the pocket,
+        3. a steep drafted WALL, 40-odd mm of it,
+        4. a LEDGE part way down where the moulding steps in,
+        5. the FLOOR.
+
+    Between them those five make four tone steps, and the tone steps are what read as depth.
+    One drafted wall makes a single smooth gradient, which is why a box pocket renders as a
+    dark trapezoid however the light is set: there is nothing in it for the light to break
+    on.
+
+    `plan` is a per-direction radius multiplier — pass `measured_plan(...)` to sweep a
+    photographed outline or `rrect_plan(...)` for a described one. `ref` is the radius the
+    section is authored against, so `ref` is the flange's OUTER edge, and the body panel's
+    hole has to be cut to the same plan at exactly that radius.
+    """
+    material = material or WELL_PLASTIC
+    fi = (ref - flange_w) / ref                      # flange inner edge, as a fraction
+    section = [
+        (0.0, -depth),
+        (ref * floor_k, -depth),                              # 5. the floor
+        (ref * (floor_k + 0.045), -depth + ledge * 0.75),     # 4. up onto the ledge
+        (ref * wall_k, -depth + ledge),                       #    the ledge itself
+        (ref * (fi - 0.020), -flange_z - fold * 1.6),         # 3. the drafted wall
+        (ref * (fi - 0.004), -flange_z - fold * 0.45),        # 2. the fold
+        (ref * fi, -flange_z - fold * 0.10),
+        (ref * 0.996, -flange_z),                             # 1. the flange
+        (ref, -flange_z + 0.0007),                            #    tipping up to meet the paint
+        (ref, -flange_z - 0.007),                             # over the edge, down the back
+        (ref * (fi + 0.02), -flange_z - 0.009),
+        (ref * (fi + 0.02), -depth - back),
+        (0.0, -depth - back),
+    ]
+    return (MeshProgram().profile([(r, z) for r, z in section], plane="xz", closed=False)
+            .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark=mark)
+            .material({"by": "tag", "name": mark}, **material))
+
+
+def door_strap(length=0.078, w=0.021, t=0.0032, bend_at=0.42, bend_deg=34.0,
+               stations=18, material=None, mark="door"):
+    """The stamped arm between the door and its hinge — a flat bar with one bend in it.
+
+    Visible in most of the reference frames and in every one where the door is open, because
+    it crosses the opening: whatever else the pocket contains, a wide matt-black bar cuts
+    over the top of it. Modelled as a swept section rather than a plate so the bend is a real
+    bend; a straight plate rotated into place leaves the strap either buried in the pocket
+    wall or floating clear of the door.
+    """
+    hw, ht = w / 2.0, t / 2.0
+    k = min(hw, ht) * 0.9
+    prof = [(-hw + k, -ht), (hw - k, -ht), (hw, -ht + k), (hw, ht - k),
+            (hw - k, ht), (-hw + k, ht), (-hw, ht - k), (-hw, -ht + k)]
+    a = math.radians(bend_deg)
+    path = []
+    for j in range(stations):
+        u = j / (stations - 1.0)
+        if u <= bend_at:
+            path.append([length * u, 0.0, 0.0])
+        else:
+            d = length * (u - bend_at)
+            path.append([length * bend_at + d * math.cos(a), 0.0, -d * math.sin(a)])
+    return (MeshProgram().profile(prof, plane="xy", closed=True).sweep(path, mark=mark)
+            .material({"by": "tag", "name": mark},
+                      **(material or mat((0.018, 0.018, 0.020), 0.0, 0.62))))

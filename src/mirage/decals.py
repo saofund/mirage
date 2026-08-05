@@ -321,8 +321,56 @@ def _fuelcap_face(w, h):
     return im
 
 
+def _arc_text(im, spec, ink=(72, 72, 68)):
+    """Set each line of `spec` — (text, radius, centre angle, glyph size, degrees per glyph)
+    — around a circle centred in `im`, glyphs turned to stand on the arc."""
+    w, h = im.size
+    cx, cy = w / 2, h / 2
+    for text, radius, centre, size, step in spec:
+        f = font(int(size * h))
+        a = centre - step * (len(text) - 1) / 2.0
+        for ch in text:
+            r = radius * min(w, h)
+            th = math.radians(a)
+            gx, gy = cx + r * math.cos(th), cy + r * math.sin(th)
+            g = Image.new("RGB", (int(size * h * 1.9), int(size * h * 1.9)), (0, 0, 0))
+            ImageDraw.Draw(g).text((g.width / 2, g.height / 2), ch, font=f, fill=ink,
+                                   anchor="mm")
+            g = g.rotate(-(a + 90.0), resample=Image.BICUBIC)
+            im.paste(g, (int(gx - g.width / 2), int(gy - g.height / 2)), g.convert("L"))
+            a += step
+    return im
+
+
+def _fuelcap_boyue(w, h):
+    """The printing on ONE photographed cap, transcribed rather than invented.
+
+    `_fuelcap_face` carries a plausible cap's markings — an Italian warning and a maker's
+    part number — and plausible is the wrong target when the render is going next to the
+    photograph it is copying. This is what that cap actually says, in the layout it says it
+    in: two concentric arcs on each wing, English outside and Chinese inside, top and bottom,
+    with the middle band left clear because the handle bar crosses there.
+
+    Both wings run the same way round the circle, so the lower one reads upside down from a
+    fixed viewpoint. That is not a bug to fix — it is what the photograph shows, because the
+    text is set to be read while the cap is being turned.
+    """
+    im = Image.new("RGB", (w, h), (5, 5, 6))
+    return _arc_text(im, (
+        # Sizes are glyph height as a fraction of the artwork, steps are degrees per glyph;
+        # both measured off the photograph. Pillow's face is wider than the condensed one
+        # a cap is tooled with, so the size is set from the text's HEIGHT and the step from
+        # its arc length, and the two are not derived from each other.
+        ("TIGHTEN UNTIL THREE CLICKS", 0.430, -90.0, 0.046, 5.6),
+        ("请拧紧至听到三声响", 0.337, -90.0, 0.040, 8.4),
+        ("否则发动机故障灯可能点亮", 0.337, 90.0, 0.038, 7.2),
+        ("OR SERVICE ENGINE LIGHT MAY TURN ON", 0.430, 90.0, 0.042, 4.4),
+    ))
+
+
 _LIBRARY = {
     "fuelcap_face": (512, 512, _fuelcap_face),
+    "fuelcap_boyue": (640, 640, _fuelcap_boyue),
     "pump_sign":    (512, 1116, _pump_sign),
     "fire_cabinet": (420, 820, _fire_cabinet),
     "fire_bucket":  (360, 300, _fire_bucket),

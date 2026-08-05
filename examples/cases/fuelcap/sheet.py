@@ -456,10 +456,85 @@ def cap_sheet(size=380):
     _grid(tiles, 4, OUT / "cap.png", cell=size)
 
 
+
+# --------------------------------------------------------------------------- #
+# the 1:1 reproduction
+# --------------------------------------------------------------------------- #
+HERO_PNG = ("_ref/bycar/博越L/"
+            "粗筛done2_博越L_2023款15T豪华型_29.png")
+# the aperture's bounding box in that photograph, from thresholding it out of the paint
+HERO_BBOX = (327, 349, 553, 430)
+HERO_FILL = 0.62          # fraction of the frame the opening's width takes, in both rows
+
+
+def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52):
+    """The measured reproduction, rendered at the photograph's own obliquity.
+
+    `azimuths` renders a strip of candidates instead of the single answer. The cap's ellipse
+    fixes how far the camera is off the panel normal but not which side of it the camera is
+    on — a circle projects to the same ellipse from either — so that one number is settled by
+    looking, and the strip is what there is to look at.
+    """
+    from . import hero as H
+    tmp = OUT / "_hero"
+    prog = H.build()
+    fov = 2.0 * math.atan(H.OPENING_REF / HERO_FILL / dist)
+    if azimuths:
+        tiles = []
+        for az in azimuths:
+            p = H.pose(dist=dist, azimuth_deg=az)
+            img = _render(prog, tmp / f"az{int(az)}", eye=p["eye"], target=p["target"],
+                          up=p["up"], w=size // 2, h=size // 2, spp=max(48, spp // 3),
+                          fov=fov, env=0.45, sun=0.95)
+            tiles.append((img, f"azimuth {az:.0f}"))
+        _grid(tiles, len(tiles), OUT / "hero_az.png", cell=size // 2)
+        return
+    p = H.pose(dist=dist)
+    img = _render(prog, tmp / "hero", eye=p["eye"], target=p["target"], up=p["up"],
+                  w=size, h=size, spp=spp, fov=fov, env=0.45, sun=0.95)
+    import cv2
+    cv2.imwrite(str(OUT / "hero_synth.png"), img[:, :, ::-1])
+    print(OUT / "hero_synth.png")
+
+
+def hero_compose(size=760):
+    """Photograph beside reproduction, framed the same way and exposed the same way.
+
+    Both rows are cropped so the OPENING spans the same fraction of the tile, which is the
+    only framing under which the two are comparable: match the cap instead and a pocket that
+    is the wrong size relative to its cap looks right in every frame.
+    """
+    import cv2
+    from .fit import REF
+    src = os.path.join(os.path.dirname(REF), *HERO_PNG.split("/"))
+    ph = (cv2.imdecode(np.fromfile(src, np.uint8), cv2.IMREAD_COLOR)
+          if os.path.exists(src) else None)
+    if ph is None:
+        raise SystemExit("the reference photograph is not in this checkout (_ref is ignored)")
+    x, y, w, h = HERO_BBOX
+    side = int(w / HERO_FILL)
+    cx, cy = x + w // 2, y + h // 2
+    x0, y0 = cx - side // 2, cy - side // 2
+    pad = max(0, -x0, -y0, x0 + side - ph.shape[1], y0 + side - ph.shape[0])
+    if pad:
+        ph = cv2.copyMakeBorder(ph, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+        x0, y0 = x0 + pad, y0 + pad
+    real = cv2.resize(ph[y0:y0 + side, x0:x0 + side], (size, size))
+    syn = cv2.imread(str(OUT / "hero_synth.png"))
+    if syn is None:
+        raise SystemExit("render hero_synth.png first (sheet hero)")
+    syn = cv2.resize(syn, (size, size))
+    cv2.putText(real, "PHOTOGRAPH", (10, 30), 0, 0.7, (60, 255, 255), 2)
+    cv2.putText(syn, "MIRAGE", (10, 30), 0, 0.7, (60, 255, 255), 2)
+    cv2.imwrite(str(OUT / "hero.png"), np.hstack([real, syn]))
+    print(OUT / "hero.png")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("what", choices=("parts", "scenes", "ids", "roi", "depth",
-                                     "closeup", "cap", "compose", "wide", "composewide"))
+                                     "closeup", "cap", "compose", "wide", "composewide",
+                                     "hero", "heroaz", "herocompose"))
     ap.add_argument("--synth", default=None, help="a generated dataset dir (for roi)")
     ap.add_argument("-n", type=int, default=6)
     ap.add_argument("--seed", type=int, default=3)
@@ -470,7 +545,13 @@ def main(argv=None):
     ap.add_argument("--closeup", action="store_true", help="ids at photograph magnification")
     a = ap.parse_args(argv)
     OUT.mkdir(parents=True, exist_ok=True)
-    if a.what == "closeup":
+    if a.what == "hero":
+        hero_sheet()
+    elif a.what == "heroaz":
+        hero_sheet(azimuths=(55.8, 145.8, 235.8, 325.8))
+    elif a.what == "herocompose":
+        hero_compose()
+    elif a.what == "closeup":
         closeup_sheet(a.n, a.seed, skip=a.skip)
     elif a.what == "wide":
         wide_sheet(a.n, a.seed, skip=a.skip)
