@@ -681,7 +681,8 @@ def _norm_superellipse(n, steps):
 
 
 def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48,
-          squareness=1.0, crown=0.0, crown_ax=0.0, hole_stretch=1.0, hole_ax=0.0):
+          squareness=1.0, crown=0.0, crown_ax=0.0, hole_stretch=1.0, hole_ax=0.0,
+          hole_plan=None):
     """The body panel around the pocket: an annular plate, not a plate with a hole in it.
 
     Same reasoning as `well` — the aperture is built, not subtracted. A ring of quads from
@@ -708,10 +709,15 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48
         for i in range(ring):
             a = TAU * i / ring
             c, sn = math.cos(a), math.sin(a)
-            # `squareness` 1 = a circle, 4-5 = the rounded rectangle over half the reference
-            # cars actually have. A perfect circle is the one aperture shape none of them is.
-            k = _KS(squareness, ring)[i]
-            px, py = rh * c * k, rh * sn * k
+            # `hole_plan` gives the aperture's radius per direction outright — that is how
+            # the hole is made to be the same ROUNDED RECTANGLE as the pocket it surrounds
+            # rather than merely the same nominal size. `squareness` is the older circular
+            # form, kept for the parts that still use it.
+            if hole_plan is not None:
+                px, py = hole_plan[i % len(hole_plan)] * c, hole_plan[i % len(hole_plan)] * sn
+            else:
+                k = _KS(squareness, ring)[i]
+                px, py = rh * c * k, rh * sn * k
             verts.append((px, py, z_of(px, py, z)))
         for i in range(ring):
             # The border walks the SQUARE's perimeter by arc length, not by angle. Mapping
@@ -821,6 +827,99 @@ def pocket(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.045,
                 (0.0, -neck_len)]
     p = lathe(section, steps=steps, mark=mark)
     return p.material({"by": "tag", "name": mark}, **(material or WELL_PLASTIC))
+
+
+def rrect_plan(w, h, n, steps, ref=None):
+    """A `spin` plan for a ROUNDED RECTANGLE of given width, height and corner sharpness.
+
+    `superellipse_plan` can only square a circle — it has no aspect ratio, so everything
+    built with it comes out as wide as it is tall. A filler opening is not: it is 170 by
+    150, and a fuel door more so. Returns the radius at each of `steps` directions divided
+    by `ref`, so a profile authored in units of `ref` sweeps out this outline.
+
+    `n` = 2 is an ellipse, 4-6 the rounded rectangles a body press actually makes."""
+    ref = ref or max(w, h) / 2.0
+    a, b = w / 2.0, h / 2.0
+    out = []
+    for j in range(steps):
+        t = TAU * j / steps
+        c, s = math.cos(t), math.sin(t)
+        # the superellipse |x/a|^n + |y/b|^n = 1, solved along the ray
+        k = ((abs(c) / a) ** n + (abs(s) / b) ** n) ** (-1.0 / n)
+        out.append(k / ref)
+    return out
+
+
+def filler_box(open_w=0.170, open_h=0.152, depth=0.062, draft=0.86, sq=4.4,
+               neck_r=0.048, neck_h=0.010, boss_off=(0.0, -0.012), lip=0.010,
+               rim_step=0.004, drain=True, steps=72, material=None, mark="well",
+               floor_material=None):
+    """The filler pocket as what it is: a rectangular BOX pressed into the body.
+
+    Every version of this part until now was a lathe — a round trench with a squareness plan
+    that only began at 85 mm radius, which is outside the entire cavity. So the whole pocket,
+    the part a photograph is mostly OF, was a smooth circular funnel, and no amount of work
+    on the cap could fix the fact that the thing it sits in was the wrong shape.
+
+    What the reference photographs show, on car after car: a rounded-rectangle opening about
+    170 x 150 mm with a pressed lip and a seal bead round it; four near-vertical drafted
+    walls; a flat floor 50-75 mm down; and on that floor a round raised boss carrying the
+    filler neck, sitting OFF-CENTRE — usually low and toward the hinge. Not concentric with
+    the opening, which is what a lathe forces it to be.
+
+    Built with the same generalised-lathe machinery, so it is still three ops: the section is
+    the box's own profile (floor, wall, lip) and the plan is the rounded rectangle. The boss
+    is a separate small lathe placed at its real offset, which is the whole reason it can be
+    off-centre at all."""
+    material = material or WELL_PLASTIC
+    ref = max(open_w, open_h) / 2.0
+    # Section in units where r = ref is the opening. Axis outward, floor first.
+    section = [
+        (0.0, -depth),
+        (ref * draft, -depth),                    # the floor, in by the wall's draft
+        (ref * draft + (ref - ref * draft) * 0.25, -depth + lip),
+        (ref, -rim_step),                         # up the drafted wall to the opening
+        (ref + lip, 0.0),                         # the pressed lip the door seals on
+        (ref + lip * 1.8, 0.0),
+        (ref + lip * 1.8, -0.008),                # and back down the outside
+        (ref + lip * 0.4, -0.010),
+        (ref + lip * 0.4, -depth - 0.008),
+        (0.0, -depth - 0.008),
+    ]
+    p = (MeshProgram().profile([(r, z) for r, z in section], plane="xz", closed=False)
+         .spin(axis="z", steps=steps, plan=rrect_plan(open_w, open_h, sq, steps, ref),
+               plan_from=0.0, mark=mark)
+         .material({"by": "tag", "name": mark}, **material))
+    # the boss the filler neck stands on — off-centre, which is the point
+    if neck_r > 0:
+        boss = lathe([(0.0, neck_h), (neck_r * 0.86, neck_h), (neck_r, neck_h * 0.35),
+                      (neck_r, 0.0), (0.0, 0.0)], steps=44, mark=mark)
+        boss = boss.material({"by": "tag", "name": mark},
+                             **(floor_material or material))
+        p = p.place(obj=boss, at=(boss_off[0], boss_off[1], -depth))
+    if drain:
+        # the drain, at the low corner of the floor rather than on the axis
+        p = p.place(obj=lathe([(0.0, 0.0), (0.006, 0.0), (0.006, -0.010), (0.0, -0.010)],
+                              steps=14, mark=mark),
+                    at=(open_w * 0.26, -open_h * 0.30, -depth + 0.0005), material=GRIME)
+    return p
+
+
+def opening_seal(open_w=0.170, open_h=0.152, sq=4.4, bead=0.0045, lip=0.010, steps=72,
+                 material=None):
+    """The rubber weatherstrip round the opening — the black band in every reference frame.
+
+    Small, and it does something out of proportion to its size: it is the only matt black
+    line separating body paint from pocket, so it draws the opening's outline in a scene
+    where paint and shadow otherwise meet with no edge at all."""
+    ref = max(open_w, open_h) / 2.0 + lip * 0.6
+    sec = [(ref - bead, 0.0), (ref, bead * 0.75), (ref + bead * 0.6, 0.0),
+           (ref, -bead * 0.4)]
+    return (MeshProgram().profile(sec, plane="xz", closed=True)
+            .spin(axis="z", steps=steps,
+                  plan=rrect_plan(open_w + 2 * lip * 0.6, open_h + 2 * lip * 0.6, sq, steps, ref),
+                  plan_from=0.0, mark="well")
+            .material({"by": "tag", "name": "well"}, **(material or SEAL_RUBBER)))
 
 
 def pressed_dish(cap_r=0.039, gap=0.006, sink=0.015, throat=0.030, wall_z=0.030, out_r=0.105,
@@ -1003,6 +1102,73 @@ def trim_ring(r_in=0.062, r_out=0.076, thick=0.003, screws=6, steps=44, material
         p = p.place(obj=screw(r=0.0026, head_h=0.0012),
                     at=(rm * math.cos(a), rm * math.sin(a), 0.0005))
     return p
+
+
+def fuel_door(w=0.186, h=0.166, sq=4.2, flange=0.014, face=0.007, rim=0.013,
+              open_deg=150.0, az=180.0, hinge_r=0.098, gap=0.004, steps=64,
+              skin=None, liner=None, strap=True, arm_w=0.020, arm_t=0.0025,
+              latch=True, mark="door"):
+    """The fuel door: a shallow ROUNDED-RECTANGLE pressing, hinged at one side.
+
+    The old part was a flat slab whose plan was a plain rectangle, hinged below the pocket
+    and standing out at ninety degrees like a shelf. Against the reference photographs that
+    is wrong in every one of its four decisions.
+
+    * **Shape.** It is the opening's own outline, a little larger — a rounded rectangle with
+      a 25 mm corner radius, not a rectangle and not a square. Same `spin` + plan machinery
+      as the pocket, so the two match by construction rather than by two sets of numbers.
+    * **Section.** It is a pressing: an outer skin in body colour, an edge that turns down,
+      a return flange all round, and a liner panel set a few millimetres inside it. Seen
+      from the pocket — which is where the camera is — that flange is the shape you read.
+    * **Hinge.** At a SIDE, on a cranked steel strap, not along the bottom.
+    * **Angle.** Real ones are usually swung right back, 140 to 175 degrees, so the door
+      lies nearly flat against the wing and presents its edge. At 95 it fills the frame.
+
+    Returns the door already swung and placed in the POCKET's frame, so the caller only has
+    to put the pocket where the pocket goes. `az` is which side the hinge is on, measured
+    round the panel normal."""
+    skin = skin or {"color": [0.3, 0.3, 0.3], "metallic": 0.6, "roughness": 0.15}
+    liner = liner or WELL_PLASTIC
+    ref = max(w, h) / 2.0
+    section = [
+        (0.0, 0.0), (ref * 0.965, 0.0),            # the outer skin
+        (ref, -0.0028),                            # the edge radius
+        (ref, -flange),                            # the return flange, turning into the car
+        (ref - rim, -flange),
+        (ref - rim, -face),                        # the liner face, set inside the flange
+        (0.0, -face),
+    ]
+    d = (MeshProgram().profile(section, plane="xz", closed=False)
+         .spin(axis="z", steps=steps, plan=rrect_plan(w, h, sq, steps, ref),
+               plan_from=0.0, mark=mark))
+    # paint every face first, THEN the two big ones — selecting only +z and -z leaves the
+    # turned edge on the renderer's default albedo, a bright rim right round a dark door
+    d = d.material({"by": "all"}, **liner)
+    d = d.material({"by": "normal", "axis": "z", "sign": 1}, **skin)
+    d = d.material({"by": "normal", "axis": "z", "sign": -1}, **liner)
+    if latch:
+        # the striker on the free edge, opposite the hinge
+        d = d.place(obj=prism([(-0.008, -0.005), (0.008, -0.005), (0.008, 0.005),
+                               (-0.008, 0.005)], -flange, -flange - 0.006, mark=mark),
+                    at=(-(ref - rim * 1.4), 0.0, 0.0), material=CATCH_STEEL)
+
+    # hinge at the door's own -x edge: shift so that edge sits on the origin, then swing
+    edge = ref + gap
+    p = MeshProgram().place(obj=d, at=(edge, 0.0, 0.0), rotate=(0.0, 0.0, 0.0))
+    if strap:
+        # The cranked strap, on the door and swinging with it. Its far end reaches back to
+        # the body when the door is open, which is the pose it is in for every frame this
+        # case renders — a hinge modelled as two rigid halves would need the second half to
+        # move, and at 150 degrees this is the half you can see.
+        p = p.place(obj=hinge_arm(length=0.052, w=arm_w, t=arm_t, holes=2),
+                    at=(0.004, -h * 0.22, -flange - arm_t), rotate=(0.0, 0.0, 0.0))
+    p = MeshProgram().place(obj=p, at=(0.0, 0.0, 0.0), rotate=(0.0, -open_deg, 0.0))
+    # out to the hinge line, then round to whichever side the hinge is on
+    p = MeshProgram().place(obj=p, at=(-hinge_r, 0.0, 0.0))
+    # `az` names the side the HINGE is on, which is the way anybody describes a fuel door.
+    # The construction above swings the door back over -x, so the extra half turn is what
+    # makes the parameter mean what it says instead of its opposite.
+    return MeshProgram().place(obj=p, at=(0.0, 0.0, 0.0), rotate=(0.0, 0.0, az + 180.0))
 
 
 def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None, liner=None,

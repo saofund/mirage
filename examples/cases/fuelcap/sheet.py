@@ -289,7 +289,7 @@ def depth_sheet(synth_dir, n=6, seed=0, span=(-45.0, 20.0)):
     print(OUT / "depth.png", sheet.shape)
 
 
-def _real_crops(n=8, size=300, cls=1, pad=0.30, skip=0):
+def _real_crops(n=8, size=300, cls=1, pad=0.30, skip=0, one_per_car=True):
     """Big crops of the annotated inner cap, one per car, straight off the reference set.
 
     The row this returns is the only thing worth scoring a render against. Every metric in
@@ -307,7 +307,7 @@ def _real_crops(n=8, size=300, cls=1, pad=0.30, skip=0):
     for png in sorted(glob.glob(os.path.join(REF, "bycar", "*", "*.png"))):
         car = os.path.basename(os.path.dirname(png))
         txt = png[:-4] + ".txt"
-        if car in seen or not os.path.exists(txt):
+        if (one_per_car and car in seen) or not os.path.exists(txt):
             continue
         poly = None
         for line in open(txt):
@@ -327,6 +327,38 @@ def _real_crops(n=8, size=300, cls=1, pad=0.30, skip=0):
         seen.add(car)
         out.append(cv2.resize(c, (size, size)))
     return out[skip:skip + n]
+
+
+def wide_sheet(n=8, seed=11, size=330, skip=0, pad=1.5):
+    """The whole filler REGION, framed like the reference photographs of it.
+
+    `closeup` frames on the cap, and every judgement this case has ever made was made in
+    that frame. So the door, the opening's pressed lip, the seal bead and the piece of body
+    that carries them were never once in shot — and they are most of what somebody looking
+    at a photograph of a fuel filler actually sees. The cap is a knob in the middle of it.
+
+    Frames on the POCKET: the cap's bounding box plus 150% on each side, which is the crop
+    the reference row uses, so the two rows are the same operation on different worlds."""
+    import cv2
+    tmp = OUT / "_wide"
+    tmp.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(seed)
+    tiles = []
+    while len(tiles) < n:
+        v = S.sample(rng, domain="prod")
+        v["dist"], v["aim_off"] = 0.55, [0.0, 0.0]
+        v["obliq"] = float(rng.uniform(0.0, 30.0))
+        prog, gt = S.build(v)
+        (tmp / "scene.json").write_text(prog.to_json(), encoding="utf-8")
+        fov = 2.0 * math.atan(v["d_cap"] * (0.5 + pad) / v["dist"])
+        tiles.append(_render(prog, tmp / f"w{len(tiles)}", eye=gt["eye"], target=gt["target"],
+                             w=size, h=size, spp=96, up=gt["up"], fov=fov,
+                             env=0.45, sun=0.95))
+    row = np.hstack([t[:, :, ::-1] for t in tiles])
+    cv2.putText(row, "SYNTH", (8, 24), 0, 0.6, (60, 255, 255), 2)
+    cv2.imwrite(str(OUT / "wide_synth.png"), row)
+    print(OUT / "wide_synth.png")
+    compose_sheet(size, skip, synth="wide_synth.png", out="wide.png", pad=pad)
 
 
 def closeup_sheet(n=8, seed=11, size=300, real=True, skip=0):
@@ -375,22 +407,22 @@ def closeup_sheet(n=8, seed=11, size=300, real=True, skip=0):
         compose_sheet(size, skip)
 
 
-def compose_sheet(size=300, skip=0):
+def compose_sheet(size=300, skip=0, synth="closeup_synth.png", out="closeup.png", pad=0.30):
     """Stack the (possibly remotely rendered) synth row under a row of real crops."""
     import cv2
-    row = cv2.imread(str(OUT / "closeup_synth.png"))
+    row = cv2.imread(str(OUT / synth))
     if row is None:
-        print("no closeup_synth.png yet")
+        print(f"no {synth} yet")
         return
-    rr = _real_crops(row.shape[1] // size, size, skip=skip)
+    rr = _real_crops(row.shape[1] // size, size, skip=skip, pad=pad)
     if not rr:
         print("no reference crops")
         return
     top = np.hstack(rr)
     cv2.putText(top, "REAL", (8, 24), 0, 0.6, (60, 255, 255), 2)
     w = min(top.shape[1], row.shape[1])
-    cv2.imwrite(str(OUT / "closeup.png"), np.vstack([top[:, :w], row[:, :w]]))
-    print(OUT / "closeup.png")
+    cv2.imwrite(str(OUT / out), np.vstack([top[:, :w], row[:, :w]]))
+    print(OUT / out)
 
 
 def cap_sheet(size=380):
@@ -427,7 +459,7 @@ def cap_sheet(size=380):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("what", choices=("parts", "scenes", "ids", "roi", "depth",
-                                     "closeup", "cap", "compose"))
+                                     "closeup", "cap", "compose", "wide", "composewide"))
     ap.add_argument("--synth", default=None, help="a generated dataset dir (for roi)")
     ap.add_argument("-n", type=int, default=6)
     ap.add_argument("--seed", type=int, default=3)
@@ -440,8 +472,12 @@ def main(argv=None):
     OUT.mkdir(parents=True, exist_ok=True)
     if a.what == "closeup":
         closeup_sheet(a.n, a.seed, skip=a.skip)
+    elif a.what == "wide":
+        wide_sheet(a.n, a.seed, skip=a.skip)
     elif a.what == "compose":
         compose_sheet(skip=a.skip)
+    elif a.what == "composewide":
+        compose_sheet(330, a.skip, synth="wide_synth.png", out="wide.png", pad=1.5)
     elif a.what == "cap":
         cap_sheet()
     elif a.what == "parts":

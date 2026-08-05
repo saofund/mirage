@@ -142,7 +142,56 @@ def test_pocket_hardware_keeps_off_the_cap():
 # --------------------------------------------------------------------------- #
 # the assembly
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("style", ["liner", "dish"])
+def test_the_opening_is_a_rounded_rectangle_not_a_circle():
+    # `superellipse_plan` has no aspect ratio, so everything built with it came out as wide
+    # as it is tall. Every reference opening is about 170 by 150 with a 25 mm corner radius.
+    co = verts(P.filler_box(open_w=0.170, open_h=0.152, sq=4.4, drain=False))
+    top = co[co[:, 2] > -0.002]
+    wx = top[:, 0].max() - top[:, 0].min()
+    hy = top[:, 1].max() - top[:, 1].min()
+    assert 1.06 < wx / hy < 1.20, f"aspect {wx / hy:.3f}"
+    # and it is SQUARE-ish: a circle's corner radius equals its radius, a superellipse's is
+    # much smaller, so the diagonal reaches further than the axis does
+    r_ax = 0.5 * wx
+    diag = max(math.hypot(x, y) for x, y, z in top)
+    assert diag > r_ax * 1.10, "the corners must reach past the sides — this is a rectangle"
+
+
+def test_the_filler_boss_can_sit_off_centre():
+    # A deliberately small boss, so its points and the drafted wall's cannot overlap in
+    # radius — the wall is at 73 mm here and the boss reaches 50.
+    off = (0.012, -0.020)
+    co = verts(P.filler_box(boss_off=off, neck_r=0.030, neck_h=0.010, drain=False))
+    floor = co[:, 2].min()
+    boss = co[(co[:, 2] > floor + 0.002) & (radii(co) < 0.055)]
+    cx = 0.5 * (boss[:, 0].min() + boss[:, 0].max())
+    cy = 0.5 * (boss[:, 1].min() + boss[:, 1].max())
+    assert abs(cx - off[0]) < 0.004 and abs(cy - off[1]) < 0.004, f"boss at {cx:.3f},{cy:.3f}"
+
+
+@pytest.mark.parametrize("open_deg", [120.0, 150.0, 175.0])
+def test_an_open_door_does_not_lie_across_its_own_opening(open_deg):
+    """A door swung back must be BESIDE the pocket, not over it.
+
+    The old part hinged along its own bottom edge and stood out at ninety degrees; whether
+    it cleared the opening depended on numbers nobody was checking. The camera looks down
+    the pocket's axis, so a door over the opening hides the entire subject."""
+    w, h, hinge_r = 0.196, 0.176, 0.104
+    co = verts(P.fuel_door(w=w, h=h, open_deg=open_deg, az=180.0, hinge_r=hinge_r))
+    over = co[(np.abs(co[:, 0]) < w * 0.42) & (np.abs(co[:, 1]) < h * 0.42)]
+    assert len(over) == 0, f"{len(over)} door vertices over the opening at {open_deg} deg"
+
+
+@pytest.mark.parametrize("az", [0.0, 90.0, 180.0, 270.0])
+def test_the_door_hinges_on_the_side_it_was_told_to(az):
+    co = verts(P.fuel_door(open_deg=150.0, az=az, hinge_r=0.100))
+    c = co.mean(0)
+    want = np.array([math.cos(math.radians(az)), math.sin(math.radians(az))])
+    got = c[:2] / (np.linalg.norm(c[:2]) + 1e-12)
+    assert float(got @ want) > 0.9, f"az={az}: door centroid at {c[:2]}"
+
+
+@pytest.mark.parametrize("style", ["liner", "dish", "box"])
 def test_nothing_is_placed_over_the_cap_face(style):
     """No surface may sit above the cap's own face inside the cap's radius.
 
@@ -171,7 +220,7 @@ def test_nothing_is_placed_over_the_cap_face(style):
 def test_both_pocket_families_are_actually_drawn():
     rng = np.random.default_rng(0)
     seen = {S.sample(rng)["pocket_style"] for _ in range(60)}
-    assert seen == {"liner", "dish"}
+    assert seen == {"box", "dish"}
 
 
 def test_every_variant_builds():

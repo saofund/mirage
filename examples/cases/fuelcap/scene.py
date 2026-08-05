@@ -124,11 +124,30 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # half, which biases far more than the geometry — it sets the exposure of the whole
         # scene, and a network trained only on light-trap pockets meets a silver one on the
         # first white car it is pointed at.
-        pocket_style=str(rng.choice(["liner", "liner", "dish", "dish"])),
+        pocket_style=str(rng.choice(["box", "box", "box", "dish"])),
         dish_gap=_lerp(rng, 0.0035, 0.010),      # how much wider than the cap its hole is
         dish_throat=_lerp(rng, 0.018, 0.042),    # the drawn wall down from that hole
         dish_sq=float(rng.choice([2.4, 3.0, 3.4, 4.0, 4.6])),
         n_bumpers=int(rng.choice([0, 2, 2, 3])),
+        # THE OPENING. A rounded rectangle about 170 x 150 with a 25 mm corner radius, on
+        # car after car — never a circle, and never as tall as it is wide.
+        open_w=_lerp(rng, 0.152, 0.198), open_h=_lerp(rng, 0.136, 0.176),
+        open_sq=_lerp(rng, 3.2, 6.0),
+        # How far the paint stands proud of the cap's face. Measured on the real clouds at
+        # 22 mm, and every photograph agrees: the cap sits well DOWN inside the box, with
+        # its whole fluted wall below the body surface. The kit had 10.5, from a statistic
+        # that was averaging a box into a saucer.
+        recess=_lerp(rng, 0.015, 0.034),
+        box_lip=_lerp(rng, 0.007, 0.014), box_draft=_lerp(rng, 0.80, 0.93),
+        # the filler boss is OFF-CENTRE in the box, low and toward the hinge
+        boss_off=[_lerp(rng, -0.020, 0.020), _lerp(rng, -0.026, 0.006)],
+        boss_h=_lerp(rng, 0.006, 0.016),
+        # which side the door hinges on, and how far back it is swung
+        hinge_az=float(rng.choice([0.0, 90.0, 180.0, 180.0, 270.0])),
+        door_overlap=_lerp(rng, 0.006, 0.016),
+        door_flange=_lerp(rng, 0.010, 0.020), door_face=_lerp(rng, 0.005, 0.011),
+        door_latch=bool(rng.random() < 0.8), door_strap=bool(rng.random() < 0.85),
+        seal=bool(rng.random() < 0.85), seal_bead=_lerp(rng, 0.0030, 0.0060),
         # the furniture down the recess, and the shape of the aperture — both are what
         # `fit.complexity` says is missing between 6 and 24 mm
         well_ribs=int(rng.choice([0, 3, 4, 4, 5, 6])),
@@ -187,7 +206,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # box: at an 18 mm return flange it renders as a tray held out toward the camera.
         # And a real one is usually swung well back toward the wing rather than standing
         # square, so it presents its edge, not its face.
-        door_open=_lerp(rng, 95.0, 165.0),
+        door_open=_lerp(rng, 118.0, 176.0),
         door_w=_lerp(rng, 0.115, 0.160), door_h=_lerp(rng, 0.115, 0.165),
         paint=str(rng.choice(M.PAINT_NAMES)),
         tether=bool(rng.random() < 0.7), tether_az=_lerp(rng, 0.0, 360.0),
@@ -304,16 +323,38 @@ def build(v):
     # panel leaves the car floating in a square of sky, and every pixel of that sky is a
     # pixel of background a real frame would have had car in.
     panel_size = max(0.55, 3.0 * v["dist"])
-    # ONE lathe from the measured section carries the whole pocket: the trench around the
-    # cap, its outer wall, the dish the door lies in, and the run out onto the body. The
-    # three hand-built parts this replaces could not reach that shape between them — see
-    # parts.MEASURED_SECTION_MM.
     pocket_r = 0.100 * v["r_gain"]
-    # The body panel meets the pocket at its outer radius, and sits where the measured
-    # section says the paint is: 10.5 mm above the cap face, scaled with z_gain.
-    body_z = MEASURED_BODY_MM * 1e-3 * v["z_gain"]
-    dish = v.get("pocket_style", "liner") == "dish"
-    if dish:
+    style = v.get("pocket_style", "box")
+    dish = style == "dish"
+    # How far the paint stands proud of the cap face. `MEASURED_BODY_MM` was 10.5, taken
+    # from a radially-binned median of the real clouds — and radially binning a rectangular
+    # BOX is exactly how a box turns into a saucer. The photographs and the cloud's own
+    # recess statistic both say 20-25 mm, and the difference is visible immediately: at 10
+    # the cap sits nearly flush in a shallow dip, at 22 it sits down inside a pocket with
+    # its whole fluted wall below the body surface, which is what every reference frame has.
+    body_z = v.get("recess", MEASURED_BODY_MM * 1e-3 * v["z_gain"])
+    if style == "box":
+        # THE PRESSED BOX — rounded-rectangle opening, four drafted walls, a flat floor and
+        # an off-centre filler boss. Replaces the lathe, which could not be this shape: a
+        # solid of revolution puts the neck in the middle of the aperture by construction,
+        # and no real filler pocket has it there.
+        boss = np.array([v["boss_off"][0], v["boss_off"][1], 0.0])
+        depth = body_z + v["flange"] + 0.002 + v["boss_h"]
+        prog = prog.place(obj=P.filler_box(open_w=v["open_w"], open_h=v["open_h"],
+                                           depth=depth, draft=v["box_draft"],
+                                           sq=v["open_sq"], neck_r=v["d_cap"] * 0.62,
+                                           neck_h=v["boss_h"], boss_off=(0.0, 0.0),
+                                           lip=v["box_lip"], drain=v["well_drain"],
+                                           material=well_mat),
+                          # the BOX moves so its boss lands under the cap, rather than the
+                          # cap moving — the cap is the origin and the label is about it
+                          at=tuple(cap_c + axis * body_z - R @ boss), rotate=tilt)
+        if v["seal"]:
+            prog = prog.place(obj=P.opening_seal(open_w=v["open_w"], open_h=v["open_h"],
+                                                 sq=v["open_sq"], bead=v["seal_bead"],
+                                                 lip=v["box_lip"]),
+                              at=tuple(cap_c + axis * body_z - R @ boss), rotate=tilt)
+    elif dish:
         # The pressed-metal family: the panel itself is the pocket, so it is painted, and
         # the cap's hole is only a few millimetres wider than the cap.
         prog = prog.place(obj=P.pressed_dish(cap_r=v["d_cap"] / 2.0, gap=v["dish_gap"],
@@ -340,8 +381,20 @@ def build(v):
     bt, baz = math.radians(v["body_tilt"]), math.radians(v["body_tilt_az"])
     # the body is tilted about an axis in its own plane, at azimuth `baz`
     body_rot = _compose(tilt, v["body_tilt"], v["body_tilt_az"])
+    # The panel's hole is the box's own outline, generated from the same plan — so the two
+    # match by construction. Two independent sets of numbers for the same edge is what let
+    # the pocket's outer skirt show through the gap once already.
+    hole_plan = None
+    hole_at = cap_c + axis * body_z
+    if style == "box":
+        lip = v["box_lip"]
+        ref = max(v["open_w"], v["open_h"]) / 2.0
+        hole_plan = [k * (ref + lip * 1.7) for k in
+                     P.rrect_plan(v["open_w"] + 2 * lip * 1.7, v["open_h"] + 2 * lip * 1.7,
+                                  v["open_sq"], 48, ref)]
+        hole_at = hole_at - R @ np.array([v["boss_off"][0], v["boss_off"][1], 0.0])
     prog = prog.place(obj=P.panel(size=panel_size, hole_d=2 * pocket_r * 0.995,
-                                  thick=0.009, material=paint,
+                                  thick=0.009, material=paint, hole_plan=hole_plan,
                                   squareness=v["pan_sq"], crown=v["crown"],
                                   crown_ax=v["crown_ax"],
                                   hole_stretch=1.0 / max(math.cos(bt), 0.35),
@@ -352,7 +405,7 @@ def build(v):
                                   # tilt, and the panel then slices across the recess: in
                                   # an id map, the well comes out as a crescent.
                                   hole_ax=baz + math.pi / 2),
-                      at=tuple(cap_c + axis * body_z), rotate=body_rot)
+                      at=tuple(hole_at), rotate=body_rot)
     if v["trim"]:
         prog = prog.place(obj=P.trim_ring(r_in=pocket_r * 0.62,
                                           r_out=pocket_r * 0.62 + v["trim_w"],
@@ -370,7 +423,8 @@ def build(v):
     # bare drawn wall and a couple of bumpers, nothing else. Putting stiffening ribs and a
     # drain notch on painted sheet metal is the sort of detail that is individually
     # defensible and wrong for the car it is on.
-    if not dish and (v["well_ribs"] or v["well_drain"] or v["n_screws"] or v["n_catches"]):
+    if style == "liner" and (v["well_ribs"] or v["well_drain"] or v["n_screws"]
+                             or v["n_catches"]):
         # the ribs and drain live down in the trench, whose floor the section puts at
         # roughly -33 mm scaled
         trench = 0.0326 * v["z_gain"]
@@ -397,12 +451,29 @@ def build(v):
                                  else M.SEAL_RUBBER),
                       at=tuple(cap_c - axis * v["flange"]),
                       rotate=(v["tilt_x"], v["tilt_y"], 0.0))
-    prog = prog.place(obj=P.door(w=v["door_w"], h=v["door_h"], open_deg=v["door_open"],
-                                 hinge_x=-(pocket_r + 0.004), skin=paint,
-                                 liner=well_mat, rim=v["door_rim"],
-                                 ribs=v["door_ribs"], arm_len=v["arm_len"],
-                                 arm_w=v["arm_w"], arm_holes=v["arm_holes"]),
-                      at=tuple(cap_c + axis * (body_z + 0.004)), rotate=body_rot)
+    if style == "box":
+        # The door is the opening's own outline plus an overlap, hinged at ONE SIDE and
+        # swung right back — which is where the reference photographs have it, lying nearly
+        # flat against the wing and presenting its edge rather than its face.
+        ov, lip = v["door_overlap"], v["box_lip"]
+        prog = prog.place(obj=P.fuel_door(w=v["open_w"] + 2 * (lip + ov),
+                                          h=v["open_h"] + 2 * (lip + ov),
+                                          sq=v["open_sq"], flange=v["door_flange"],
+                                          face=v["door_face"], open_deg=v["door_open"],
+                                          az=v["hinge_az"],
+                                          hinge_r=max(v["open_w"], v["open_h"]) / 2.0
+                                          + lip * 1.7 + 0.004,
+                                          skin=paint, liner=well_mat,
+                                          strap=v["door_strap"], arm_w=v["arm_w"],
+                                          latch=v["door_latch"]),
+                          at=tuple(hole_at + axis * 0.001), rotate=body_rot)
+    else:
+        prog = prog.place(obj=P.door(w=v["door_w"], h=v["door_h"], open_deg=v["door_open"],
+                                     hinge_x=-(pocket_r + 0.004), skin=paint,
+                                     liner=well_mat, rim=v["door_rim"],
+                                     ribs=v["door_ribs"], arm_len=v["arm_len"],
+                                     arm_w=v["arm_w"], arm_holes=v["arm_holes"]),
+                          at=tuple(cap_c + axis * (body_z + 0.004)), rotate=body_rot)
     if v["tether"]:
         a = math.radians(v["cap_spin"] + v["tether_az"])
         prog = prog.place(obj=P.cap_boss(v["d_cap"] / 2, material=cap_mat),
