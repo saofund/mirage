@@ -63,6 +63,7 @@ def paint(p, on, m):
 ALU     = mat((0.62, 0.63, 0.65), 1.0, 0.25)          # polished aluminium column
 BLACKM  = mat((0.045, 0.045, 0.048), 0.5, 0.42)       # the black base / brackets
 GLIDE   = mat((0.10, 0.10, 0.10), 0.0, 0.75)
+STUDIO  = mat((0.43, 0.435, 0.44), 0.0, 0.78)         # neutral seamless paper cove
 
 
 # ---- sculpting a cage through queries ------------------------------------------ #
@@ -409,10 +410,27 @@ def ottoman():
     return p
 
 
+def cyclorama(width=7.0, front=-3.2, back=1.20, height=2.8, radius=0.62):
+    """A product studio's seamless floor-to-wall paper sweep."""
+    yz = [(front, -0.025), (back - radius, -0.025)]
+    for k in range(1, 13):
+        a = (math.pi / 2) * k / 12
+        yz.append((back - radius + radius * math.sin(a),
+                   -0.025 + radius * (1.0 - math.cos(a))))
+    yz.append((back, height))
+    verts = []
+    for x in (-width / 2, width / 2):
+        verts.extend((x, y, z) for y, z in yz)
+    n = len(yz)
+    faces = [[i, n + i, n + i + 1, i + 1] for i in range(n - 1)]
+    return MeshProgram().mesh(verts=verts, faces=faces, mark="studio")
+
+
 def scene():
     p = MeshProgram()
+    p.place(cyclorama(), material=STUDIO)
     p.place(chair())
-    p.place(ottoman(), at=[0, -0.80, 0])
+    p.place(ottoman(), at=[-0.30, -0.72, 0], rotate=[0, 0, -7])
     return p
 
 
@@ -554,7 +572,8 @@ def main():
     png = render(p, "hero", spp, 1400, 920, [1.58, -2.92, 1.17], [-0.04, -0.23, 0.41],
                  fov=0.44, extra=["--sun", "0.58", "--env", "0.52", "--exposure", "1.02",
                                   "--sun-dir", "0.52", "-0.32", "0.79",
-                                  "--sky-tint", "1.14", "1.06", "0.91", "--sky-flat", "0.82",
+                                  "--sky-tint", "1.32", "1.13", "0.72", "--sky-flat", "1.0",
+                                  "--no-ground",
                                   "--aperture", "0.006", "--bloom", "0.035", "--denoise", "4"])
     print("wrote", png)
     if not preview:
