@@ -90,7 +90,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # grips, occasionally none. The old `teeth` (30-48 fine scallops on the rim) turned
         # the cap into a cog, which is a recognisable object and not this one.
         flutes=int(rng.choice([0, 10, 11, 12, 12, 13, 14, 16])),
-        flute_depth=_lerp(rng, 0.018, 0.042),
+        flute_depth=_lerp(rng, 0.040, 0.095),
         skirt=_lerp(rng, 0.014, 0.028),
         # The pocket. The aperture is only a little wider than the cap — on every one of
         # the ninety reference cars the cap very nearly fills its hole. Allowing it to be

@@ -293,7 +293,7 @@ def stadium(length, width, arc=10):
 # the cap
 # --------------------------------------------------------------------------- #
 def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0.66,
-        rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.030,
+        rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.065,
         skirt=0.020, neck_d=0.048, bevel=0.055, spin=0.0, printing=True, grip="rib",
         lobes=0, lobe_depth=0.06, waist=0.71, material=None, rib_material=None, steps=64):
     """The inner fuel cap: a fluted cylinder with a waisted handle moulded across its face.

@@ -395,11 +395,17 @@ def cap_sheet(size=380):
     tiles = []
     for name, kw in variants:
         prog = P.cap(**kw)
-        for ang, tag in ((0.10, "top"), (0.62, "oblique")):
+        for ang, tag in ((0.16, "top"), (0.62, "oblique")):
             eye = (0.16 * math.sin(ang) * 0.6, -0.16 * math.sin(ang),
                    0.16 * math.cos(ang))
+            # up = +y, NOT the +z this module defaults to. The cap's axis IS +z, so on a
+            # near head-on view the up vector is parallel to the view direction and the
+            # camera basis is degenerate: the roll comes out arbitrary and the part appears
+            # rotated by a random angle that changes with the elevation. Two rounds went
+            # into "why is the handle diagonal" before that turned out to be the camera.
             img = _render(prog, tmp / f"{name.split()[0]}_{tag}", eye=eye,
-                          target=(0, 0, 0.002), w=size, h=size, spp=120, fov=0.62)
+                          target=(0, 0, 0.002), w=size, h=size, spp=120, fov=0.62,
+                          up=(0, 1, 0))
             tiles.append((img, f"{name}  {tag}"))
     _grid(tiles, 4, OUT / "cap.png", cell=size)
 

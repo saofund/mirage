@@ -290,10 +290,22 @@ def _fuelcap_face(w, h):
     # Worn light-grey printing: linear 0.28, not the paper-white it would be in sRGB. On
     # the reference caps the ink is half rubbed away and reads well below the highlights.
     ink = (72, 72, 68)
+    # SIZE, measured off the head-on frames rather than chosen: a glyph is about 0.037 of
+    # the cap's diameter and the arcs run three quarters of the way round, forty-odd
+    # characters between them. At 0.050 with six degrees a character — what this drew first
+    # — twenty letters filled the annulus edge to edge and the printing became the loudest
+    # feature of the part instead of a faint marking near the rim. It is the same error as
+    # a too-big grip: at the sixty-pixel scale the sensor works at nobody could see it.
+    #
+    # Four arcs on two radii, top and bottom, with the sides left clear — that is the layout
+    # every photographed cap in the set uses, and the clear sides are where the handle's
+    # ends land. A single arc long enough to carry all the text wraps past 230 degrees and
+    # collides with the inner line, which is what the first attempt at this did.
     for text, radius, start, size, step in (
-            ("ATTENZIONE  RIMUOVERE PIANO", 0.415, -128.0, 0.050, 6.0),
-            ("WARNING  REMOVE SLOWLY", 0.415, 52.0, 0.050, 6.0),
-            ("注意  使用 92 号及以上汽油", 0.325, 150.0, 0.044, 7.4)):
+            ("ATTENZIONE  RIMUOVERE PIANO", 0.425, -152.0, 0.037, 4.5),
+            ("WARNING  REMOVE SLOWLY", 0.425, 30.0, 0.037, 4.5),
+            ("请拧紧至听到三次响声", 0.322, -126.0, 0.030, 5.6),
+            ("SGMW 8450557", 0.322, 54.0, 0.031, 5.0)):
         f = font(int(size * h))
         a = start
         for ch in text:
