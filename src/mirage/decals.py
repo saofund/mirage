@@ -361,15 +361,14 @@ def _fuelcap_boyue(w, h):
         # both measured off the photograph. Pillow's face is wider than the condensed one
         # a cap is tooled with, so the size is set from the text's HEIGHT and the step from
         # its arc length, and the two are not derived from each other.
-        # The wing angles look inverted and are not. `with_decal` runs the artwork's v axis
-        # along the part's +y, and the renderer samples v = 0 at the image's FIRST row —
-        # which is the row a drawing library calls the top. So the arc drawn at the top of
-        # this image arrives at the cap's -y, and the text that has to read upright on the
-        # car is the one set at +90 here.
-        ("TIGHTEN UNTIL THREE CLICKS", 0.430, 90.0, 0.046, 5.6),
-        ("请拧紧至听到三声响", 0.337, 90.0, 0.040, 8.4),
-        ("否则发动机故障灯可能点亮", 0.337, -90.0, 0.038, 7.2),
-        ("OR SERVICE ENGINE LIGHT MAY TURN ON", 0.430, -90.0, 0.042, 4.4),
+        # Wing angles are in the artwork's own frame and map straight through: -90 is the
+        # image's top row, and `with_decal` runs v along the part's +y, so this arc arrives
+        # at the top of the cap. (Checked against the photograph at magnification after a
+        # round spent "fixing" it the other way on a small composite.)
+        ("TIGHTEN UNTIL THREE CLICKS", 0.430, -90.0, 0.046, 5.6),
+        ("请拧紧至听到三声响", 0.337, -90.0, 0.040, 8.4),
+        ("否则发动机故障灯可能点亮", 0.337, 90.0, 0.038, 7.2),
+        ("OR SERVICE ENGINE LIGHT MAY TURN ON", 0.430, 90.0, 0.042, 4.4),
     ))
 
 

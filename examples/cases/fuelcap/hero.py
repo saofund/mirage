@@ -149,7 +149,11 @@ def _plan(steps):
 def build(paint=None, cap_material=None, printing=True):
     """The assembly, in the panel frame: paint at z = 0, outward is +z, cap at the origin."""
     paint = paint or M.PAINTS["white"]
-    cap_mat = cap_material or M.mat((0.021, 0.021, 0.023), 0.0, 0.44)
+    # ROUGHNESS is what was making the cap read pale. A fuel cap is moulded
+    # polypropylene with a matt grain, and at 0.44 the bar's whole flat top works as
+    # one broad mirror onto the sky — 150 sRGB where the photograph has 60. The albedo
+    # was never the problem; the specular lobe was.
+    cap_mat = cap_material or M.mat((0.021, 0.021, 0.023), 0.0, 0.62)
     liner_mat = M.mat((0.0165, 0.0165, 0.018), 0.0, 0.62)
 
     steps = 96
@@ -195,7 +199,7 @@ def build(paint=None, cap_material=None, printing=True):
     anchor = (OPENING_REF * 0.80, 2.0 * MM, -25.0 * MM)
     prog = prog.place(obj=P.coil_cord(lug, anchor, coils=COIL_TURNS, coil_r=COIL_R,
                                       wire_r=COIL_WIRE, up=(0.0, 0.0, 1.0),
-                                      material=M.mat((0.024, 0.024, 0.026), 0.0, 0.55)),
+                                      material=M.mat((0.022, 0.022, 0.024), 0.0, 0.74)),
                       at=(0.0, 0.0, 0.0))
     prog = prog.place(obj=P.cap_boss(CAP_D / 2.0, spin=-26.0, material=cap_mat),
                       at=(CAP_D * 0.46 * math.cos(lug_a),
@@ -251,7 +255,8 @@ def door(prog, plan, liner_mat, paint):
                                       strap=False, plan=list(plan)),
                       at=(0.0, 0.0, 2.0 * MM))
     prog = prog.place(obj=P.door_strap(length=90.0 * MM, w=22.0 * MM, t=3.4 * MM,
-                                       bend_at=0.38, bend_deg=26.0, material=liner_mat),
+                                       bend_at=0.38, bend_deg=26.0,
+                                       material=M.mat((0.017, 0.017, 0.019), 0.0, 0.80)),
                       at=(OPENING_REF * 0.14, 17.0 * MM, -8.0 * MM),
                       rotate=(0.0, 0.0, -4.0))
     return prog
