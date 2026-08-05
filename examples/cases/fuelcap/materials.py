@@ -27,10 +27,17 @@ def mat(color, metallic=0.0, roughness=0.5):
 # --------------------------------------------------------------------------- #
 # Automotive black polypropylene. Not zero: a real black plastic still returns 2–5% and
 # the shadow detail in the recess comes entirely from that couple of percent.
-CAP_BLACK   = mat((0.019, 0.019, 0.021), 0.0, 0.42)
-CAP_BLACK_G = mat((0.026, 0.026, 0.029), 0.0, 0.26)   # glossier, newer moulding
-CAP_BLACK_M = mat((0.016, 0.016, 0.017), 0.0, 0.62)   # matt / weathered
-CAP_GREY    = mat((0.055, 0.055, 0.058), 0.0, 0.45)   # the grey-plastic caps
+#
+# ROUGHNESS matters more here than albedo does, and it was set too low. A fuel cap is
+# injection-moulded polypropylene with a matt grain, not a polished part; at 0.42 the
+# dielectric lobe is narrow enough that the handle's trough — a smooth concave surface —
+# works as a cylindrical mirror and lays a hard white streak down the bar in every frame.
+# The reference caps have a soft broad sheen and no streak at all. What reads as "the model
+# is too bright" in a side-by-side is mostly this: the specular, not the base colour.
+CAP_BLACK   = mat((0.019, 0.019, 0.021), 0.0, 0.58)
+CAP_BLACK_G = mat((0.026, 0.026, 0.029), 0.0, 0.40)   # glossier, newer moulding
+CAP_BLACK_M = mat((0.016, 0.016, 0.017), 0.0, 0.74)   # matt / weathered
+CAP_GREY    = mat((0.055, 0.055, 0.058), 0.0, 0.60)   # the grey-plastic caps
 # The metal caps — about one in ten of the by-car sample, not the two I first counted.
 # They are BRUSHED aluminium, not chrome: a partial metal with a wide highlight, which is
 # why a fully metallic mirror finish looks wrong on them. The dark variant is the anodised
@@ -61,8 +68,11 @@ SEAL_RED     = mat((0.115, 0.020, 0.016), 0.0, 0.70)   # the orange-red gasket
 # Pocket hardware, all of it visible in the reference photographs and none of it modelled
 # until now: the sprung catch that holds the door, the screws through the liner, the
 # rubber grommet where a drain or a cable passes, the striker the door latches onto.
-CATCH_STEEL  = mat((0.22, 0.22, 0.225), 0.80, 0.30)
-SCREW_STEEL  = mat((0.30, 0.30, 0.305), 0.85, 0.26)
+# Dimmer and rougher than a catalogue value for steel, because these are years old and in
+# a pocket that fills with road dirt. At 0.30 / 0.26 a 7 mm screw head rendered as a white
+# rectangle — the brightest thing in a frame whose subject is a black cap.
+CATCH_STEEL  = mat((0.115, 0.115, 0.118), 0.72, 0.46)
+SCREW_STEEL  = mat((0.150, 0.150, 0.152), 0.78, 0.40)
 GROMMET      = mat((0.014, 0.014, 0.015), 0.0, 0.86)
 TETHER       = mat((0.020, 0.020, 0.022), 0.0, 0.65)
 GRIME        = mat((0.045, 0.042, 0.038), 0.0, 0.75)

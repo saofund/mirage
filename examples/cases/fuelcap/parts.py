@@ -229,10 +229,12 @@ def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.004,
         # It has to stay NEAR one, though: at 0.26 it read as a pointed leaf, and the whole
         # point of the shape is that the ends are the WIDEST part of the bar, not the
         # narrowest. What is wanted is a rounded end on a flare, not a taper to a point.
-        t = min(1.0, min(u, 1.0 - u) / 0.10)
+        # a cosine ramp, not a power law: a power law leaves a visible kink where the tip
+        # rounding stops, and on a bar this wide the kink reads as a shoulder
+        t = 0.5 - 0.5 * math.cos(math.pi * min(1.0, min(u, 1.0 - u) / 0.11))
         # ends below the face, middle at it: `ends_down` is what buries the open rings
         path.append((length * (u - 0.5), 0.0, -ends_down * (1.0 - s ** 0.55)))
-        scale.append(((tip + (1.0 - tip) * t ** 0.55) * (1.0 - waist * s ** 1.2),
+        scale.append(((tip + (1.0 - tip) * t) * (1.0 - waist * s ** 1.2),
                       1.0 - sag * s))
     return (MeshProgram().profile(prof, plane="xy", closed=True)
             .sweep(path, scale=scale, mark=mark))
@@ -301,7 +303,7 @@ def stadium(length, width, arc=10):
 # the cap
 # --------------------------------------------------------------------------- #
 def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0.66,
-        rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.065,
+        rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.042,
         skirt=0.020, neck_d=0.048, bevel=0.055, spin=0.0, printing=True, grip="rib",
         lobes=0, lobe_depth=0.06, waist=0.71, material=None, rib_material=None, steps=64):
     """The inner fuel cap: a fluted cylinder with a waisted handle moulded across its face.

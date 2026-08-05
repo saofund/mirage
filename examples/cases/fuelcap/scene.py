@@ -79,7 +79,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         d_cap=d_cap, flange=_lerp(rng, 0.010, 0.016),
         rib_len=rib_len, rib_w=rib_w,
         rib_h=d_cap * _lerp(rng, 0.055, 0.086), rib_draft=_lerp(rng, 0.68, 0.90),
-        waist=_lerp(rng, 0.62, 0.82),
+        waist=_lerp(rng, 0.72, 0.88),
         rib_slot=float(rng.random() < 0.28) * _lerp(rng, 0.002, 0.005),
         # negative = the face is dished inside its raised ring, which is what the reference
         # caps do; a couple are genuinely crowned, hence the small positive tail
@@ -92,7 +92,10 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # grips, occasionally none. The old `teeth` (30-48 fine scallops on the rim) turned
         # the cap into a cog, which is a recognisable object and not this one.
         flutes=int(rng.choice([0, 10, 11, 12, 12, 13, 14, 16])),
-        flute_depth=_lerp(rng, 0.040, 0.095),
+        # Seen head-on a flute is only a wobble in the silhouette, and at 0.095 of the
+        # radius that wobble turns the cap into a gear. On the reference caps the outline is
+        # very nearly circular and the flutes read as vertical shading bands on the SIDE.
+        flute_depth=_lerp(rng, 0.026, 0.055),
         skirt=_lerp(rng, 0.014, 0.028),
         # The pocket. The aperture is only a little wider than the cap — on every one of
         # the ninety reference cars the cap very nearly fills its hole. Allowing it to be
