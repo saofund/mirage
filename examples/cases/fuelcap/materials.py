@@ -74,7 +74,7 @@ CAP_FAMILY = (CAP_BLACK, CAP_BLACK_G, CAP_BLACK_M, CAP_GREY)
 # that scatter, not surfaces that reflect.
 WELL_PLASTIC = mat((0.020, 0.020, 0.022), 0.0, 0.78)   # the moulded liner
 WELL_TEXTURED = mat((0.0165, 0.0165, 0.018), 0.0, 0.68,
-                    maps=TEX["fuelcap_plastic"], uv_scale=0.032)
+                    maps=TEX["fuelcap_plastic"], uv_scale=0.012)
 PAINT_WHITE_TEXTURED = mat((0.76, 0.765, 0.76), 0.22, 0.15,
                            maps=TEX["fuelcap_white_paint"], uv_scale=0.055)
 WELL_METAL   = mat((0.062, 0.062, 0.065), 0.30, 0.68)  # bare painted metal well

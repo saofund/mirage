@@ -175,6 +175,7 @@ def build(paint=None, cap_material=None, printing=True):
     prog = P.panel(size=0.75, thick=0.010, ring=steps, material=paint,
                    crown=0.053, crown_ax=math.radians(78.0),
                    hole_plan=[OPENING_REF * k for k in plan])
+    prog = exterior_details(prog, paint)
 
     # 2. the liner: flange, fold, wall, ledge, floor
     prog = prog.place(obj=P.liner(plan, OPENING_REF, depth=DEPTH, flange_w=11.0 * MM,
@@ -242,6 +243,49 @@ def cap(material, printing=True):
                  material=material, steps=72, decal="fuelcap_boyue")
 
 
+def exterior_details(prog, paint):
+    """The two exterior cues that remain inside the photograph-matched crop.
+
+    Without the rear wheel opening and the rear-door shut line the pocket floats on an
+    infinite white plate. Both are outside the perception ROI, but they dominate a beauty
+    comparison and fix the physical scale of the car around the 188 mm aperture.
+    """
+    rubber = M.mat((0.007, 0.007, 0.008), 0.0, 0.82)
+    wheel_c = (30.0 * MM, -300.0 * MM)
+    wheel_r = 150.0 * MM
+    disc = (MeshProgram().cylinder(sides=96, radius=wheel_r, height=4.0 * MM,
+                                   mark="wheel_opening")
+            .material({"by": "tag", "name": "wheel_opening"}, **rubber))
+    prog = prog.place(obj=disc, at=(wheel_c[0], wheel_c[1], 1.0 * MM))
+    # A narrow painted return around the wheel aperture, just enough to catch the same soft
+    # highlight as the photographed fender lip.
+    ring = (MeshProgram()
+            .profile([(wheel_r, 0.0), (wheel_r + 8.0 * MM, 0.0),
+                      (wheel_r + 8.0 * MM, -3.0 * MM), (wheel_r, -3.0 * MM)],
+                     plane="xz", closed=True)
+            .spin(axis="z", steps=96, mark="wheel_lip")
+            .material({"by": "tag", "name": "wheel_lip"}, **paint))
+    prog = prog.place(obj=ring, at=(wheel_c[0], wheel_c[1], 3.2 * MM))
+
+    # The rear-door seam follows the crowned panel instead of hovering over it as a flat
+    # rectangle. It is mostly occluded by the open fuel door, exactly as in the source.
+    ca, sa = math.cos(math.radians(78.0)), math.sin(math.radians(78.0))
+    def z_of(x, y):
+        t = (x * ca + y * sa) / 0.375
+        return -0.053 * t * t + 0.9 * MM
+    xy = [(160.0, 100.0), (153.0, 86.0), (146.0, 72.0), (139.0, 58.0),
+          (132.0, 44.0), (125.0, 30.0), (118.0, 16.0)]
+    path = [(x * MM, y * MM, z_of(x * MM, y * MM)) for x, y in xy]
+    seam_r = 1.25 * MM
+    prof = [(seam_r * math.cos(2 * math.pi * k / 10),
+             seam_r * math.sin(2 * math.pi * k / 10)) for k in range(10)]
+    seam = (MeshProgram().profile(prof, plane="xy", closed=True)
+            .sweep(path, mark="body_seam")
+            .material({"by": "tag", "name": "body_seam"},
+                      **M.mat((0.004, 0.004, 0.005), 0.0, 0.75)))
+    return prog.place(obj=seam, at=(0.0, 0.0, 0.0))
+
+
 def door(prog, plan, liner_mat, paint):
     """The door, swung open about the +x edge, and the stamped strap between the two.
 
@@ -269,14 +313,14 @@ def door(prog, plan, liner_mat, paint):
                                       strap=False, plan=list(plan),
                                       inside_material=door_inside, inner_details=True),
                       at=(0.0, 0.0, 2.0 * MM))
-    prog = prog.place(obj=P.door_strap(length=72.0 * MM, w=22.0 * MM, t=3.4 * MM,
+    prog = prog.place(obj=P.door_strap(length=94.0 * MM, w=24.0 * MM, t=3.4 * MM,
                                        bend_at=0.38, bend_deg=26.0,
-                                       material=M.mat((0.017, 0.017, 0.019), 0.0, 0.80)),
+                                       material=M.mat((0.024, 0.024, 0.027), 0.0, 0.66)),
                       # Clear of the cap. It was starting at x = 13 mm and running 90 mm,
                       # so it lay straight across the cap's face and hid the printing; in
                       # the photograph it enters at the pocket's right-hand edge and never
                       # crosses the cap at all.
-                      at=(58.0 * MM, 20.0 * MM, -10.0 * MM),
+                      at=(50.0 * MM, 24.0 * MM, -8.0 * MM),
                       rotate=(0.0, 0.0, -4.0))
     return prog
 

@@ -445,7 +445,9 @@ def _moulded_plastic(res: int, seed: int, col, rough_base=0.68, wear=0.35):
     dust = np.clip((_fbm(res, 11, 3, seed + 31) - 0.58) * 3.2, 0, 1) * wear
     base = np.stack(col, -1)[None, None]
     albedo = base * (0.94 + 0.10 * grain[..., None] + 0.04 * fine[..., None])
-    albedo += dust[..., None] * np.array((0.018, 0.016, 0.013))[None, None]
+    # Pocket dust shifts black plastic only slightly. At the old 0.018 addition each
+    # three-millimetre patch doubled the base albedo and read as dried mud.
+    albedo += dust[..., None] * np.array((0.0045, 0.0040, 0.0032))[None, None]
     rough = rough_base + 0.12 * (grain - 0.5) + 0.18 * dust - 0.13 * handling
     height = 0.34 * grain + 0.20 * fine + 0.06 * dust
     return np.clip(albedo, 0, 1), np.clip(rough, 0.34, 0.92), \
@@ -544,7 +546,7 @@ _LIBRARY = {
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
     "clad_panel":         lambda: _painted_metal(RES, 137, (0.40, 0.405, 0.41), dirt=0.85, rough_base=0.36),
     "shop_tile":          lambda: _wall_tile(RES, 149, (0.72, 0.725, 0.71), (0.30, 0.30, 0.295), tiles=6),
-    "fuelcap_plastic":    lambda: _moulded_plastic(RES, 181, (0.0165, 0.0165, 0.018), rough_base=0.68, wear=0.42),
+    "fuelcap_plastic":    lambda: _moulded_plastic(RES, 181, (0.0165, 0.0165, 0.018), rough_base=0.68, wear=0.18),
     "fuelcap_white_paint": lambda: _automotive_paint(RES, 191, (0.76, 0.765, 0.76), rough_base=0.15),
     # The painted lines were the last flat surface in the frame -- one constant colour over
     # their whole length, where the reference has them clean at one end of the array (luma

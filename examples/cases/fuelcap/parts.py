@@ -1221,7 +1221,9 @@ def fuel_door(w=0.186, h=0.166, sq=4.2, flange=0.014, face=0.007, rim=0.013,
         # Shallow bosses moulded into the inner liner. They catch broad highlights and make
         # the door read as a stamped automotive assembly instead of a featureless plate.
         z0 = -face - 0.0002
-        detail_mat = inside_material or liner
+        # Never reuse a decal material on separately placed details: its map frame belongs
+        # to each little boss, so the full door label gets repeated and enlarged on them.
+        detail_mat = liner
         for cx, cy, sx, sy, dz in (
                 (-ref * 0.20,  ref * 0.22, ref * 0.32, ref * 0.13, 0.0017),
                 ( ref * 0.20, -ref * 0.24, ref * 0.18, ref * 0.10, 0.0012),

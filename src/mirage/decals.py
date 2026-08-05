@@ -378,24 +378,26 @@ def _fuelcap_boyue_door(w, h):
     d = ImageDraw.Draw(im)
     # The photographed label is a small white fuel icon and a large 92 octane callout on a
     # black pad. Keep it small: it is a scale cue, not a signboard.
-    x0, y0, x1, y1 = int(w * 0.18), int(h * 0.53), int(w * 0.46), int(h * 0.77)
+    x0, y0, x1, y1 = int(w * 0.20), int(h * 0.56), int(w * 0.41), int(h * 0.74)
     d.rounded_rectangle((x0, y0, x1, y1), radius=max(2, w // 90), fill=(6, 6, 7))
     ink = (152, 152, 145)
     lw = max(2, w // 180)
-    bx, by = int(w * 0.215), int(h * 0.575)
-    d.rounded_rectangle((bx, by, bx + int(w * 0.055), by + int(h * 0.095)),
+    bx, by = int(w * 0.225), int(h * 0.588)
+    d.rounded_rectangle((bx, by, bx + int(w * 0.043), by + int(h * 0.071)),
                         radius=lw, outline=ink, width=lw)
-    d.line((bx + int(w * 0.043), by + int(h * 0.022), bx + int(w * 0.070),
-            by + int(h * 0.050), bx + int(w * 0.070), by + int(h * 0.088)),
+    d.line((bx + int(w * 0.034), by + int(h * 0.017), bx + int(w * 0.055),
+            by + int(h * 0.038), bx + int(w * 0.055), by + int(h * 0.067)),
            fill=ink, width=lw)
-    _text(d, (w * 0.355, h * 0.630), ">92", int(h * 0.105), ink)
-    _text(d, (w * 0.325, h * 0.714), "RON", int(h * 0.032), (105, 105, 101))
+    _text(d, (w * 0.335, h * 0.625), ">92", int(h * 0.078), ink)
+    _text(d, (w * 0.310, h * 0.695), "RON", int(h * 0.024), (105, 105, 101))
     # A few faint rub marks stop the full-face decal background reading as perfectly flat.
     for k in range(7):
         yy = int(h * (0.18 + 0.095 * k))
         d.line((int(w * 0.06), yy, int(w * (0.10 + 0.035 * (k % 3))), yy + 1),
                fill=(7, 7, 8), width=1)
-    return im
+    # The map is viewed from the local -z side of the door. That reverses both image axes
+    # relative to the +z cap decals, so author upright and turn the finished artwork once.
+    return im.transpose(Image.Transpose.ROTATE_180)
 
 
 _LIBRARY = {
