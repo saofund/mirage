@@ -117,7 +117,10 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # synthetic body reads as one flat height in a depth map while the real one has a
         # clear gradient across it, and it is worth 6 mm of the recess-depth gap.
         body_tilt=_lerp(rng, 3.0, 24.0), body_tilt_az=_lerp(rng, 0.0, 360.0),
-        pan_sq=float(rng.choice([2.4, 3.0, 3.6, 4.4, 5.5])),
+        # The measured section is binned by physical radius, so it ALREADY averages over
+        # whatever squareness the real pocket has. Re-applying a strong plan on top of it
+        # applies that squareness twice and drags the outer surface down. Kept mild.
+        pan_sq=float(rng.choice([1.0, 1.6, 2.0, 2.4, 3.0])),
         seam=bool(rng.random() < 0.75), seam_gap=_lerp(rng, 0.0035, 0.0075),
         seam_step=_lerp(rng, 0.002, 0.005), seam_side=float(rng.choice([-1.0, 1.0])),
         door_rim=_lerp(rng, 0.004, 0.009), door_ribs=int(rng.choice([0, 2, 3, 3, 4])),

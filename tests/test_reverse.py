@@ -115,9 +115,18 @@ def test_plan_none_is_exactly_the_classical_lathe():
 
 
 def test_superellipse_plan_is_normalised():
+    """Default normalisation preserves AREA, not perimeter.
+
+    A ring's contribution to anything measured over a surface goes as r^2, so a plan whose
+    arithmetic mean is 1 still enlarges the swept area — and a section binned by physical
+    radius then samples further in wherever the plan pushed out, which reads as the outer
+    surface sitting low. `by="mean"` is still available for callers that want the mean."""
     ks = superellipse_plan(3.6, 64)
-    assert abs(sum(ks) / len(ks) - 1.0) < 1e-12, "a plan must not also rescale the part"
+    rms = (sum(k * k for k in ks) / len(ks)) ** 0.5
+    assert abs(rms - 1.0) < 1e-12, "the default must preserve area"
     assert max(ks) > 1.05 and min(ks) < 0.98, "n=3.6 should be visibly non-circular"
+    km = superellipse_plan(3.6, 64, by="mean")
+    assert abs(sum(km) / len(km) - 1.0) < 1e-12, "by='mean' must preserve the mean"
 
 
 def test_plan_squares_the_outline_without_changing_the_section():

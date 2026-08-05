@@ -146,7 +146,7 @@ def section_to_profile(section, close_axis=True, floor=None, outer=None):
     return pts
 
 
-def superellipse_plan(n, steps, normalise=True):
+def superellipse_plan(n, steps, normalise=True, by="area"):
     """A `spin` plan that presses a round section into a rounded rectangle.
 
     `n` = 2 is an ellipse, 3-5 the rounded rectangles most pressed panels actually are,
@@ -162,7 +162,17 @@ def superellipse_plan(n, steps, normalise=True):
         c, s = math.cos(a), math.sin(a)
         ks.append((abs(c) ** n + abs(s) ** n) ** (-1.0 / n))
     if normalise:
-        m = sum(ks) / len(ks)
+        # Normalise by AREA (root-mean-square) rather than by arithmetic mean. A ring's
+        # contribution to anything measured over a surface goes as r^2, so a plan whose
+        # arithmetic mean is 1 still enlarges the swept area — and, worse, a measurement
+        # binned by physical radius then samples the section further IN wherever the plan
+        # pushed outward, which reads as the whole outer surface sitting a few millimetres
+        # low. `by="mean"` keeps the old behaviour for anything that wants the perimeter
+        # preserved instead.
+        if by == "area":
+            m = (sum(k * k for k in ks) / len(ks)) ** 0.5
+        else:
+            m = sum(ks) / len(ks)
         ks = [k / m for k in ks]
     return ks
 
