@@ -65,12 +65,13 @@ def parts_sheet():
     two parts side by side are at the same magnification only if you make them so."""
     tmp = OUT / "_parts"
     items = [
-        ("cap  d78 plain", P.cap(), 0.16),
-        ("cap  teeth+slot", P.cap(teeth=28, rib_slot=0.004, rib_draft=0.58), 0.16),
-        ("cap  wide rib", P.cap(d=0.088, rib_len=0.068, rib_w=0.034, rib_h=0.015), 0.16),
-        ("cap  alu", P.cap(material=M.CAP_ALU, rib_material=M.CAP_ALU), 0.16),
+        ("cap  d78 12 flutes", P.cap(), 0.16),
+        ("cap  no flutes", P.cap(flutes=0), 0.16),
+        ("cap  slot grip", P.cap(grip="slot"), 0.16),
+        ("cap  alu", P.cap(material=M.CAP_ALU, rib_material=M.CAP_ALU, printing=False), 0.16),
+        ("handle alone", P.handle(0.076, 0.030, 0.021, 0.0066), 0.09),
+        ("pressed dish", P.pressed_dish(), 0.30),
         ("well  d124 x 52", P.well(), 0.30),
-        ("well  shallow", P.well(depth=0.030, neck=False), 0.30),
         ("panel  aperture", P.panel(size=0.30, hole_d=0.124), 0.45),
         ("seal", P.seal(), 0.14),
         ("door  open 95", P.door(), 0.45),
@@ -386,8 +387,8 @@ def cap_sheet(size=380):
     grip that is the wrong shape survives being looked at."""
     tmp = OUT / "_cap"
     variants = [
-        ("plain", dict()),
-        ("flutes+ring", dict(flutes=26, printing="ring")),
+        ("12 flutes", dict()),
+        ("plain wall", dict(flutes=0)),
         ("slot grip", dict(grip="slot")),
         ("alu", dict(material=M.CAP_ALU, rib_material=M.CAP_ALU, printing=False)),
     ]

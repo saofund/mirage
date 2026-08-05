@@ -156,6 +156,23 @@ def resample_by_angle(poly, n):
     return out
 
 
+def flute_plan(lobes, depth, steps, phase=0.0):
+    """A `spin` plan for the COARSE VERTICAL FLUTES around a cap's skirt.
+
+    Not the same shape as `lobe_plan` and not normalised the same way, and both differences
+    matter. A fuel cap's grip is a ring of broad flats separated by narrow grooves — you can
+    count ten to fourteen of them on the reference photographs — so the wave is squared off
+    with a tanh rather than left as a cosine, which would give a scalloped edge that reads as
+    a gear. And the lugs are the cap's actual outside diameter, so the plan PEAKS at 1
+    instead of averaging 1: normalising it, as `lobe_plan` does, would quietly grow the cap
+    by half the flute depth every time the flute count changed."""
+    ks = []
+    for j in range(steps):
+        s = math.cos(lobes * (TAU * j / steps) + phase)
+        ks.append(1.0 - depth * (0.5 - 0.5 * math.tanh(2.6 * s)))
+    return ks
+
+
 def lobe_plan(lobes, depth, steps, phase=0.0):
     """A `spin` plan with `lobes` rounded bumps round it — the petal-edged cap.
 
@@ -166,6 +183,51 @@ def lobe_plan(lobes, depth, steps, phase=0.0):
     ks = [1.0 + depth * math.cos(lobes * (TAU * j / steps) + phase) for j in range(steps)]
     m = sum(ks) / len(ks)
     return [k / m for k in ks]
+
+
+def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.006,
+           base=0.008, stations=30, mark="cap_rib"):
+    """The moulded grip across a fuel cap: a WAISTED bar with a TROUGH along its top.
+
+    This is the part the old kit got most wrong, and it got it wrong by being a primitive it
+    already had rather than the shape in the photograph. A `frustum` of a stadium is a
+    straight-sided block with a flat top; every cap in the reference set has a bar that is
+    wide at both ends, pinched in the middle, and hollowed along the top so a thumb sits in
+    it. Measured off the head-on frames: ends 0.38 of the cap diameter, middle 0.27 — a waist
+    ratio of about 0.71 — with the top some 0.085 of the diameter proud of the face.
+
+    Three things vary along the run and each is a different mechanism:
+
+    * the WAIST is `scale`'s x — the section gets narrower and comes back;
+    * the TROUGH along the length is `scale`'s y, which lowers the whole section (its base is
+      buried, so only the top moves visibly);
+    * the TROUGH across the width is in the profile itself, a concave top between two
+      shoulders.
+
+    The ends are not capped and do not need to be: the path DIPS below the cap's face at both
+    ends, so the two open rings finish inside solid material. That also produces the rounded
+    end the photographs show, for free and for the right reason — what you see is the curve
+    where the bar's flank crosses the face, not an end cap somebody drew.
+    """
+    hw = w_end / 2.0
+    prof = [
+        (-hw, -base), (hw, -base),                 # buried base, well below the face
+        (hw, height * 0.34), (hw * 0.90, height * 0.86), (hw * 0.66, height),
+        (hw * 0.30, height * (1.0 - dish * 0.55)),
+        (0.0, height * (1.0 - dish)),              # the trough, across the bar
+        (-hw * 0.30, height * (1.0 - dish * 0.55)),
+        (-hw * 0.66, height), (-hw * 0.90, height * 0.86), (-hw, height * 0.34),
+    ]
+    waist = max(0.0, 1.0 - w_mid / max(w_end, 1e-6))
+    path, scale = [], []
+    for j in range(stations):
+        u = j / (stations - 1.0)
+        s = math.sin(math.pi * u)
+        # ends below the face, middle at it: `ends_down` is what buries the open rings
+        path.append((length * (u - 0.5), 0.0, -ends_down * (1.0 - s ** 0.55)))
+        scale.append((1.0 - waist * s ** 1.2, 1.0 - sag * s))
+    return (MeshProgram().profile(prof, plane="xy", closed=True)
+            .sweep(path, scale=scale, mark=mark))
 
 
 def slotted_face(r, slot, z_top, z_floor, draft=0.8, ring=44, mark="cap_body"):
@@ -230,28 +292,37 @@ def stadium(length, width, arc=10):
 # --------------------------------------------------------------------------- #
 # the cap
 # --------------------------------------------------------------------------- #
-def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draft=0.66,
-        rib_slot=0.0, dome=0.0008, chamfer=0.0025, teeth=0, skirt=0.020, neck_d=0.048,
-        spin=0.0, printing=True, grip="rib", lobes=0, lobe_depth=0.06,
-        material=None, rib_material=None, steps=48):
-    """The inner fuel cap: a lathed disc with a raised grip rib across it.
+def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0.66,
+        rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.030,
+        skirt=0.020, neck_d=0.048, bevel=0.055, spin=0.0, printing=True, grip="rib",
+        lobes=0, lobe_depth=0.06, waist=0.71, material=None, rib_material=None, steps=64):
+    """The inner fuel cap: a fluted cylinder with a waisted handle moulded across its face.
 
-    Everything about this part that a 6D-pose network can see is in three numbers — the
-    disc diameter, the rib's footprint and the rib's height — and all three were measured
-    off the real clouds rather than chosen: disc 70–78 mm, rib 43 x 18 mm at its top face,
-    rib 3.4 mm proud of the annulus in the production set's grown patch and 10–13 mm proud
-    of the disc rim once the whole disc is included.
+    Rebuilt against the photographs, which say something different from the clouds. A cloud
+    binned by radius sees this part as a disc with a bump; ninety head-on colour frames see
+    a short **cylinder** — 10 to 14 mm of visible side wall, with ten to fourteen broad
+    vertical FLUTES round it that are what you actually grip — carrying a top face that is
+    inset behind a narrow bevel, with a **waisted handle** across it and two arcs of faint
+    printing either side. The old model had none of those four things: it was a flat disc
+    with a straight-sided pad in the middle, and at the magnification a reference photograph
+    is at, that is not the same object.
 
-    `rib_slot` cuts the groove that runs down the middle of most of these grips; 0 leaves
-    it solid. `teeth` adds the ratchet ring around the skirt (the clicking torque limiter)
-    — invisible head-on, plainly visible at the oblique angles this camera actually works
-    at, which is exactly the kind of detail that only matters off-axis.
+    Proportions, measured off the head-on frames as fractions of the diameter:
 
-    The rib is `place`d onto the disc rather than booleaned into it. They interpenetrate by
-    design: a BSP union of a 48-segment lathe with a drafted stadium is slow and fragile,
-    and at 200 px across the seam it would buy is smaller than a pixel. What would be
-    visible is a missing rib on one frame in fifty because a boolean failed, so this trades
-    a fillet nobody can resolve for a mesh that always builds.
+        visible skirt      0.16          handle length     0.98 (ends buried, 0.86 visible)
+        rim bevel          0.055         handle end width  0.38
+        flutes             10-14         handle waist      0.27  (ratio 0.71)
+        printing height    0.05          handle height     0.085
+
+    `rib_len` / `rib_w` / `rib_h` default to those fractions and are kept as overrides so a
+    caller that measured its own cap can say so. `flutes=0` gives the plain cylinder a
+    minority of cars have.
+
+    The flutes are a `spin` PLAN, not a ring of placed blocks. That is not just tidier: the
+    blocks version stood a millimetre proud of a 39 mm radius and read as a cog, because a
+    tooth added on top of a cylinder is a different shape from a groove cut into one. A plan
+    faded in from the bevel radius grooves the wall and leaves the face alone, which is the
+    real moulding.
 
     `spin` — where the screw thread happened to stop, in degrees about the cap's OWN axis.
     It belongs here and not in the caller's `place` rotation, and that is not a stylistic
@@ -264,6 +335,9 @@ def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draf
     material = material or CAP_BLACK
     rib_material = rib_material or material
     r = d / 2.0
+    rib_len = d * 0.98 if rib_len is None else rib_len
+    rib_w = d * 0.38 if rib_w is None else rib_w
+    rib_h = d * 0.085 if rib_h is None else rib_h
     if printing:
         # The warning text round the annulus. Four 460 px reference photographs all have
         # it and none of the synthetic caps did — it is the most recognisable single
@@ -275,50 +349,42 @@ def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draf
         material = with_decal(material, art, d * 1.02, d * 1.02, dome + 1e-4)
     rn = min(neck_d / 2.0, r - 0.004)
     c = min(chamfer, flange * 0.45, r * 0.08)
+    rf = r * (1.0 - bevel)                 # where the flat top face stops and the bevel starts
 
-    # Section, axis outward. z = 0 is the sealing face — the plane this whole case labels.
+    # Section, axis outward. z = 0 is the sealing face — the plane this whole case labels —
+    # and it is the flat top the printing sits on, so the bevel and the whole skirt hang
+    # BELOW it. `flange` is the visible height of that skirt.
     section = [
         (0.0, dome),                       # a barely-domed centre; real caps are not flat
-        (r * 0.45, dome * 0.75),
-        (r - c, 0.0),                      # the annulus: the plane the normal belongs to
-        (r, -c),                           # rim chamfer
-        (r, -flange + c),                  # outer wall
+        (rf * 0.55, dome * 0.80),
+        (rf, 0.0),                         # the flat face, out to the bevel
+        (r, -r * bevel * 0.55),            # the narrow rim bevel
+        (r, -flange + c),                  # the fluted outer wall
         (r - c, -flange),                  # underside chamfer
         (rn, -flange),
         (rn, -flange - skirt),             # the skirt that goes down the filler neck
         (rn * 0.72, -flange - skirt),
         (0.0, -flange - skirt),
     ]
-    plan = lobe_plan(lobes, lobe_depth, steps, math.radians(spin)) if lobes else None
+    # Two families of plan, and they are not interchangeable. Lobes reshape the WHOLE rim
+    # (a petal-edged cap, a minority fitment); flutes groove only the wall, so they are
+    # faded in from the bevel radius and leave the printed face perfectly round.
+    if lobes:
+        plan, plan_from = lobe_plan(lobes, lobe_depth, steps, math.radians(spin)), r * 0.72
+    elif flutes:
+        plan, plan_from = flute_plan(flutes, flute_depth, steps, math.radians(spin)), rf
+    else:
+        plan, plan_from = None, 0.0
     p = (MeshProgram().profile([(rr, zz) for rr, zz in section], plane="xz", closed=False)
-         .spin(axis="z", steps=steps, plan=plan, plan_from=r * 0.72, mark="cap_body")
+         .spin(axis="z", steps=steps, plan=plan, plan_from=plan_from, mark="cap_body")
          .material({"by": "tag", "name": "cap_body"}, **material))
-
-    if teeth:
-        # The ratchet ring — the clicking torque limiter. On the OUTER RIM, where a camera
-        # can see it: this used to put the teeth on the skirt, which is down inside the
-        # filler neck and hidden by the cap itself in every frame ever rendered. In the
-        # reference photographs the teeth are a fine scalloped edge right round the
-        # silhouette, and on an obliquely-viewed cap they are most of what says "this is a
-        # moulding you twist" rather than "this is a disc".
-        tw = TAU * r / teeth * 0.55
-        for i in range(teeth):
-            a = TAU * i / teeth
-            # shallow: the teeth are a scalloped edge a millimetre proud, not a gear. The
-            # first version stood 2 mm out on a 39 mm radius and turned the cap into a
-            # cog — recognisable, but not this part.
-            p = p.place(obj=prism([(-tw / 2, -0.0010), (tw / 2, -0.0010),
-                                   (tw / 2 * 0.66, 0.0010), (-tw / 2 * 0.66, 0.0010)],
-                                  0.0, flange * 0.72, mark="cap_teeth"),
-                        at=(r * 0.9975 * math.cos(a), r * 0.9975 * math.sin(a), -flange * 0.74),
-                        rotate=(0.0, 0.0, math.degrees(a)), material=material)
 
     # The grip, turned about the cap's own axis by `spin`. TWO families, both common:
     #
-    #   grip="rib"   a raised bar across the face — what this kit had
+    #   grip="rib"   the waisted handle across the face — three quarters of the sample
     #   grip="slot"  a rectangular WELL sunk into the face, with walls and a small pad in
     #                its floor — about a quarter of the reference cars, and the shape is
-    #                not a rib at all. Building it as a rib and hoping was the same mistake
+    #                not a handle at all. Building it as one and hoping was the same mistake
     #                as everywhere else on this part: it is a different surface, not a
     #                parameter of the one I already had.
     sa, ca = math.sin(math.radians(spin)), math.cos(math.radians(spin))
@@ -329,31 +395,31 @@ def cap(d=0.078, flange=0.009, rib_len=0.052, rib_w=0.024, rib_h=0.011, rib_draf
         # what is underneath is the cap body's own solid top face. Sinking the floor past
         # it just buries the well: the body's face is what the camera then sees, which is
         # why this rendered as a flat disc with a pad on it through three attempts.
-        land = max(rib_h * 0.95, 0.008)
+        land = max(rib_h * 0.62, 0.008)
         depth = land * 0.90
-        p = p.place(obj=slotted_face(r - chamfer * 0.8, turn(stadium(rib_len, rib_w, arc=22)),
+        p = p.place(obj=slotted_face(rf, turn(stadium(rib_len * 0.86, rib_w * 1.05, arc=22)),
                                      dome + land, dome + land - depth,
                                      draft=max(rib_draft, 0.74), mark="cap_slot"),
                     at=(0.0, 0.0, 0.0), material=material)
         # the pad in the floor of the well — every photographed slot has one
-        p = p.place(obj=frustum(turn(stadium(rib_len * 0.44, rib_w * 0.40)),
+        p = p.place(obj=frustum(turn(stadium(rib_len * 0.40, rib_w * 0.42)),
                                 dome + land - depth, dome + land - depth * 0.45, 0.86,
                                 mark="cap_rib"),
                     at=(0.0, 0.0, 0.0), material=rib_material)
         return p
 
-    plan = turn(stadium(rib_len, rib_w))
-    p = p.place(obj=frustum(plan, dome * 0.5, rib_h, rib_draft, mark="cap_rib"),
-                at=(0.0, 0.0, 0.0), material=rib_material)
+    p = p.place(obj=handle(rib_len, rib_w, rib_w * waist, rib_h,
+                           dish=0.34, sag=0.10, ends_down=rib_h * 0.85,
+                           base=rib_h * 1.1, mark="cap_rib"),
+                at=(0.0, 0.0, dome), rotate=(0.0, 0.0, spin), material=rib_material)
     if rib_slot > 0:
-        # The groove down the spine of a raised bar — the double-decker variant, and very
-        # common. Sunk into the bar's TOP, narrower than the bar and stopping short of its
-        # ends, so the bar reads as two rails rather than as one block.
-        sl = rib_len * rib_draft * 0.80
-        sw = rib_w * rib_draft * 0.42
-        d2 = min(rib_slot, rib_h * 0.45)
-        p = p.place(obj=frustum(turn(stadium(sl, sw)), rib_h + 1e-4, rib_h - d2, 0.88,
-                                mark="cap_slot"),
+        # The groove down the spine of a raised bar — the double-decker variant. Sunk into
+        # the handle's top, narrower than the waist so it survives the pinch.
+        sl = rib_len * 0.62
+        sw = rib_w * waist * 0.34
+        d2 = min(rib_slot, rib_h * 0.40)
+        p = p.place(obj=frustum(turn(stadium(sl, sw)), dome + rib_h + 1e-4,
+                                dome + rib_h - d2, 0.88, mark="cap_slot"),
                     at=(0.0, 0.0, 0.0),
                     material=mat([c * 0.68 for c in material["color"]],
                                  material["metallic"], min(0.95, material["roughness"] * 1.15)))
@@ -424,7 +490,7 @@ def grommet(r=0.006, h=0.004, material=None):
 
 
 def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, screws=2,
-                 catches=1, grommets=1, seed=0, material=None):
+                 catches=1, grommets=1, seed=0, material=None, keep_out=0.0):
     """The furniture down the recess: stiffening ribs, a step, a drain notch.
 
     None of this is decoration. `fit.complexity` measures the ratio of plane residual at
@@ -440,7 +506,7 @@ def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, screws=2,
                    (-0.0032, 0.0024)], 0.0, depth * 0.55, mark="well")
     for i in range(ribs):
         a = TAU * (i + 0.5) / ribs
-        r = rim_r - 0.005
+        r = max(rim_r - 0.005, keep_out * 1.12)
         p = p.place(obj=blade, at=(r * math.cos(a), r * math.sin(a), -depth + 0.002),
                     rotate=(0.0, 0.0, math.degrees(a)), material=material)
     # the step where the moulded liner meets the neck flange
@@ -454,22 +520,33 @@ def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, screws=2,
     # The hardware. Scattered on a deterministic pseudo-random ring rather than at fixed
     # angles: on the reference cars these sit wherever the moulding allowed, and a fixed
     # arrangement would be one more constant for a network to learn instead of the pose.
+    #
+    # `keep_out` is the cap's own radius, and everything here has to stay OUTSIDE it. The
+    # radii used to be fractions of `rim_r` alone, and with the values the assembly passed
+    # that put every screw and catch at 37-43 mm — which is precisely the cap's rim. So the
+    # renders had bright steel rectangles lying on top of the black cap, in a frame whose
+    # whole subject is that cap, in every variant that drew any hardware at all. It is the
+    # loudest error in the whole set and no cloud metric could ever have reported it,
+    # because a screw sitting on the cap still measures as a cap-shaped surface.
     import random
     rr = random.Random(seed)
+    lo = max(keep_out * 1.10, rim_r * 0.50)
+    hi = max(lo + 0.004, rim_r)
+    ring = lambda f0, f1: lo + (hi - lo) * rr.uniform(f0, f1)
     for i in range(screws):
         a = rr.uniform(0, TAU)
-        rad = rim_r * rr.uniform(0.80, 0.94)
+        rad = ring(0.45, 0.95)
         p = p.place(obj=screw(r=rr.uniform(0.0028, 0.0042)),
-                    at=(rad * math.cos(a), rad * math.sin(a), -depth * rr.uniform(0.05, 0.35)))
+                    at=(rad * math.cos(a), rad * math.sin(a), -depth * rr.uniform(0.35, 0.85)))
     for i in range(catches):
         a = rr.uniform(0, TAU)
-        rad = rim_r * 0.92
+        rad = ring(0.72, 1.0)
         p = p.place(obj=catch(w=rr.uniform(0.013, 0.020), h=rr.uniform(0.020, 0.032)),
-                    at=(rad * math.cos(a), rad * math.sin(a), -depth * 0.55),
+                    at=(rad * math.cos(a), rad * math.sin(a), -depth * 0.75),
                     rotate=(0.0, 0.0, math.degrees(a) + 90.0))
     for i in range(grommets):
         a = rr.uniform(0, TAU)
-        rad = rim_r * rr.uniform(0.55, 0.80)
+        rad = ring(0.10, 0.70)
         p = p.place(obj=grommet(r=rr.uniform(0.0045, 0.0075)),
                     at=(rad * math.cos(a), rad * math.sin(a), -depth + 0.001))
     return p
@@ -692,6 +769,53 @@ def pocket(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.045,
                 (0.0, -neck_len)]
     p = lathe(section, steps=steps, mark=mark)
     return p.material({"by": "tag", "name": mark}, **(material or WELL_PLASTIC))
+
+
+def pressed_dish(cap_r=0.039, gap=0.006, throat=0.030, wall_z=0.030, out_r=0.105,
+                 squareness=3.4, blend_from=0.070, steps=56, rim=0.004,
+                 material=None, mark="panel"):
+    """The OTHER pocket: a shallow dish pressed into painted sheet metal, cap in its floor.
+
+    Half the reference cars do not have a moulded black liner at all. They have the body's
+    own panel drawn into a shallow squarish dish — silver, white, yellow, whatever the car
+    is — with a round hole in its floor that the cap very nearly fills, a short vertical
+    throat down from that hole, and a couple of black rubber bumpers for the door to close
+    onto. The whole kit only had the black-liner family, so every synthetic frame was the
+    same half of the world, and it was the darker half: painting this dish body colour
+    changes the exposure of the entire scene, because the biggest surface near the cap stops
+    being a light trap and starts being the brightest thing in the frame.
+
+    Built as one lathe with a squarish plan, same machinery as `pocket_shaped`. The section
+    goes: down the throat, out across the narrow floor, straight UP the throat wall (it is a
+    drawn edge, near vertical — this is the detail a radius-binned cloud smears into a ramp
+    and a photograph does not), then out along the dish floor and up onto the body.
+    """
+    from mirage.reverse import section_to_profile, superellipse_plan
+    rh = cap_r + gap                                   # the hole the cap sits in
+    sec = [
+        (rh, -throat),                                 # the bottom of the drawn throat
+        (rh * 1.02, -throat * 0.55),
+        (rh * 1.06, -0.002),                           # up to the dish floor, near vertical
+        (rh * 1.35, 0.0),
+        (rh * 1.35 + (out_r - rh * 1.35) * 0.55, wall_z * 0.62),   # out and up the dish wall
+        (out_r - rim, wall_z),
+        (out_r, wall_z + rim * 0.25),                  # the lip, level with the paint
+    ]
+    prof = section_to_profile(sec, floor=-throat - 0.030, outer=out_r * 1.02)
+    p = (MeshProgram().profile(prof, plane="xz")
+         .spin(axis="z", steps=steps, plan=superellipse_plan(squareness, steps),
+               plan_from=blend_from, mark=mark))
+    return p.material({"by": "tag", "name": mark}, **(material or WELL_PLASTIC))
+
+
+def bumper(r=0.007, h=0.006, material=None):
+    """The rubber stop the fuel door closes onto — two or three round a pressed dish.
+
+    Small, black, matt, and sitting on a body-coloured panel, so it is one of the few
+    high-contrast marks in that half of the reference set and it lands well inside the ROI."""
+    return lathe([(0.0, h), (r * 0.5, h), (r, h * 0.55), (r, 0.0), (0.0, 0.0)],
+                 steps=16, mark="well").material({"by": "tag", "name": "well"},
+                                                 **(material or GROMMET))
 
 
 def door_pan(outer=0.150, depth=0.011, hole_r=0.048, squareness=4.0, wall=0.014,

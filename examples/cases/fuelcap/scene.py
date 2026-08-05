@@ -44,6 +44,11 @@ CAMERAS = {
 # Face tags that ARE the cap, in the order the id AOV numbers them. Ids 1-2 are the cap
 # body and its grip rib; the rib's own id is what gives the knob OBB for free, which is
 # otherwise a separate detection model in the real pipeline.
+TAU_DEG = 360.0
+
+# `cap_teeth` no longer receives faces: the ratchet ring is real but it is not a cog on the
+# rim, and the flutes that replaced it are part of the cap body's own lathe. The tag stays in
+# the list so id numbers keep meaning what they meant in every batch already generated.
 CAP_TAGS = ("cap_body", "cap_rib", "cap_teeth", "cap_slot")
 ID_TAGS = CAP_TAGS + ("seal", "well", "neck", "panel", "door", "tether")
 RIB_ID = ID_TAGS.index("cap_rib") + 1
@@ -56,31 +61,37 @@ def _lerp(rng, lo, hi):
 def sample(rng, camera="orbbec640", domain="wide"):
     """Draw one pocket. Returns a plain dict — the whole variant, nothing hidden."""
     d_cap = _lerp(rng, 0.068, 0.086)
-    # The rib scales with the cap rather than varying freely: across ninety cars the grip
+    # The handle scales with the cap rather than varying freely: across ninety cars the grip
     # is always most of the diameter and about half of that across, and sampling the two
     # independently makes caps no manufacturer has ever made.
     #
-    # These ratios are not guesses and were not right the first time. Measured per-frame
-    # through `fit.py --compare`, the real grip is 59.5 x 46.7 mm on a 73.6 mm disc — it
-    # covers most of the cap face. The first draft made it 53 x 30: a narrow bar across a
-    # wide disc, which is what this part looks like in memory and not what it looks like in
-    # 148 measured frames.
-    #     rib_len / disc  0.81      rib_wid / rib_len  0.79      rib height  17.7 mm
-    rib_len = d_cap * _lerp(rng, 0.78, 0.95)
-    rib_w = rib_len * _lerp(rng, 0.55, 0.78)
+    # These fractions come off the head-on colour frames, where the handle can actually be
+    # measured — ends 0.38 of the diameter, waist 0.27, so a waist ratio near 0.71, running
+    # the full width of the face with its ends buried in it. The cloud-derived numbers this
+    # replaces (0.81 x 0.64) described the handle's SHADOW plus the flat face around it,
+    # because a radius-binned cloud cannot separate the two.
+    rib_len = d_cap * _lerp(rng, 0.92, 1.02)
+    rib_w = d_cap * _lerp(rng, 0.33, 0.44)
     v = dict(
         camera=camera,
-        d_cap=d_cap, flange=_lerp(rng, 0.007, 0.013),
+        # The visible side wall — 10 to 14 mm on the photographed caps, which is where the
+        # flutes live and is most of what says "cylinder" rather than "disc".
+        d_cap=d_cap, flange=_lerp(rng, 0.010, 0.016),
         rib_len=rib_len, rib_w=rib_w,
-        rib_h=_lerp(rng, 0.011, 0.019), rib_draft=_lerp(rng, 0.68, 0.90),
-        rib_slot=float(rng.random() < 0.5) * _lerp(rng, 0.002, 0.006),
+        rib_h=d_cap * _lerp(rng, 0.070, 0.100), rib_draft=_lerp(rng, 0.68, 0.90),
+        waist=_lerp(rng, 0.62, 0.82),
+        rib_slot=float(rng.random() < 0.28) * _lerp(rng, 0.002, 0.005),
         dome=_lerp(rng, 0.0, 0.0018), chamfer=_lerp(rng, 0.0015, 0.0035),
+        bevel=_lerp(rng, 0.035, 0.080),
         # Grip family, from the reference sheet: about a quarter of the ninety cars have a
-        # sunk rectangular well rather than a raised bar, and many raised bars carry a
-        # groove down the spine. Teeth are on now by default and on the OUTER rim, where
-        # they are actually visible.
+        # sunk rectangular well rather than a raised handle.
         grip=str(rng.choice(["rib", "rib", "rib", "slot"])),
-        teeth=int(rng.choice([0, 30, 36, 42, 48])), skirt=_lerp(rng, 0.014, 0.028),
+        # The flutes round the skirt. A count, not a tooth ring: ten to fourteen broad
+        # grips, occasionally none. The old `teeth` (30-48 fine scallops on the rim) turned
+        # the cap into a cog, which is a recognisable object and not this one.
+        flutes=int(rng.choice([0, 10, 11, 12, 12, 13, 14, 16])),
+        flute_depth=_lerp(rng, 0.018, 0.042),
+        skirt=_lerp(rng, 0.014, 0.028),
         # The pocket. The aperture is only a little wider than the cap — on every one of
         # the ninety reference cars the cap very nearly fills its hole. Allowing it to be
         # 48 mm wider, as the first draft did, turns the recess into a funnel whose sloped
@@ -96,6 +107,18 @@ def sample(rng, camera="orbbec640", domain="wide"):
 
         neck=bool(rng.random() < 0.75),
         well_metal=bool(rng.random() < 0.25),
+        # THE OTHER HALF OF THE WORLD. Roughly half the reference cars have no moulded
+        # liner at all: the body panel itself is drawn into a shallow dish and the cap sits
+        # in a hole in its floor, so the biggest surface next to the cap is BODY PAINT and
+        # not matt black. Every synthetic frame this case has ever produced was the dark
+        # half, which biases far more than the geometry — it sets the exposure of the whole
+        # scene, and a network trained only on light-trap pockets meets a silver one on the
+        # first white car it is pointed at.
+        pocket_style=str(rng.choice(["liner", "liner", "dish", "dish"])),
+        dish_gap=_lerp(rng, 0.0035, 0.010),      # how much wider than the cap its hole is
+        dish_throat=_lerp(rng, 0.018, 0.042),    # the drawn wall down from that hole
+        dish_sq=float(rng.choice([2.4, 3.0, 3.4, 4.0, 4.6])),
+        n_bumpers=int(rng.choice([0, 2, 2, 3])),
         # the furniture down the recess, and the shape of the aperture — both are what
         # `fit.complexity` says is missing between 6 and 24 mm
         well_ribs=int(rng.choice([0, 3, 4, 4, 5, 6])),
@@ -273,15 +296,33 @@ def build(v):
     # three hand-built parts this replaces could not reach that shape between them — see
     # parts.MEASURED_SECTION_MM.
     pocket_r = 0.100 * v["r_gain"]
-    prog = prog.place(obj=P.pocket_shaped(cap_r=v["d_cap"] / 2.0, r_gain=v["r_gain"],
-                                          z_gain=v["z_gain"], neck_r=v["d_cap"] * 0.34,
-                                          neck_len=0.050, squareness=v["pan_sq"],
-                                          blend_from=0.085 * v["r_gain"],
-                                          material=well_mat),
-                      at=tuple(cap_c), rotate=tilt)
     # The body panel meets the pocket at its outer radius, and sits where the measured
     # section says the paint is: 10.5 mm above the cap face, scaled with z_gain.
     body_z = MEASURED_BODY_MM * 1e-3 * v["z_gain"]
+    dish = v.get("pocket_style", "liner") == "dish"
+    if dish:
+        # The pressed-metal family: the panel itself is the pocket, so it is painted, and
+        # the cap's hole is only a few millimetres wider than the cap.
+        prog = prog.place(obj=P.pressed_dish(cap_r=v["d_cap"] / 2.0, gap=v["dish_gap"],
+                                             throat=v["dish_throat"], wall_z=body_z,
+                                             out_r=pocket_r, squareness=v["dish_sq"],
+                                             blend_from=pocket_r * 0.62, material=paint),
+                          at=tuple(cap_c), rotate=tilt)
+        for i in range(v["n_bumpers"]):
+            a = TAU_DEG * (i + 0.5) / max(1, v["n_bumpers"]) + v["cap_spin"]
+            rad = pocket_r * 0.78
+            prog = prog.place(obj=P.bumper(r=float(rng.uniform(0.005, 0.009))),
+                              at=tuple(cap_c + R @ np.array([
+                                  rad * math.cos(math.radians(a)),
+                                  rad * math.sin(math.radians(a)),
+                                  body_z * 0.94])), rotate=tilt)
+    else:
+        prog = prog.place(obj=P.pocket_shaped(cap_r=v["d_cap"] / 2.0, r_gain=v["r_gain"],
+                                              z_gain=v["z_gain"], neck_r=v["d_cap"] * 0.34,
+                                              neck_len=0.050, squareness=v["pan_sq"],
+                                              blend_from=0.085 * v["r_gain"],
+                                              material=well_mat),
+                          at=tuple(cap_c), rotate=tilt)
     bt, baz = math.radians(v["body_tilt"]), math.radians(v["body_tilt_az"])
     # the body is tilted about an axis in its own plane, at azimuth `baz`
     body_rot = _compose(tilt, v["body_tilt"], v["body_tilt_az"])
@@ -311,11 +352,16 @@ def build(v):
                                          step=v["seam_step"], side=v["seam_side"],
                                          material=paint),
                           at=tuple(cap_c + axis * body_z), rotate=body_rot)
-    if v["well_ribs"] or v["well_drain"] or v["n_screws"] or v["n_catches"]:
+    # The furniture only belongs in the moulded-liner family — a pressed metal dish has a
+    # bare drawn wall and a couple of bumpers, nothing else. Putting stiffening ribs and a
+    # drain notch on painted sheet metal is the sort of detail that is individually
+    # defensible and wrong for the car it is on.
+    if not dish and (v["well_ribs"] or v["well_drain"] or v["n_screws"] or v["n_catches"]):
         # the ribs and drain live down in the trench, whose floor the section puts at
         # roughly -33 mm scaled
         trench = 0.0326 * v["z_gain"]
-        prog = prog.place(obj=P.well_details(pocket_r * 0.46, v["d_cap"] + 0.014, trench,
+        prog = prog.place(obj=P.well_details(pocket_r * 0.62, v["d_cap"] + 0.014, trench,
+                                             keep_out=v["d_cap"] / 2.0,
                                              ribs=v["well_ribs"], drain=v["well_drain"],
                                              screws=v["n_screws"], catches=v["n_catches"],
                                              grommets=v["n_grommets"],
@@ -324,7 +370,8 @@ def build(v):
                           at=tuple(cap_c), rotate=tilt)
     cap_prog = P.cap(d=v["d_cap"], flange=v["flange"], rib_len=v["rib_len"], rib_w=v["rib_w"],
                      rib_h=v["rib_h"], rib_draft=v["rib_draft"], rib_slot=v["rib_slot"],
-                     dome=v["dome"], chamfer=v["chamfer"], teeth=v["teeth"],
+                     dome=v["dome"], chamfer=v["chamfer"], bevel=v["bevel"],
+                     flutes=v["flutes"], flute_depth=v["flute_depth"], waist=v["waist"],
                      skirt=v["skirt"], neck_d=v["d_cap"] * 0.62, spin=v["cap_spin"],
                      grip=v["grip"], lobes=v["lobes"], lobe_depth=v["lobe_depth"],
                      printing=not v["alu"], material=cap_mat)
