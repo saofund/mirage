@@ -82,8 +82,27 @@ def _read_pfm(p):
 # --------------------------------------------------------------------------- #
 # the sensor
 # --------------------------------------------------------------------------- #
-def degrade_depth(depth, rng, sigma_mm=0.32, jump_mm=12.0, flying=0.35, edge_px=1.6,
-                  quant_mm=0.0, warp_mm=0.6, warp_px=7):
+def _grow(mask, k):
+    """Dilate a boolean mask by `k` pixels, 4-connected. numpy only, like everything here."""
+    m = mask.copy()
+    for _ in range(int(k)):
+        m[:, 1:] |= m[:, :-1]; m[:, :-1] |= m[:, 1:]
+        m[1:, :] |= m[:-1, :]; m[:-1, :] |= m[1:, :]
+    return m
+
+
+def _local(d, k, op):
+    """Min or max of `d` over a (2k+1) square, by repeated 1-pixel shifts."""
+    a = d.copy()
+    for _ in range(int(k)):
+        b = a.copy()
+        a = op(a, np.roll(b, 1, axis=1)); a = op(a, np.roll(b, -1, axis=1))
+        a = op(a, np.roll(b, 1, axis=0)); a = op(a, np.roll(b, -1, axis=0))
+    return a
+
+
+def degrade_depth(depth, rng, sigma_mm=0.32, jump_mm=12.0, flying=0.35, fly_px=2,
+                  edge_px=1.6, quant_mm=0.0, warp_mm=0.6, warp_px=7):
     """Turn a perfect depth map into one a stereo camera would have produced.
 
     Four effects, in the order they happen in a real pipeline:
@@ -122,11 +141,26 @@ def degrade_depth(depth, rng, sigma_mm=0.32, jump_mm=12.0, flying=0.35, edge_px=
     jump = grad > jump_mm * 1e-3
 
     if flying > 0 and jump.any():
-        # pull edge pixels toward their neighbour across the jump
-        shifted = np.roll(d, 1, axis=1)
-        pick = jump & valid & (np.roll(valid, 1, axis=1)) & (rng.random(d.shape) < flying)
-        t = rng.random(d.shape).astype(np.float32)
-        d[pick] = d[pick] * (1 - t[pick]) + shifted[pick] * t[pick]
+        # A BAND as wide as the matcher's window, on BOTH sides of the jump, in both axes.
+        #
+        # This used to blend one column of pixels with the neighbour to its left, which is a
+        # flying pixel in the same sense that one raindrop is weather. A correlation window
+        # is five to nine pixels across, so every pixel within its half-width of a
+        # discontinuity sees both surfaces and returns something between them — and the
+        # points that lands in the cloud are the ones a hand-drawn label sweeps up. Measured
+        # against 376 real frames, the labelled cap region spans 28 mm of relief; with the
+        # one-column version the synthetic one spanned 6, and the whole of that gap was
+        # being read as "the cap does not stand proud enough" and answered with geometry.
+        # It is not geometry. It is the fringe of straddling points around the cap's rim,
+        # which reach 20-30 mm back into the pocket and carry the cap's own label.
+        band = _grow(jump, fly_px) & valid
+        far = _local(np.where(valid, d, -np.inf), fly_px, np.maximum)
+        near = _local(np.where(valid, d, np.inf), fly_px, np.minimum)
+        other = np.where(rng.random(d.shape) < 0.5, far, near)
+        pick = band & np.isfinite(other) & (rng.random(d.shape) < flying)
+        # t biased toward the true surface: most straddling windows are mostly on one side
+        t = (rng.random(d.shape) ** 1.7).astype(np.float32)
+        d[pick] = d[pick] * (1 - t[pick]) + other[pick] * t[pick]
 
     if edge_px > 0:
         k = int(max(1, round(edge_px)))
@@ -343,7 +377,8 @@ def make_cloud(rgb, ids, depth, gt, rng, cfg):
         return None
 
     d, valid = degrade_depth(depth, rng, sigma_mm=cfg["sigma_mm"], jump_mm=cfg["jump_mm"],
-                             flying=cfg["flying"], edge_px=cfg["edge_px"],
+                             flying=cfg["flying"], fly_px=cfg.get("fly_px", 2),
+                             edge_px=cfg["edge_px"],
                              quant_mm=cfg["quant_mm"], warp_mm=cfg["warp_mm"],
                              warp_px=cfg["warp_px"])
     valid = _dropout(valid, rgb, rng, fill=cfg["fill"], blob_px=cfg["blob_px"],
@@ -397,7 +432,7 @@ def make_cloud(rgb, ids, depth, gt, rng, cfg):
 # --------------------------------------------------------------------------- #
 # the loop
 # --------------------------------------------------------------------------- #
-DEFAULT_CFG = dict(roi_scale=3.9, fill=0.60, jump_mm=12.0, flying=0.35,
+DEFAULT_CFG = dict(roi_scale=3.9, fill=0.60, jump_mm=12.0, flying=0.35, fly_px=2,
                    edge_px=1.6, quant_mm=0.0,
                    # correlated depth error + slab-shaped dropout: the two terms that a
                    # per-pixel model cannot produce at all. Both calibrated in fit.complexity.
