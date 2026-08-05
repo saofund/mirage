@@ -757,7 +757,12 @@ def check_labels(synth_dir, limit=200):
         d = np.load(f)
         if "normal" not in d.files:
             continue
-        P = d["xyz"][d["label"] == 1]
+        # The EXACT id-buffer mask where the generator kept one, not the drawn label. The
+        # shipped label is a hand-drawn-style polygon that deliberately overhangs into the
+        # pocket, exactly as the real annotations do; fitting a plane through that measures
+        # the annotator, and this check is about whether the POSE is right.
+        key = "_label_exact" if "_label_exact" in d.files else "label"
+        P = d["xyz"][d[key] == 1]
         if len(P) < 300:
             continue
         n_gt = np.asarray(d["normal"], float)

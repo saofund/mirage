@@ -353,6 +353,86 @@ def world_to_cam(gt):
     return np.stack([right, -up2, f]), eye        # rows: x_cv, y_cv, z_cv
 
 
+def _visible_blob(exact, rgb, grow_px, k=1.35):
+    """The exact cap mask grown into the DARK pixels touching it — what a person can see.
+
+    A fuel cap is a black knob at the bottom of a black hole, and the shadow immediately
+    around it photographs at the same luminance as the cap itself. Somebody tracing the
+    "cap" in that image is tracing the dark blob, and the dark blob is the cap plus however
+    much of its own shadow gap is contiguous with it. Which side that lands on depends on
+    where the light is, so it comes out asymmetric for free — matching the real labels,
+    whose deep points sit in a crescent rather than a ring.
+
+    Growth is a constrained flood: dilate one pixel at a time, keep only what is dark. The
+    cap between the flutes has no shadow, so it stops there; the crescent behind the rim
+    runs until the pocket wall catches the light."""
+    lum = rgb.astype(np.float32) @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    if not exact.any():
+        return exact
+    thr = float(np.percentile(lum[exact], 70)) * k + 1.0
+    dark = lum <= thr
+    m = exact.copy()
+    for _ in range(int(grow_px)):
+        m = _grow(m, 1) & (dark | exact)
+    return m
+
+
+def annotator_mask(exact, rgb, rng, sides=(7, 13), margin_px=1.4, jitter_px=1.0,
+                   grow_frac=0.14, area_cap=1.9):
+    """Redraw an exact cap mask the way a person drew the real ones.
+
+    This is not cosmetic and it is not noise for its own sake. On 376 real frames, 45% of
+    the points labelled "cap" sit more than 15 mm behind the cap's own face, and the
+    fraction climbs monotonically with radius — 0% at the centre, 78% at the rim, in a
+    crescent rather than a ring. Two rounds of this case read that as "the cap does not
+    stand proud enough" and answered it with geometry. It is not geometry, and it is not
+    sensor noise either: it is what the label *is*. The real annotation is an eight-to-
+    twelve-vertex polygon traced around a black knob inside a black hole at sixty pixels
+    across, and it encloses the shadow gap along with the knob, thirty millimetres further
+    back.
+
+    A pipeline that takes its mask from the id buffer cannot produce that, and the
+    difference is not harmless: a network trained on surgically exact masks and deployed
+    against hand-drawn ones is given a different input distribution in exactly the band of
+    points that carries the cap's silhouette.
+
+    So: find the dark blob a person would see, then trace it coarsely — a handful of
+    vertices on the silhouette, joined by straight chords, drawn a little wide.
+    """
+    ys0, xs0 = np.nonzero(exact)
+    if len(xs0) < 30:
+        return exact
+    span = max(xs0.max() - xs0.min(), ys0.max() - ys0.min())
+    blob = _visible_blob(exact, rgb, max(1, round(grow_frac * span)))
+    if blob.sum() > area_cap * exact.sum():        # never let it swallow the whole pocket
+        blob = exact
+    ys, xs = np.nonzero(blob)
+    cx, cy = xs.mean(), ys.mean()
+    a = np.arctan2(ys - cy, xs - cx)
+    r = np.hypot(xs - cx, ys - cy)
+    n = int(rng.integers(sides[0], sides[1]))
+    th0 = float(rng.random()) * 2.0 * math.pi / n
+    vx, vy = [], []
+    for k in range(n):
+        th = th0 + 2.0 * math.pi * k / n
+        dd = np.abs((a - th + math.pi) % (2.0 * math.pi) - math.pi)
+        w = dd < (math.pi / n)
+        rad = float(r[w].max()) if w.any() else float(r.max())
+        rad += margin_px + float(rng.normal(0.0, jitter_px))
+        vx.append(cx + rad * math.cos(th))
+        vy.append(cy + rad * math.sin(th))
+    # rasterise: even-odd crossing test over the whole frame, vectorised
+    gy, gx = np.mgrid[0:exact.shape[0], 0:exact.shape[1]]
+    inside = np.zeros(exact.shape, bool)
+    for i in range(n):
+        j = (i + 1) % n
+        cond = (vy[i] > gy) != (vy[j] > gy)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            xint = (vx[j] - vx[i]) * (gy - vy[i]) / (vy[j] - vy[i] + 1e-12) + vx[i]
+        inside ^= cond & (gx < xint)
+    return inside
+
+
 def make_cloud(rgb, ids, depth, gt, rng, cfg):
     """Unproject to a labelled ROI cloud in camera coordinates — the real npz's contents."""
     h, w = depth.shape
@@ -395,7 +475,13 @@ def make_cloud(rgb, ids, depth, gt, rng, cfg):
         return None
     xyz = np.stack([X[m], Y[m], Z[m]], 1).astype(np.float32)
     col = sub_rgb[m].astype(np.uint8)
-    lab = np.isin(sub_ids[m], np.arange(1, len(S.CAP_TAGS) + 1)).astype(np.uint8)
+    exact = np.isin(sub_ids, np.arange(1, len(S.CAP_TAGS) + 1))
+    drawn = (annotator_mask(exact, sub_rgb, rng,
+                            margin_px=cfg.get("label_margin_px", 1.4),
+                            jitter_px=cfg.get("label_jitter_px", 1.0),
+                            grow_frac=cfg.get("label_grow_frac", 0.14))
+             if cfg.get("label_polygon", True) else exact)
+    lab = drawn[m].astype(np.uint8)
 
     Rwc, eye = world_to_cam(gt)
     n_cam = Rwc @ np.array(gt["cap_normal"])
@@ -418,7 +504,13 @@ def make_cloud(rgb, ids, depth, gt, rng, cfg):
         obb = (corners @ vt + c).astype(np.int32)
 
     K_norm = np.array([[fx / w, 0, cx / w], [0, fy / h, cy / h], [0, 0, 1]], np.float64)
-    out = dict(xyz=xyz, rgb=col, label=lab, K_norm=K_norm,
+    # `_label_exact` is the id buffer's own mask, kept for `fit --check-labels` only: the
+    # pose self-consistency check fits a plane to the points it is meant to describe, and
+    # doing that through the annotator polygon measures the annotator. Leading underscore
+    # because nothing downstream should ever train on it — the real npz has no such key,
+    # and a model that learns from a perfect mask has learned something it will not be given.
+    out = dict(xyz=xyz, rgb=col, label=lab, _label_exact=exact[m].astype(np.uint8),
+               K_norm=K_norm,
                w=np.int64(w), h=np.int64(h), scale=np.float32(1.0),
                anchor=c_cam.astype(np.float32),
                normal=n_cam.astype(np.float32),          # THE label: cap face normal
@@ -445,6 +537,9 @@ DEFAULT_CFG = dict(roi_scale=3.9, fill=0.60, jump_mm=12.0, flying=0.35, fly_px=2
                    # actually was; the within-frame patches are the smaller half. A set
                    # where every cloud has the same density is separable from a real one on
                    # a point count alone. Beta(2.8, 1.7) matches those three quantiles.
+                   # the label is DRAWN, not read off the id buffer — see annotator_mask
+                   label_polygon=True, label_margin_px=1.4, label_jitter_px=1.0,
+                   label_grow_frac=0.14,
                    fill_beta=(2.8, 1.7), fill_clip=(0.12, 0.92),
                    rgb_grain=0.012, rgb_chroma_blur=1.2, rgb_saturation=1.12)
 
