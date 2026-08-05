@@ -151,7 +151,9 @@ def _shell(p, windowed=True):
     # A real room closes overhead. Without this the upper fifth of the hero is the blue
     # renderer sky, which turns a fully furnished interior into an open film set. Place it
     # before the back wall so film_stages() can still pop the solid back wall as its last op.
-    slab(p, 0.0, 0.4, 2.96, 7.2, 6.0, 0.12, WALL)                         # ceiling
+    # Extend beyond the open camera corner: the room dimensions stay 7.2 x 6 m, but a real
+    # studio ceiling does not end inside the lens frustum and reveal a blue sky sliver.
+    slab(p, 0.0, -0.8, 2.96, 12.0, 8.4, 0.12, WALL)                       # ceiling
     if windowed:
         _window(p)
     else:
