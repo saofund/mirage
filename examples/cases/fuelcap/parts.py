@@ -341,7 +341,6 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
     is exactly what this case shipped with until the label was checked against a plane fit
     of the very points it describes: 8 degrees of median error, invisible in every render."""
     material = material or CAP_BLACK
-    rib_material = rib_material or material
     r = d / 2.0
     rib_len = d * 0.90 if rib_len is None else rib_len
     rib_w = d * 0.36 if rib_w is None else rib_w
@@ -355,6 +354,16 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
         from .materials import with_decal
         art = ensure_decals(["fuelcap_face"])["fuelcap_face"]
         material = with_decal(material, art, d * 1.02, d * 1.02, max(dome, 0.0) + 1e-4)
+    # The handle takes the SAME material as the body, decal and all, and it has to. An
+    # albedo map REPLACES the flat colour where it hits (raytrace.cpp `alb = tmp`), so a
+    # printed body renders at the artwork's background — 0.0196 — while a handle carrying
+    # the material's own jittered colour renders at whatever that instance drew, up to four
+    # times brighter. Every printed cap therefore had a pale handle stuck on a black cap,
+    # which looks like a lighting artefact and is really two different albedos.
+    #
+    # It maps cleanly because the decal's text arcs are laid out to leave the sides clear,
+    # which is where the handle's ends are; the middle of the artwork is bare background.
+    rib_material = rib_material or material
     rn = min(neck_d / 2.0, r - 0.004)
     c = min(chamfer, flange * 0.45, r * 0.08)
     rf = r * (1.0 - bevel)                 # where the flat top face stops and the bevel starts
