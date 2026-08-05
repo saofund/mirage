@@ -19,6 +19,7 @@ any z(x,y) you can write down. The shape is a function, and the op-log stays leg
 Needs mirage_render + Pillow.
 """
 import math
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -422,7 +423,8 @@ def render(prog, out, spp, w, h, eye, target, fov=0.62, extra=()):
     js.write_text(prog.to_json())
     ppm = OUT / (out + ".ppm")
     cmd = [str(RENDER), "--oplog", str(js), "--out", str(ppm),
-           "--spp", str(spp), "--w", str(w), "--h", str(h), "--threads", "14",
+           "--spp", str(spp), "--w", str(w), "--h", str(h),
+           "--threads", os.environ.get("MIRAGE_THREADS", "14"),
            "--cam-eye", *[str(v) for v in eye], "--cam-target", *[str(v) for v in target],
            "--cam-fov", str(fov), *extra]
     subprocess.run(cmd, check=True)
@@ -546,11 +548,14 @@ def main():
     print(f"Eames lounge + ottoman: {len(m.verts):,} verts  {len(m.faces):,} faces  "
           f"({len(p.ops)} top-level ops)")
     spp = 40 if preview else 300
-    # dark walnut and near-black leather blow out fast: keep the key soft and the exposure
-    # honest rather than lighting it like a white studio product shot
-    png = render(p, "hero", spp, 1280, 800, [1.32, -1.52, 0.74], [-0.06, -0.20, 0.40],
-                 fov=0.62, extra=["--sun", "0.45", "--env", "0.34", "--exposure", "0.95",
-                                  "--sun-dir", "0.45", "0.55", "0.70", "--denoise", "4"])
+    # A longer product-photography camera keeps the ottoman from becoming larger than the
+    # chair and lets the published 31.5-inch silhouette read. Warm, nearly flat overcast
+    # light reveals black leather grain without painting blue sky across the walnut shells.
+    png = render(p, "hero", spp, 1400, 920, [1.58, -2.92, 1.17], [-0.04, -0.23, 0.41],
+                 fov=0.44, extra=["--sun", "0.58", "--env", "0.52", "--exposure", "1.02",
+                                  "--sun-dir", "0.52", "-0.32", "0.79",
+                                  "--sky-tint", "1.14", "1.06", "0.91", "--sky-flat", "0.82",
+                                  "--aperture", "0.006", "--bloom", "0.035", "--denoise", "4"])
     print("wrote", png)
     if not preview:
         GALLERY.mkdir(parents=True, exist_ok=True)
