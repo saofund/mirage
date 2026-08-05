@@ -233,8 +233,10 @@ def sample(rng, camera="orbbec640", domain="wide"):
         door_open=float(88.0 + 95.0 * rng.beta(1.7, 2.3)),
         door_w=_lerp(rng, 0.115, 0.160), door_h=_lerp(rng, 0.115, 0.165),
         paint=str(rng.choice(M.PAINT_NAMES)),
-        tether=bool(rng.random() < 0.7), tether_az=_lerp(rng, 0.0, 360.0),
-        tether_r=_lerp(rng, 0.0016, 0.0028), tether_kinks=int(rng.choice([1, 2, 2, 3])),
+        # A cord on nearly every car in the reference set, and it is one of the most
+        # conspicuous things in an open filler — five of eight wide frames show it plainly.
+        tether=bool(rng.random() < 0.82), tether_az=_lerp(rng, 0.0, 360.0),
+        tether_r=_lerp(rng, 0.0020, 0.0034), tether_kinks=int(rng.choice([1, 2, 2, 3])),
         # About one in ten of the ninety reference cars has a metal cap, and a handful
         # have a petal-edged rim rather than a round one — a plan, not a section, so the
         # generalised lathe does it in one line.
@@ -579,8 +581,16 @@ def build(v):
                           rotate=tilt)
         s = cap_c + R @ np.array([0.47 * v["d_cap"] * math.cos(a),
                                   0.47 * v["d_cap"] * math.sin(a), 0.001])
-        e = np.array([pocket_r * 0.55, 0.010, -0.020 * v["z_gain"]])
-        prog = prog.place(obj=P.tether(tuple(s), tuple(e), sag=0.008 + 0.016 * v["z_gain"],
+        # The cord ends on the pocket FLOOR beside the boss, which is where it is anchored
+        # on every reference car that has one. It used to end at a radius derived from the
+        # old lathe pocket, so once the pocket became a box the cord ran off into the wall.
+        # It is also one of the most conspicuous things in a real open filler — five of
+        # eight reference frames show it plainly — and it was three pixels of near-black.
+        ea = math.radians(v["cap_spin"] + v["tether_az"] + 55.0)
+        e = cap_c + R @ np.array([v["d_cap"] * 0.80 * math.cos(ea),
+                                  v["d_cap"] * 0.80 * math.sin(ea),
+                                  -(v["flange"] + 0.004)])
+        prog = prog.place(obj=P.tether(tuple(s), tuple(e), sag=0.010 + 0.5 * v["recess"],
                                        r=v["tether_r"], kinks=v["tether_kinks"],
                                        seed=int(v["cap_spin"] * 7) % 9999))
 
