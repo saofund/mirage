@@ -186,7 +186,7 @@ def lobe_plan(lobes, depth, steps, phase=0.0):
 
 
 def handle(length, w_end, w_mid, height, dish=0.20, sag=0.10, ends_down=0.004,
-           base=0.003, tip=0.72, stations=34, mark="cap_rib"):
+           base=0.003, tip=1.0, stations=34, mark="cap_rib"):
     """The moulded grip across a fuel cap: a WAISTED bar with a TROUGH along its top.
 
     This is the part the old kit got most wrong, and it got it wrong by being a primitive it
@@ -227,14 +227,15 @@ def handle(length, w_end, w_mid, height, dish=0.20, sag=0.10, ends_down=0.004,
     for j in range(stations):
         u = j / (stations - 1.0)
         s = math.sin(math.pi * u)
-        # `tip` rounds the plan off over the last tenth at each end. Without it the bar
-        # arrives at the rim at full width and its corner, tilted by the end dip, pokes OUT
-        # past the cap's silhouette — which flattened two chords off an otherwise round cap.
-        # It has to stay NEAR one, though: at 0.26 it read as a pointed leaf, and the whole
-        # point of the shape is that the ends are the WIDEST part of the bar, not the
-        # narrowest. What is wanted is a rounded end on a flare, not a taper to a point.
-        # a cosine ramp, not a power law: a power law leaves a visible kink where the tip
-        # rounding stops, and on a bar this wide the kink reads as a shoulder
+        # `tip` narrows the plan over the last tenth at each end, and DEFAULTS TO OFF.
+        #
+        # It went in to stop the bar's corner poking past the cap's rim, and it is the
+        # wrong tool for that. Overlaying the lit region of a real bar back onto its
+        # photograph shows the ends are its WIDEST part and finish in a blunt, near-vertical
+        # wall: a squared-off hourglass, not a leaf. Every value below one produced a
+        # pointed end plus a visible kink where the ramp stopped, and both are in the
+        # renders that led to this measurement. Keeping the bar inside the rim is the length
+        # clamp's job, which measures the built bar and simply shortens it.
         t = 0.5 - 0.5 * math.cos(math.pi * min(1.0, min(u, 1.0 - u) / 0.11))
         # ends below the face, middle at it: `ends_down` is what buries the open rings
         path.append((length * (u - 0.5), 0.0, -ends_down * (1.0 - s ** 0.55)))
@@ -309,7 +310,8 @@ def stadium(length, width, arc=10):
 def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0.66,
         rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.042,
         skirt=0.020, neck_d=0.048, bevel=0.055, spin=0.0, printing=True, grip="rib",
-        lobes=0, lobe_depth=0.06, waist=0.71, material=None, rib_material=None, steps=64):
+        lobes=0, lobe_depth=0.06, waist=0.71, rib_dish=0.20,
+        material=None, rib_material=None, steps=64):
     """The inner fuel cap: a fluted cylinder with a waisted handle moulded across its face.
 
     Rebuilt against the photographs, which say something different from the clouds. A cloud
@@ -447,7 +449,7 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
     # diagonally, so what matters is a radius, not an x. Two closed-form guesses at that
     # overhang were both wrong (one by 4 mm, one so conservative it cost a fifth of the
     # bar's length), and the mesh is 370 vertices, so it is cheaper to ask it.
-    bar = lambda L: handle(L, rib_w, rib_w * waist, rib_h, dish=0.20, sag=0.10,
+    bar = lambda L: handle(L, rib_w, rib_w * waist, rib_h, dish=rib_dish, sag=0.10,
                            ends_down=rib_h * 1.15, base=0.003, mark="cap_rib")
     lim, L = r * 0.995, rib_len
     for _ in range(4):

@@ -79,7 +79,12 @@ def sample(rng, camera="orbbec640", domain="wide"):
         d_cap=d_cap, flange=_lerp(rng, 0.010, 0.016),
         rib_len=rib_len, rib_w=rib_w,
         rib_h=d_cap * _lerp(rng, 0.055, 0.086), rib_draft=_lerp(rng, 0.68, 0.90),
-        waist=_lerp(rng, 0.72, 0.88),
+        # The waist, measured off the lit-region overlay: ends 155-160 px, middle 120 on a
+        # 350 px bar, so about 0.76. Some caps are barely waisted at all.
+        waist=_lerp(rng, 0.72, 0.92),
+        # How hollowed the top is. The reference caps genuinely differ: some are one broad
+        # facet with a single fold, some a clear thumb scoop with two bright edges.
+        rib_dish=_lerp(rng, 0.10, 0.28),
         rib_slot=float(rng.random() < 0.28) * _lerp(rng, 0.002, 0.005),
         # negative = the face is dished inside its raised ring, which is what the reference
         # caps do; a couple are genuinely crowned, hence the small positive tail
@@ -381,6 +386,7 @@ def build(v):
                      rib_h=v["rib_h"], rib_draft=v["rib_draft"], rib_slot=v["rib_slot"],
                      dome=v["dome"], chamfer=v["chamfer"], bevel=v["bevel"],
                      flutes=v["flutes"], flute_depth=v["flute_depth"], waist=v["waist"],
+                     rib_dish=v["rib_dish"],
                      skirt=v["skirt"], neck_d=v["d_cap"] * 0.62, spin=v["cap_spin"],
                      grip=v["grip"], lobes=v["lobes"], lobe_depth=v["lobe_depth"],
                      printing=not v["alu"], material=cap_mat)
