@@ -14,6 +14,7 @@ Needs mirage_render + Pillow.
 """
 import sys
 import math
+import os
 import subprocess
 from pathlib import Path
 
@@ -147,6 +148,10 @@ def _shell(p, windowed=True):
     """Floor, left wall, and the back wall — solid, or with the window boolean cut."""
     slab(p, 0.0, 0.4, -0.06, 7.2, 6.0, 0.12, FLOOR)                       # floor
     slab(p, -3.5, 0.4, 1.35, 0.14, 6.0, 2.9, WALL)                        # left wall (x = -3.5)
+    # A real room closes overhead. Without this the upper fifth of the hero is the blue
+    # renderer sky, which turns a fully furnished interior into an open film set. Place it
+    # before the back wall so film_stages() can still pop the solid back wall as its last op.
+    slab(p, 0.0, 0.4, 2.96, 7.2, 6.0, 0.12, WALL)                         # ceiling
     if windowed:
         _window(p)
     else:
@@ -333,7 +338,6 @@ def film_stages():
 def film():
     """Film the room building group-by-group in mirage_viewer -> grand_interior_build.mp4/.gif,
     settling onto a path-traced golden-hour close-up (the money shot)."""
-    import os
     from mirage.capture import record_build
     stages, captions = film_stages()
     quick = os.environ.get("ANIM_QUICK") == "1"
@@ -401,7 +405,8 @@ def main():
         trace(p, OUT / "preview.png", w=640, h=430, spp=40, denoise=4)
         print(f"  wrote {OUT / 'preview.png'}")
     else:
-        trace(p, GALLERY / "grand_interior.png", w=1500, h=980, spp=420, threads=140)
+        trace(p, GALLERY / "grand_interior.png", w=1500, h=980, spp=420,
+              threads=int(os.environ.get("MIRAGE_THREADS", "16")))
         print(f"  wrote {GALLERY / 'grand_interior.png'}")
 
 
