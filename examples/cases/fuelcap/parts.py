@@ -751,8 +751,61 @@ def shutline(panel_size, seam_x, gap=0.005, step=0.0035, side=1.0, material=None
                                                      "metallic": 0.6, "roughness": 0.15})))
 
 
+def hinge_arm(length=0.075, w=0.020, t=0.0025, holes=2, material=None):
+    """The flat steel strap that carries the fuel door.
+
+    This is the most conspicuous thing about an open filler pocket after the cap itself,
+    and the model had two little blocks where it goes. In the reference photographs it is
+    a wide, thin strap — 15 to 25 mm across, 2 to 3 mm thick — running from the door's edge
+    back to the body, usually with a couple of lightening holes or a pressed rib along it,
+    and it is bare or lightly painted steel in a pocket that is otherwise matt black, so it
+    catches the light and reads as bright.
+
+    Built as two rails either side of each hole rather than as a plate with holes cut in
+    it: same silhouette, and no boolean in a loop that has to run ten thousand times."""
+    material = material or CATCH_STEEL
+    p = MeshProgram()
+    if holes <= 0:
+        p = p.place(obj=prism([(0.0, -w / 2), (length, -w / 2), (length, w / 2),
+                               (0.0, w / 2)], 0.0, t, mark="door"), at=(0, 0, 0),
+                    material=material)
+        return p
+    # a rail down each side, plus a bridge at each end and between holes
+    rail = w * 0.26
+    for sgn in (-1, 1):
+        p = p.place(obj=prism([(0.0, sgn * (w / 2 - rail)), (length, sgn * (w / 2 - rail)),
+                               (length, sgn * w / 2), (0.0, sgn * w / 2)][::int(sgn)],
+                              0.0, t, mark="door"), at=(0, 0, 0), material=material)
+    for k in range(holes + 1):
+        x = length * k / holes
+        bw = length / (holes * 3.2)
+        p = p.place(obj=prism([(x - bw / 2, -w / 2), (x + bw / 2, -w / 2),
+                               (x + bw / 2, w / 2), (x - bw / 2, w / 2)], 0.0, t,
+                              mark="door"), at=(0, 0, 0), material=material)
+    return p
+
+
+def trim_ring(r_in=0.062, r_out=0.076, thick=0.003, screws=6, steps=44, material=None):
+    """The chromed trim ring some cars put round the filler aperture, with its screws.
+
+    A minority fitment but an unmistakable one: a bright annulus in a scene whose whole
+    subject is matt black, which changes what the ROI looks like far more than its size
+    suggests."""
+    material = material or CAP_CHROME
+    p = lathe([(0.0, 0.0), (r_out, 0.0), (r_out, -thick), (r_in, -thick * 0.55),
+               (r_in, 0.0), (0.0, 0.0)], steps=steps, mark="panel")
+    p = p.material({"by": "tag", "name": "panel"}, **material)
+    rm = (r_in + r_out) / 2
+    for i in range(screws):
+        a = TAU * (i + 0.5) / screws
+        p = p.place(obj=screw(r=0.0026, head_h=0.0012),
+                    at=(rm * math.cos(a), rm * math.sin(a), 0.0005))
+    return p
+
+
 def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None, liner=None,
-         rim=0.012, ribs=3, hinge=True):
+         rim=0.012, ribs=3, hinge=True, arm_len=0.075, arm_w=0.020, arm_holes=2,
+         label=False):
     """The fuel door, hinged open. Two materials: body paint outside, dark liner inside.
 
     It is in this scene because it is in every real frame, and because it is the largest
@@ -798,11 +851,10 @@ def door(w=0.175, h=0.165, thick=0.008, open_deg=95.0, hinge_x=-0.10, skin=None,
     # opens AWAY from the pocket, so `hinge_x` is negative and `open_deg` positive.
     p = MeshProgram().place(obj=body, at=(hinge_x, 0.0, 0.0), rotate=(0.0, -open_deg, 0.0))
     if hinge:
-        for sy in (-1, 1):
-            p = p.place(obj=prism([(-0.004, -0.0035), (0.030, -0.0035),
-                                   (0.030, 0.0035), (-0.004, 0.0035)], 0.0, 0.010,
-                                  mark="door"),
-                        at=(hinge_x - 0.004, sy * h * 0.32, -0.004), material=liner)
+        # The strap runs from the door's hinged edge back onto the body, in the plane of
+        # the body rather than the plane of the door — it is what holds the door out.
+        p = p.place(obj=hinge_arm(length=arm_len, w=arm_w, holes=arm_holes),
+                    at=(hinge_x - arm_len + 0.004, 0.0, -0.004))
     return p
 
 

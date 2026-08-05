@@ -121,6 +121,11 @@ def sample(rng, camera="orbbec640", domain="wide"):
         seam=bool(rng.random() < 0.75), seam_gap=_lerp(rng, 0.0035, 0.0075),
         seam_step=_lerp(rng, 0.002, 0.005), seam_side=float(rng.choice([-1.0, 1.0])),
         door_rim=_lerp(rng, 0.004, 0.009), door_ribs=int(rng.choice([0, 2, 3, 3, 4])),
+        # The hinge strap — the brightest thing in an open pocket after the cap, and it
+        # was two little blocks. Plus the chromed trim ring a minority of cars have.
+        arm_len=_lerp(rng, 0.055, 0.095), arm_w=_lerp(rng, 0.014, 0.026),
+        arm_holes=int(rng.choice([0, 1, 2, 2, 3])),
+        trim=bool(rng.random() < 0.18), trim_w=_lerp(rng, 0.010, 0.020),
         # the filler neck is not square to the body panel on any real car
         tilt_x=_lerp(rng, -14.0, 14.0), tilt_y=_lerp(rng, -16.0, 10.0),
         cap_spin=_lerp(rng, 0.0, 360.0),        # a screw cap stops wherever it stops
@@ -279,6 +284,12 @@ def build(v):
                                   # an id map, the well comes out as a crescent.
                                   hole_ax=baz + math.pi / 2),
                       at=tuple(cap_c + axis * body_z), rotate=body_rot)
+    if v["trim"]:
+        prog = prog.place(obj=P.trim_ring(r_in=pocket_r * 0.62,
+                                          r_out=pocket_r * 0.62 + v["trim_w"],
+                                          screws=int(rng.integers(4, 8))),
+                          at=tuple(cap_c + axis * (MEASURED_BODY_MM * 1e-3 * v["z_gain"]
+                                                   * 0.55)), rotate=tilt)
     if v["seam"]:
         sx = v["seam_side"] * (pocket_r + v["door_w"] + 0.040)
         sx = max(-panel_size / 2 + 0.03, min(sx, panel_size / 2 - 0.03))
@@ -313,7 +324,8 @@ def build(v):
     prog = prog.place(obj=P.door(w=v["door_w"], h=v["door_h"], open_deg=v["door_open"],
                                  hinge_x=-(pocket_r + 0.004), skin=paint,
                                  liner=well_mat, rim=v["door_rim"],
-                                 ribs=v["door_ribs"]),
+                                 ribs=v["door_ribs"], arm_len=v["arm_len"],
+                                 arm_w=v["arm_w"], arm_holes=v["arm_holes"]),
                       at=tuple(cap_c + axis * (body_z + 0.004)), rotate=body_rot)
     if v["tether"]:
         a = math.radians(v["cap_spin"] + v["tether_az"])
