@@ -635,7 +635,7 @@ MEASURED_SECTION_MM = [
 
 
 def pocket_shaped(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.045,
-                  squareness=3.6, blend_from=0.055, steps=56, material=None, mark="well"):
+                  squareness=3.6, blend_from=0.085, steps=56, material=None, mark="well"):
     """The measured section, spun with a plan — three lines of engine, not a hand-built mesh.
 
     This used to assemble its own vertex grid here in the case. It does not need to: the
@@ -664,6 +664,13 @@ def pocket(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.045,
     Replaces the well / dish / aperture stack, which tried to reach this shape by adding
     three hand-built parts and could not: the trench is a single continuous surface and
     was being approximated by a saucer, a step and a flat panel.
+
+    `blend_from` has to sit where the SECTION IS ALREADY FLAT, and that is not a detail.
+    A plan makes physical radius r sample the profile at r/k, and h(r) through the trench
+    wall is strongly concave — so averaging h(r/k) over directions lands BELOW h(r) by
+    Jensen, systematically, however the plan is normalised. Starting the blend at 55 mm,
+    in the middle of that wall, put the whole outer surface 8 mm low and cost seven
+    attempts at a metric that was reporting it correctly the entire time.
 
     `r_gain` and `z_gain` are the generalisation — they scale the measured section
     radially and in depth, so one real vehicle's profile becomes a family. `cap_r` slides

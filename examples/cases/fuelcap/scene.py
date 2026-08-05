@@ -265,7 +265,7 @@ def build(v):
     prog = prog.place(obj=P.pocket_shaped(cap_r=v["d_cap"] / 2.0, r_gain=v["r_gain"],
                                           z_gain=v["z_gain"], neck_r=v["d_cap"] * 0.34,
                                           neck_len=0.050, squareness=v["pan_sq"],
-                                          blend_from=0.055 * v["r_gain"],
+                                          blend_from=0.085 * v["r_gain"],
                                           material=well_mat),
                       at=tuple(cap_c), rotate=tilt)
     # The body panel meets the pocket at its outer radius, and sits where the measured
