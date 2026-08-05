@@ -54,6 +54,16 @@ MM = 1e-3
 # --------------------------------------------------------------------------- #
 CAP_D = 57.0 * MM              # the assumed scale; everything else is a ratio to it
 TILT_DEG = 32.6                # camera off the panel normal, from the cap's ellipse
+# Which SIDE of the tilt axis the camera is on. A circle projects to the same ellipse from
+# either, so this is the one number the photograph cannot supply and it was settled by
+# rendering both and looking: at 235.8 the cap's printing arrives upside down against the
+# photograph's, at 55.8 it reads the same way round.
+AZIMUTH_DEG = 55.8
+# The cap's width as a fraction of the frame, so the render and the photograph crop can be
+# framed on the same feature. The cap, not the opening: it is the one thing in both pictures
+# whose extent is unambiguous, since the aperture's edge is a threshold and the cap's is an
+# annotation.
+CAP_FILL = 0.192
 RECESS = 9.4 * MM              # cap face below the paint, from the parallax above
 DEPTH = 45.0 * MM              # paint to pocket floor
 OPENING_REF = 96.5 * MM        # the radius the opening's plan is authored against
@@ -211,10 +221,27 @@ def pose(dist=0.52, azimuth_deg=None, tilt_deg=TILT_DEG):
     ellipse from either — so the azimuth is the one number here that a single photograph
     cannot supply, and it is resolved by rendering the four candidates and looking.
     """
-    az = math.radians(145.8 - 90.0 if azimuth_deg is None else azimuth_deg)
+    az = math.radians(AZIMUTH_DEG if azimuth_deg is None else azimuth_deg)
     t = math.radians(tilt_deg)
-    d = (math.sin(t) * math.cos(az), math.sin(t) * math.sin(az), math.cos(t))
-    eye = tuple(dist * x for x in d)
-    # Roll the camera so the opening's long axis is horizontal in frame, which is how the
-    # photograph is framed.
-    return dict(eye=eye, target=(0.0, 0.0, -RECESS * 0.5), up=(0.0, 1.0, 0.0))
+    e = (math.sin(t) * math.cos(az), math.sin(t) * math.sin(az), math.cos(t))
+    eye = tuple(dist * x for x in e)
+    target = (0.0, 0.0, -RECESS * 0.5)
+    # ROLL. `up = +y` is the obvious choice and it is wrong here: with the camera off the
+    # normal in both azimuth and tilt, +y projects to a slanted line and the whole pocket
+    # arrives in frame rotated by twenty-odd degrees against the photograph. It was the
+    # largest single difference in the first comparison, and no amount of work on the
+    # geometry would have touched it.
+    #
+    # What the photograph actually is, is framed with the panel's own +x horizontal. So
+    # solve for that: project +x into the image plane, and hand the renderer the up vector
+    # that makes THAT the image's right.
+    d = [target[k] - eye[k] for k in range(3)]
+    n = math.sqrt(sum(x * x for x in d))
+    d = [x / n for x in d]
+    ex = [1.0, 0.0, 0.0]
+    dot = sum(ex[k] * d[k] for k in range(3))
+    r = [ex[k] - dot * d[k] for k in range(3)]
+    n = math.sqrt(sum(x * x for x in r))
+    r = [x / n for x in r]
+    up = [r[1] * d[2] - r[2] * d[1], r[2] * d[0] - r[0] * d[2], r[0] * d[1] - r[1] * d[0]]
+    return dict(eye=eye, target=target, up=tuple(up))

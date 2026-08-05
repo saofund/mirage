@@ -464,7 +464,7 @@ HERO_PNG = ("_ref/bycar/博越L/"
             "粗筛done2_博越L_2023款15T豪华型_29.png")
 # the aperture's bounding box in that photograph, from thresholding it out of the paint
 HERO_BBOX = (327, 349, 553, 430)
-HERO_FILL = 0.62          # fraction of the frame the opening's width takes, in both rows
+HERO_CAP_PX = 171.1       # the cap's major axis in that photograph, from the ellipse fit
 
 
 def hero_part_sheet(size=520, spp=200):
@@ -497,7 +497,9 @@ def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52, az=None):
     from . import hero as H
     tmp = OUT / "_hero"
     prog = H.build()
-    fov = 2.0 * math.atan(H.OPENING_REF / HERO_FILL / dist)
+    # Framed on the CAP, which both pictures agree about, not on the aperture, whose
+    # edge in the photograph is wherever a threshold was put.
+    fov = 2.0 * math.atan(H.CAP_D / H.CAP_FILL / 2.0 / dist)
     if azimuths:
         tiles = []
         for az in azimuths:
@@ -526,13 +528,16 @@ def hero_compose(size=760, synth="hero_synth.png", out="hero.png"):
     """
     import cv2
     from .fit import REF
+    from . import hero as H
     src = os.path.join(os.path.dirname(REF), *HERO_PNG.split("/"))
     ph = (cv2.imdecode(np.fromfile(src, np.uint8), cv2.IMREAD_COLOR)
           if os.path.exists(src) else None)
     if ph is None:
         raise SystemExit("the reference photograph is not in this checkout (_ref is ignored)")
+    # Crop on the cap, at the same fraction of frame the render is set to, and centre on
+    # the APERTURE so the two tiles are composed alike.
     x, y, w, h = HERO_BBOX
-    side = int(w / HERO_FILL)
+    side = int(HERO_CAP_PX / H.CAP_FILL)
     cx, cy = x + w // 2, y + h // 2
     x0, y0 = cx - side // 2, cy - side // 2
     pad = max(0, -x0, -y0, x0 + side - ph.shape[1], y0 + side - ph.shape[0])
