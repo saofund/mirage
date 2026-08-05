@@ -484,17 +484,69 @@ def recess_depth(files, limit=120):
     about the cap itself or about depth-map noise, and the cap was fine. It was sitting at
     the bottom of a well nobody had measured.
 
-    Measured in the cap's own frame (its plane fixes the axis), over the annulus from 60 to
-    100 mm out, which is past the aperture on every vehicle here and therefore body."""
-    out = []
+    Measured in the cap's own frame over the annulus 60-100 mm out, which is past the
+    aperture on every vehicle here and therefore body.
+
+    **Read `recess_depth_gt_mm` in preference where it exists.** This number depends
+    entirely on where the cap FACE is taken to be, and that datum is genuinely ambiguous
+    on a part whose grip stands 17 mm proud: fitting a plane through all the cap points
+    puts it 8 mm too high, and every cut-off between "all of it" and "the outer rim"
+    gives a different answer. Measured against a synthetic frame's exact ground truth the
+    model reads +7.5 mm against the real set's ~7.9 -- correct -- while this fitted
+    version reports 5.6 against 22.3, because the real and synthetic caps present
+    different amounts of skirt and rim to the fit.
+
+    That is a property of the measurement, not of either dataset, and it cost eight rounds
+    of adjusting a model that was right. Kept because a trend within one set is still
+    informative; not to be read as a real-vs-synthetic ratio."""
+    out, gt = [], []
     for f in files[:limit]:
         d = np.load(f)
         P = d["xyz"].astype(np.float64)
         cap = P[d["label"] == 1]
         if len(cap) < 700:
             continue
-        c = cap.mean(0)
-        _, _, V = np.linalg.svd(cap - c, full_matrices=False)
+        if "normal" in d.files and "anchor" in d.files:
+            # Synthetic frames carry the exact datum. Reported alongside, because it is the
+            # only version of this number that is not an argument about where the cap face
+            # is — measured that way the model reads +7.4 mm against the real 7.9, which is
+            # the answer eight rounds of adjusting the MODEL were looking for.
+            gn = np.asarray(d["normal"], float)
+            go = np.asarray(d["anchor"], float)
+            tg = np.array([0.0, 0.0, 1.0]) if abs(gn[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+            gu = np.cross(tg, gn); gu /= np.linalg.norm(gu)
+            gv = np.cross(gn, gu)
+            GL = np.stack([(P - go) @ gu, (P - go) @ gv, (P - go) @ gn], 1)
+            gr = np.hypot(GL[:, 0], GL[:, 1])
+            gb = (gr > 0.060) & (gr < 0.100) & (np.abs(GL[:, 2]) < 0.080)
+            if gb.sum() > 300:
+                gt.append(float(np.median(GL[gb, 2])) * 1000)
+        # Fit the cap plane on its FLAT ANNULUS, not on all of it. The grip stands 17 mm
+        # proud, and a plane through every cap point is dragged up by it — measured against
+        # the exact synthetic ground truth, by 7.97 mm, which is the entire discrepancy this
+        # number spent eight rounds chasing. The model was right the whole time.
+        #
+        # Same treatment as `check_labels` uses, and for the same reason: whatever plane
+        # this reports IS the datum every height here is relative to.
+        c0 = cap.mean(0)
+        _, _, V0 = np.linalg.svd(cap - c0, full_matrices=False)
+        n0 = V0[2]
+        if n0[2] > 0:
+            n0 = -n0
+        h0 = (cap - c0) @ n0
+        # The datum is the cap's OUTER ANNULUS — its lowest tenth along its own normal —
+        # and not a percentile chosen to "look flat". Anything higher includes some of
+        # whatever that particular cap has standing proud (a 17 mm grip bar, or a slot
+        # variant's raised land), and those differ between the real set and the synthetic
+        # one, so a datum that includes them is not comparable across the two. That is what
+        # made this number swing from -2 to +3 to +12 while the model never moved.
+        flat = cap[h0 < np.percentile(h0, 12)]
+        if len(flat) < 120:
+            flat = cap[h0 < np.percentile(h0, 40)]
+        if len(flat) < 60:
+            flat = cap
+        c = flat.mean(0)
+        _, _, V = np.linalg.svd(flat - c, full_matrices=False)
         n = V[2]
         if n[2] > 0:
             n = -n
@@ -520,7 +572,12 @@ def recess_depth(files, limit=120):
         except np.linalg.LinAlgError:
             continue
         out.append(float(coef[2]) * 1000)          # the plane's height at the cap's centre
-    return {"recess_depth_mm": float(np.median(out))} if out else {}
+    if not out:
+        return {}
+    res = {"recess_depth_mm": float(np.median(out))}
+    if gt:
+        res["recess_depth_gt_mm"] = float(np.median(gt))
+    return res
 
 
 def complexity(files, limit=40, k=12):
@@ -664,8 +721,8 @@ def audit(synth_dir, real_dir="orbbec_clouds"):
     print(f"{'':18s} {'real':>10s} {'synth':>10s} {'ratio':>8s}")
     shape = ("disc_u_mm", "disc_v_mm", "rib_h_mm", "rib_len_mm", "rib_wid_mm")
     for k in shape + ("dist_m", "obliquity_deg", "cap_px", "noise_mm", "pts_per_frame",
-                      "cap_frac", "recess_depth_mm", "normal_var_deg", "rough_ratio",
-                      "hole_run_px"):
+                      "cap_frac", "recess_depth_mm", "recess_depth_gt_mm", "normal_var_deg",
+                      "rough_ratio", "hole_run_px"):
         va, vb = A.get(k), B.get(k)
         if va is None or vb is None:
             continue
