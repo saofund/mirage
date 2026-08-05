@@ -1032,8 +1032,39 @@ def bisect(mesh: Mesh, point=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0),
     return m
 
 
+def _sweep_scales(scale, n):
+    """Resolve ``scale`` into one (sx, sy) pair per station, by linear interpolation.
+
+    Authoring a taper station by station is unusable — a 90-point path would need 90
+    numbers — so a shorter table is stretched across the run: entry j sits at j/(len-1) of
+    the way along, and stations in between interpolate. Four numbers therefore describe a
+    horn, and two describe a cone."""
+    if scale is None:
+        return None
+    if isinstance(scale, (int, float)):
+        return [(float(scale), float(scale))] * n
+    pairs = []
+    for s in scale:
+        if isinstance(s, (int, float)):
+            pairs.append((float(s), float(s)))
+        else:
+            pairs.append((float(s[0]), float(s[1])))
+    if not pairs:
+        return None
+    if len(pairs) == 1 or n < 2:
+        return [pairs[0]] * n
+    out = []
+    for k in range(n):
+        t = (k / (n - 1)) * (len(pairs) - 1)
+        i = min(int(t), len(pairs) - 2)
+        f = t - i
+        out.append((pairs[i][0] + (pairs[i + 1][0] - pairs[i][0]) * f,
+                    pairs[i][1] + (pairs[i + 1][1] - pairs[i][1]) * f))
+    return out
+
+
 def sweep(mesh: Mesh, path, closed: bool = False, twist: float = 0.0,
-          mark: str | None = None) -> Mesh:
+          scale=None, mark: str | None = None) -> Mesh:
     """Sweep a profile along an arbitrary 3-D path — the general case of ``spin`` (a
     circular path) and ``screw`` (a helical one).
 
@@ -1047,7 +1078,15 @@ def sweep(mesh: Mesh, path, closed: bool = False, twist: float = 0.0,
 
     ``twist`` (degrees, total) rotates the profile about the tangent across the whole run.
     ``closed`` joins the last station back to the first. Like spin, it sweeps WIRE edges
-    (0 faces) and BOUNDARY edges (1 face), so a closed wire profile gives a tube."""
+    (0 faces) and BOUNDARY edges (1 face), so a closed wire profile gives a tube.
+
+    ``scale`` varies the section ALONG the run — a number, a table of numbers, or a table of
+    (sx, sy) pairs, stretched over the path (see :func:`_sweep_scales`). Without it a sweep
+    can only make constant-section tubes, which leaves every tapered, waisted or flared part
+    — a horn, a table leg, the waisted handle moulded across a fuel cap — outside what the
+    op-log can say, so cases build them as hand-rolled vertex grids instead. It is applied in
+    the profile's own frame, before ``twist``, so (sx, sy) means what it says regardless of
+    how the path bends."""
     import math
     pts = [[float(c) for c in p] for p in path]
     if closed and len(pts) > 2 and _dist3(pts[0], pts[-1]) < 1e-9:
@@ -1074,12 +1113,15 @@ def sweep(mesh: Mesh, path, closed: bool = False, twist: float = 0.0,
             u = _norm3([u[c] - tans[k][c] * _dot3(u, tans[k]) for c in range(3)])
         frames.append((u, _cross3(tans[k], u)))
 
+    sc = _sweep_scales(scale, n)
     pos = [list(v.co) for v in mesh.verts]
     new_pos = []
     for v in range(len(pos)):
-        px, py = pos[v][0], pos[v][1]
+        px0, py0 = pos[v][0], pos[v][1]
         for k in range(n):
             uk, vk = frames[k]
+            px = px0 * sc[k][0] if sc else px0
+            py = py0 * sc[k][1] if sc else py0
             ang = math.radians(twist) * (k / (n - 1 if n > 1 else 1))
             c, s = math.cos(ang), math.sin(ang)
             a, b = px * c - py * s, px * s + py * c

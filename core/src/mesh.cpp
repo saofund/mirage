@@ -1322,8 +1322,28 @@ A3 sw_rotate_onto(const A3& v, const A3& t0, const A3& t1) {
 }
 }  // namespace
 
+// Stretch a scale table over `n` stations by linear interpolation — the twin of the Python
+// kernel's _sweep_scales. Entry j sits at j/(len-1) of the way along, so a four-entry table
+// describes a horn on a path of any length.
+static std::vector<std::array<double, 2>> sw_scales(
+        const std::vector<std::array<double, 2>>& tbl, int n) {
+    if (tbl.empty() || n <= 0) return {};
+    if (tbl.size() == 1 || n < 2) return std::vector<std::array<double, 2>>(n, tbl[0]);
+    std::vector<std::array<double, 2>> out(n);
+    const int m = static_cast<int>(tbl.size());
+    for (int k = 0; k < n; ++k) {
+        const double t = (double(k) / (n - 1)) * (m - 1);
+        const int i = std::min(static_cast<int>(t), m - 2);
+        const double f = t - i;
+        out[k] = {tbl[i][0] + (tbl[i + 1][0] - tbl[i][0]) * f,
+                  tbl[i][1] + (tbl[i + 1][1] - tbl[i][1]) * f};
+    }
+    return out;
+}
+
 Mesh sweep(const Mesh& mesh, const std::vector<std::array<double, 3>>& path, bool closed,
-           double twist, const std::string& mark) {
+           double twist, const std::vector<std::array<double, 2>>& scale,
+           const std::string& mark) {
     constexpr double PI = 3.14159265358979323846;
     std::vector<A3> pts = path;
     if (closed && pts.size() > 2) {
@@ -1352,12 +1372,15 @@ Mesh sweep(const Mesh& mesh, const std::vector<std::array<double, 3>>& path, boo
         frames[k] = {u, sw_cross(tans[k], u)};
     }
 
+    const std::vector<std::array<double, 2>> sc = sw_scales(scale, n);
     std::vector<A3> np;
     const int nv = static_cast<int>(mesh.num_verts());
     np.reserve(std::size_t(nv) * n);
     for (const auto& v : mesh.verts()) {
-        const double px = v->co[0], py = v->co[1];
+        const double px0 = v->co[0], py0 = v->co[1];
         for (int k = 0; k < n; ++k) {
+            const double px = sc.empty() ? px0 : px0 * sc[k][0];
+            const double py = sc.empty() ? py0 : py0 * sc[k][1];
             const double ang = twist * PI / 180.0 * (n > 1 ? double(k) / (n - 1) : 0.0);
             const double c = std::cos(ang), s = std::sin(ang);
             const double a = px * c - py * s, b = px * s + py * c;

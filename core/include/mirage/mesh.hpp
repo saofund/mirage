@@ -300,8 +300,12 @@ Mesh screw(const Mesh& mesh, const std::string& axis = "z", int steps = 24, int 
 // The transported frame is the one that does not rotate about the tangent, so a swept tube
 // follows a bending path without wringing itself (and, unlike a Frenet frame, does not flip
 // at an inflection). `twist` is the total roll in degrees across the run.
+// `scale` varies the SECTION along the run: one (sx, sy) pair per table entry, stretched
+// over the path by linear interpolation (so four entries describe a horn). Applied in the
+// profile's own frame, before twist. Empty = constant section.
 Mesh sweep(const Mesh& mesh, const std::vector<std::array<double, 3>>& path, bool closed = false,
-           double twist = 0.0, const std::string& mark = "");
+           double twist = 0.0, const std::vector<std::array<double, 2>>& scale = {},
+           const std::string& mark = "");
 // boolean: the real mesh-mesh CSG (BSP / Naylor-Thurston, csg.js lineage). mode is
 // union / difference (A minus B) / intersection. Inputs should be closed solids.
 // Twin of the Python kernel's boolean (byte-identical). Note: the BSP approach can

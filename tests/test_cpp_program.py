@@ -378,6 +378,26 @@ OPLOGS = {
         {"op": "sweep", "path": [[0, 0, 0], [0, 0, 0.3], [0, 0, 0.6], [0, 0, 0.9]],
          "twist": 180.0},
     ],
+    # scale turns sweep into a loft. Three forms, all of which an op-log may carry: a bare
+    # number, a table of numbers stretched over the path, and per-axis (sx, sy) pairs.
+    "sweep_scaled_taper": [
+        {"op": "profile", "points": [[0.08, 0.0], [0.0, 0.08], [-0.08, 0.0], [0.0, -0.08]],
+         "plane": "xy", "closed": True},
+        {"op": "sweep", "path": [[0, 0, 0], [0, 0, 0.3], [0, 0, 0.6], [0, 0, 0.9]],
+         "scale": [1.0, 0.25]},
+    ],
+    "sweep_scaled_waist": [   # a five-entry table: out, in, out — the waisted grip shape
+        {"op": "profile", "points": [[0.06, 0.0], [0.0, 0.03], [-0.06, 0.0], [0.0, -0.03]],
+         "plane": "xy", "closed": True},
+        {"op": "sweep", "path": [[0, 0, 0], [0.2, 0, 0.05], [0.4, 0, 0.06], [0.6, 0, 0.05],
+                                 [0.8, 0, 0.0]],
+         "scale": [[0.4, 1.0], [0.9, 0.85], [1.0, 0.7], [0.9, 0.85], [0.4, 1.0]]},
+    ],
+    "sweep_scaled_uniform_number": [
+        {"op": "profile", "points": [[0.05, 0.0], [0.0, 0.05], [-0.05, 0.0], [0.0, -0.05]],
+         "plane": "xy", "closed": True},
+        {"op": "sweep", "path": [[0, 0, 0], [0, 0, 0.5]], "scale": 1.6},
+    ],
     "sweep_then_solidify": [
         {"op": "profile", "points": [[0.0, 0.0], [0.12, 0.0]], "plane": "xy"},
         {"op": "sweep", "path": [[0, 0, 0], [0.1, 0, 0.4], [0.4, 0, 0.7]]},

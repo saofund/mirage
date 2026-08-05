@@ -776,8 +776,23 @@ Mesh Program::build(std::string* last_tag_out) const {
                 std::vector<std::array<double, 3>> path;
                 for (const auto& p : cmd.value("path", json::array()))
                     path.push_back({p.at(0).get<double>(), p.at(1).get<double>(), p.at(2).get<double>()});
+                // `scale` accepts a bare number, a list of numbers, or a list of [sx, sy] —
+                // the same three forms the Python side takes, so an op-log written by
+                // either kernel replays in the other.
+                std::vector<std::array<double, 2>> scale;
+                if (cmd.contains("scale") && !cmd["scale"].is_null()) {
+                    const auto& s = cmd["scale"];
+                    if (s.is_number()) {
+                        scale.push_back({s.get<double>(), s.get<double>()});
+                    } else {
+                        for (const auto& e : s) {
+                            if (e.is_number()) scale.push_back({e.get<double>(), e.get<double>()});
+                            else scale.push_back({e.at(0).get<double>(), e.at(1).get<double>()});
+                        }
+                    }
+                }
                 mesh = mirage::sweep(mesh, path, cmd.value("closed", false),
-                                     cmd.value("twist", 0.0), out_tag);
+                                     cmd.value("twist", 0.0), scale, out_tag);
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "screw") {
                 mesh = mirage::screw(mesh, cmd.value("axis", std::string("z")), cmd.value("steps", 24),

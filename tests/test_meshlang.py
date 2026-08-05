@@ -375,6 +375,45 @@ def test_sweep_closed_path_is_a_torus():
     assert m.is_closed_manifold() and m.euler() == 0
 
 
+def test_sweep_scale_tapers_the_section():
+    # `scale` is what makes sweep a LOFT rather than a tube extruder. Two entries stretched
+    # over four stations must give a linear taper, station by station.
+    path = [[0, 0, 0], [0, 0, 0.3], [0, 0, 0.6], [0, 0, 0.9]]
+    m = (MeshProgram()
+         .profile(points=[[0.1, 0], [0, 0.1], [-0.1, 0], [0, -0.1]], plane="xy", closed=True)
+         .sweep(path=path, scale=[1.0, 0.2])).build()
+    m.validate()
+    for z, want in ((0.0, 0.100), (0.3, 0.0733), (0.6, 0.0467), (0.9, 0.020)):
+        ring = [v.co for v in m.verts if abs(v.co[2] - z) < 1e-9]
+        assert len(ring) == 4, f"station z={z} lost its profile"
+        got = max((c[0] ** 2 + c[1] ** 2) ** 0.5 for c in ring)
+        assert abs(got - want) < 1e-4, f"z={z}: {got:.4f} != {want}"
+
+
+def test_sweep_scale_is_per_axis_and_beats_twist_to_the_profile():
+    # (sx, sy) pairs act in the PROFILE's own frame. On a straight +z path with no twist,
+    # x and y scale independently — which is what a waisted, drafted grip needs.
+    m = (MeshProgram()
+         .profile(points=[[0.1, 0], [0, 0.1], [-0.1, 0], [0, -0.1]], plane="xy", closed=True)
+         .sweep(path=[[0, 0, 0], [0, 0, 1.0]], scale=[[1.0, 1.0], [0.5, 2.0]])).build()
+    m.validate()
+    # The transported frame on a +z path puts profile-x on world -y and profile-y on world
+    # +x, so this checks the PROFILE's axes, not the world's — which is the whole claim.
+    top = [v.co for v in m.verts if abs(v.co[2] - 1.0) < 1e-9]
+    assert abs(max(abs(c[1]) for c in top) - 0.05) < 1e-9     # profile x, scaled by 0.5
+    assert abs(max(abs(c[0]) for c in top) - 0.20) < 1e-9     # profile y, scaled by 2.0
+
+
+def test_sweep_without_scale_is_untouched():
+    # The new argument must not perturb the shape of every sweep already in the repo.
+    path = [[0, 0, 0], [0, 0, 0.5], [0.3, 0.1, 0.9]]
+    prof = dict(points=[[0.1, 0], [0, 0.1], [-0.1, 0], [0, -0.1]], plane="xy", closed=True)
+    a = MeshProgram().profile(**prof).sweep(path=path).build()
+    b = MeshProgram().profile(**prof).sweep(path=path, scale=1.0).build()
+    for va, vb in zip(a.verts, b.verts):
+        assert max(abs(va.co[k] - vb.co[k]) for k in range(3)) < 1e-15
+
+
 def test_sweep_frame_does_not_wring_on_a_bend():
     # the parallel-transport frame is the point of sweep: on a path that turns, a naive
     # fixed-up frame collapses the profile where the tangent nears the up vector. Every

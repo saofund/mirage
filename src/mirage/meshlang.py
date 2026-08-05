@@ -681,12 +681,21 @@ class MeshProgram:
             c["plan"] = [float(x) for x in plan]
             c["plan_from"] = float(plan_from)
         return self.add(**c)
-    def sweep(self, path, closed=False, twist=0.0, mark=None):
+    def sweep(self, path, closed=False, twist=0.0, scale=None, mark=None):
         """Sweep the current profile along a 3-D polyline (the general lathe). The profile
         is authored in the XY plane and carried on a parallel-transport frame, so a hose,
-        a cable or a bent handrail follows the path it was given without wringing."""
-        return self.add(**_cmd("sweep", mark=mark, path=[list(p) for p in path],
-                               closed=closed, twist=twist))
+        a cable or a bent handrail follows the path it was given without wringing.
+
+        `scale` varies the section along the run — a number, a table of numbers, or a table
+        of (sx, sy) pairs stretched over the path. That is what turns a tube into a horn, a
+        taper, or a waisted grip, and without it those shapes have to leave the op-log and
+        become hand-built vertex grids in whatever script needs them."""
+        c = _cmd("sweep", mark=mark, path=[list(p) for p in path], closed=closed, twist=twist)
+        if scale is not None:
+            c["scale"] = (float(scale) if isinstance(scale, (int, float))
+                          else [float(s) if isinstance(s, (int, float)) else [float(s[0]), float(s[1])]
+                                for s in scale])
+        return self.add(**c)
 
     def screw(self, axis="z", steps=24, turns=1, height=1.0, angle=360.0, mark=None):
         return self.add(**_cmd("screw", mark=mark, axis=axis, steps=steps, turns=turns,
@@ -918,7 +927,7 @@ class MeshProgram:
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "sweep":
                     mesh = sweep(mesh, cmd.get("path", []), cmd.get("closed", False),
-                                 cmd.get("twist", 0.0), mark=out_tag)
+                                 cmd.get("twist", 0.0), cmd.get("scale"), mark=out_tag)
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "screw":
                     mesh = screw(mesh, cmd.get("axis", "z"), cmd.get("steps", 24), cmd.get("turns", 1),

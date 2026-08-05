@@ -279,16 +279,148 @@ def depth_sheet(synth_dir, n=6, seed=0, span=(-45.0, 20.0)):
     print(OUT / "depth.png", sheet.shape)
 
 
+def _real_crops(n=8, size=300, cls=1, pad=0.30, skip=0):
+    """Big crops of the annotated inner cap, one per car, straight off the reference set.
+
+    The row this returns is the only thing worth scoring a render against. Every metric in
+    `fit.py` measures the CLOUD, and a cloud cannot tell you that a cap's grip is a plain
+    bar where the real one is a waisted handle with a dished top, or that the skirt has
+    flutes. Those are the differences somebody looking at the two pictures sees first."""
+    import glob
+    import cv2
+    from .fit import REF
+
+    def imread(p):                     # cv2.imread cannot open the CJK paths in bycar/
+        return cv2.imdecode(np.fromfile(p, np.uint8), cv2.IMREAD_COLOR)
+
+    out, seen = [], set()
+    for png in sorted(glob.glob(os.path.join(REF, "bycar", "*", "*.png"))):
+        car = os.path.basename(os.path.dirname(png))
+        txt = png[:-4] + ".txt"
+        if car in seen or not os.path.exists(txt):
+            continue
+        poly = None
+        for line in open(txt):
+            p = line.split()
+            if p and int(p[0]) == cls:
+                poly = np.array([float(x) for x in p[1:]], np.float32).reshape(-1, 2)
+                break
+        im = imread(png) if poly is not None else None
+        if im is None:
+            continue
+        H, W = im.shape[:2]
+        x, y, w, h = cv2.boundingRect((poly * [W, H]).astype(np.int32))
+        d = int(pad * max(w, h))
+        c = im[max(0, y - d):min(H, y + h + d), max(0, x - d):min(W, x + w + d)]
+        if c.size == 0 or min(c.shape[:2]) < 24:
+            continue
+        seen.add(car)
+        out.append(cv2.resize(c, (size, size)))
+    return out[skip:skip + n]
+
+
+def closeup_sheet(n=8, seed=11, size=300, real=True, skip=0):
+    """Synthetic pockets framed the way a reference photograph is framed, over the real ones.
+
+    The scene sheets render a whole frame at the distance the sensor works at, where the cap
+    is sixty pixels across and everything looks approximately right. Nothing in this case
+    was ever judged at the magnification the *reference photographs* are at, which is the
+    magnification the person looking at them judges at — so every detail finer than the
+    silhouette went unchecked for as long as this case has existed.
+
+    The camera is placed so the cap subtends the same fraction of the frame as the crop
+    above it: same framing, same apparent size, so the two rows differ only by what is
+    actually being photographed."""
+    import cv2
+    tmp = OUT / "_closeup"
+    tmp.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(seed)
+    tiles = []
+    while len(tiles) < n:
+        v = S.sample(rng, domain="prod")
+        # Frame ON the cap, not on the pocket: the crop above is the cap's own bounding box
+        # padded by 30%, so the cap has to fill 1/1.6 of the frame here too.
+        v["dist"], v["aim_off"] = 0.40, [0.0, 0.0]
+        v["obliq"] = float(rng.uniform(0.0, 22.0))
+        prog, gt = S.build(v)
+        js = tmp / "scene.json"
+        js.write_text(prog.to_json(), encoding="utf-8")
+        fov = 2.0 * math.atan(v["d_cap"] * 0.80 / v["dist"])
+        img = _render(prog, tmp / f"c{len(tiles)}", eye=gt["eye"], target=gt["target"],
+                      w=size, h=size, spp=96, up=gt["up"], fov=fov)
+        tiles.append(img)
+    row = np.hstack([t[:, :, ::-1] for t in tiles])
+    cv2.putText(row, "SYNTH", (8, 24), 0, 0.6, (60, 255, 255), 2)
+    # The synth row is written on its own because the reference photographs are gitignored
+    # and therefore are NOT on the build box: the render happens there, the comparison
+    # happens here. `compose` does the second half.
+    cv2.imwrite(str(OUT / "closeup_synth.png"), row)
+    print(OUT / "closeup_synth.png")
+    if real:
+        compose_sheet(size, skip)
+
+
+def compose_sheet(size=300, skip=0):
+    """Stack the (possibly remotely rendered) synth row under a row of real crops."""
+    import cv2
+    row = cv2.imread(str(OUT / "closeup_synth.png"))
+    if row is None:
+        print("no closeup_synth.png yet")
+        return
+    rr = _real_crops(row.shape[1] // size, size, skip=skip)
+    if not rr:
+        print("no reference crops")
+        return
+    top = np.hstack(rr)
+    cv2.putText(top, "REAL", (8, 24), 0, 0.6, (60, 255, 255), 2)
+    w = min(top.shape[1], row.shape[1])
+    cv2.imwrite(str(OUT / "closeup.png"), np.vstack([top[:, :w], row[:, :w]]))
+    print(OUT / "closeup.png")
+
+
+def cap_sheet(size=380):
+    """The cap alone, big, from the three angles the reference photographs are taken from.
+
+    Rendered against a mid grey rather than in its pocket. The pocket is a light trap by
+    design, so a part inspected inside it is inspected in the dark — which is exactly how a
+    grip that is the wrong shape survives being looked at."""
+    tmp = OUT / "_cap"
+    variants = [
+        ("plain", dict()),
+        ("flutes+ring", dict(flutes=26, printing="ring")),
+        ("slot grip", dict(grip="slot")),
+        ("alu", dict(material=M.CAP_ALU, rib_material=M.CAP_ALU, printing=False)),
+    ]
+    tiles = []
+    for name, kw in variants:
+        prog = P.cap(**kw)
+        for ang, tag in ((0.10, "top"), (0.62, "oblique")):
+            eye = (0.16 * math.sin(ang) * 0.6, -0.16 * math.sin(ang),
+                   0.16 * math.cos(ang))
+            img = _render(prog, tmp / f"{name.split()[0]}_{tag}", eye=eye,
+                          target=(0, 0, 0.002), w=size, h=size, spp=120, fov=0.62)
+            tiles.append((img, f"{name}  {tag}"))
+    _grid(tiles, 4, OUT / "cap.png", cell=size)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=("parts", "scenes", "ids", "roi", "depth"))
+    ap.add_argument("what", choices=("parts", "scenes", "ids", "roi", "depth",
+                                     "closeup", "cap", "compose"))
     ap.add_argument("--synth", default=None, help="a generated dataset dir (for roi)")
     ap.add_argument("-n", type=int, default=6)
     ap.add_argument("--seed", type=int, default=3)
     ap.add_argument("--domain", default="orbbec")
+    ap.add_argument("--skip", type=int, default=0, help="offset into the real-crop row")
     a = ap.parse_args(argv)
     OUT.mkdir(parents=True, exist_ok=True)
-    if a.what == "parts":
+    if a.what == "closeup":
+        closeup_sheet(a.n, a.seed, skip=a.skip)
+    elif a.what == "compose":
+        compose_sheet(skip=a.skip)
+    elif a.what == "cap":
+        cap_sheet()
+    elif a.what == "parts":
         parts_sheet()
     elif a.what == "scenes":
         scenes_sheet(a.n, a.seed, a.domain)
