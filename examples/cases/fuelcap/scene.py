@@ -81,7 +81,9 @@ def sample(rng, camera="orbbec640", domain="wide"):
         rib_h=d_cap * _lerp(rng, 0.055, 0.086), rib_draft=_lerp(rng, 0.68, 0.90),
         waist=_lerp(rng, 0.62, 0.82),
         rib_slot=float(rng.random() < 0.28) * _lerp(rng, 0.002, 0.005),
-        dome=_lerp(rng, 0.0, 0.0018), chamfer=_lerp(rng, 0.0015, 0.0035),
+        # negative = the face is dished inside its raised ring, which is what the reference
+        # caps do; a couple are genuinely crowned, hence the small positive tail
+        dome=_lerp(rng, -0.0020, 0.0006), chamfer=_lerp(rng, 0.0015, 0.0035),
         bevel=_lerp(rng, 0.035, 0.080),
         # Grip family, from the reference sheet: about a quarter of the ninety cars have a
         # sunk rectangular well rather than a raised handle.
@@ -125,8 +127,11 @@ def sample(rng, camera="orbbec640", domain="wide"):
         well_drain=bool(rng.random() < 0.7),
         # pocket hardware — screws, the door catch, a rubber grommet. All of it is in the
         # reference photographs and none of it was in the model.
-        n_screws=int(rng.choice([0, 1, 2, 2, 3])),
-        n_catches=int(rng.choice([0, 1, 1, 2])),
+        # One catch at most, and often none. It is a bright steel bracket in a scene whose
+        # subject is matt black, so at two or three the frame reads as a box of hardware
+        # with a cap in it — and every reference pocket has exactly one, or none visible.
+        n_screws=int(rng.choice([0, 0, 1, 1, 2])),
+        n_catches=int(rng.choice([0, 0, 0, 1])),
         n_grommets=int(rng.choice([0, 0, 1, 1, 2])),
         squareness=float(rng.choice([1.0, 1.0, 2.6, 3.4, 4.2, 5.0])),
         # the BODY, which is most of the ROI and was a flat rectangle
@@ -304,6 +309,7 @@ def build(v):
         # The pressed-metal family: the panel itself is the pocket, so it is painted, and
         # the cap's hole is only a few millimetres wider than the cap.
         prog = prog.place(obj=P.pressed_dish(cap_r=v["d_cap"] / 2.0, gap=v["dish_gap"],
+                                             sink=v["flange"] + v["dish_gap"] * 0.5,
                                              throat=v["dish_throat"], wall_z=body_z,
                                              out_r=pocket_r, squareness=v["dish_sq"],
                                              blend_from=pocket_r * 0.62, material=paint),

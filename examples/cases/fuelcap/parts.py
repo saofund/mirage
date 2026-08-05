@@ -186,7 +186,7 @@ def lobe_plan(lobes, depth, steps, phase=0.0):
 
 
 def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.004,
-           base=0.003, tip=0.26, stations=34, mark="cap_rib"):
+           base=0.003, tip=0.72, stations=34, mark="cap_rib"):
     """The moulded grip across a fuel cap: a WAISTED bar with a TROUGH along its top.
 
     This is the part the old kit got most wrong, and it got it wrong by being a primitive it
@@ -223,10 +223,13 @@ def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.004,
     for j in range(stations):
         u = j / (stations - 1.0)
         s = math.sin(math.pi * u)
-        # `tip` narrows the plan over the last sixth at each end. Without it the bar arrives
-        # at the rim at full width and its corner, tilted by the end dip, pokes OUT past the
-        # cap's silhouette — which is what flattened two chords off an otherwise round cap.
-        t = min(1.0, min(u, 1.0 - u) / 0.16)
+        # `tip` rounds the plan off over the last tenth at each end. Without it the bar
+        # arrives at the rim at full width and its corner, tilted by the end dip, pokes OUT
+        # past the cap's silhouette — which flattened two chords off an otherwise round cap.
+        # It has to stay NEAR one, though: at 0.26 it read as a pointed leaf, and the whole
+        # point of the shape is that the ends are the WIDEST part of the bar, not the
+        # narrowest. What is wanted is a rounded end on a flare, not a taper to a point.
+        t = min(1.0, min(u, 1.0 - u) / 0.10)
         # ends below the face, middle at it: `ends_down` is what buries the open rings
         path.append((length * (u - 0.5), 0.0, -ends_down * (1.0 - s ** 0.55)))
         scale.append(((tip + (1.0 - tip) * t ** 0.55) * (1.0 - waist * s ** 1.2),
@@ -351,7 +354,7 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
         from mirage.decals import ensure_decals
         from .materials import with_decal
         art = ensure_decals(["fuelcap_face"])["fuelcap_face"]
-        material = with_decal(material, art, d * 1.02, d * 1.02, dome + 1e-4)
+        material = with_decal(material, art, d * 1.02, d * 1.02, max(dome, 0.0) + 1e-4)
     rn = min(neck_d / 2.0, r - 0.004)
     c = min(chamfer, flange * 0.45, r * 0.08)
     rf = r * (1.0 - bevel)                 # where the flat top face stops and the bevel starts
@@ -359,10 +362,14 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
     # Section, axis outward. z = 0 is the sealing face — the plane this whole case labels —
     # and it is the flat top the printing sits on, so the bevel and the whole skirt hang
     # BELOW it. `flange` is the visible height of that skirt.
+    # `dome` is usually NEGATIVE here, and that is the shape the photographs have: the face
+    # is very slightly DISHED inside a raised ring at `rf`, not crowned. Head-on that ring is
+    # the bright line just inside the silhouette on every reference cap, and it is what makes
+    # the face read as let into the moulding rather than as the top of a cylinder.
     section = [
-        (0.0, dome),                       # a barely-domed centre; real caps are not flat
+        (0.0, dome),
         (rf * 0.55, dome * 0.80),
-        (rf, 0.0),                         # the flat face, out to the bevel
+        (rf, 0.0),                         # the raised ring, and the plane the label means
         (r, -r * bevel * 0.55),            # the narrow rim bevel
         (r, -flange + c),                  # the fluted outer wall
         (r - c, -flange),                  # underside chamfer
@@ -420,7 +427,7 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
     p = p.place(obj=handle(2.0 * half, rib_w, rib_w * waist, rib_h,
                            dish=0.34, sag=0.10, ends_down=rib_h * 0.55,
                            base=0.003, mark="cap_rib"),
-                at=(0.0, 0.0, dome), rotate=(0.0, 0.0, spin), material=rib_material)
+                at=(0.0, 0.0, min(dome, 0.0)), rotate=(0.0, 0.0, spin), material=rib_material)
     if rib_slot > 0:
         # The groove down the spine of a raised bar — the double-decker variant. Sunk into
         # the handle's top, narrower than the waist so it survives the pinch.
@@ -780,7 +787,7 @@ def pocket(cap_r=0.037, r_gain=1.0, z_gain=1.0, neck_r=0.026, neck_len=0.045,
     return p.material({"by": "tag", "name": mark}, **(material or WELL_PLASTIC))
 
 
-def pressed_dish(cap_r=0.039, gap=0.006, throat=0.030, wall_z=0.030, out_r=0.105,
+def pressed_dish(cap_r=0.039, gap=0.006, sink=0.015, throat=0.030, wall_z=0.030, out_r=0.105,
                  squareness=3.4, blend_from=0.070, steps=56, rim=0.004,
                  material=None, mark="panel"):
     """The OTHER pocket: a shallow dish pressed into painted sheet metal, cap in its floor.
@@ -801,16 +808,22 @@ def pressed_dish(cap_r=0.039, gap=0.006, throat=0.030, wall_z=0.030, out_r=0.105
     """
     from mirage.reverse import section_to_profile, superellipse_plan
     rh = cap_r + gap                                   # the hole the cap sits in
+    # `sink` is the whole point and the first version did not have it: the dish's FLOOR is
+    # a good centimetre BELOW the cap's face, because the cap stands up out of its hole with
+    # its whole fluted wall showing. Built flush, the floor is coplanar with the face and
+    # simply covers the subject — three of eight frames came back as a flat sheet of body
+    # colour with a handle lying on it and no cap at all.
+    z0 = -abs(sink)
     sec = [
-        (rh, -throat),                                 # the bottom of the drawn throat
-        (rh * 1.02, -throat * 0.55),
-        (rh * 1.06, -0.002),                           # up to the dish floor, near vertical
-        (rh * 1.35, 0.0),
-        (rh * 1.35 + (out_r - rh * 1.35) * 0.55, wall_z * 0.62),   # out and up the dish wall
-        (out_r - rim, wall_z),
+        (rh, z0 - throat),                             # the bottom of the drawn throat
+        (rh * 1.02, z0 - throat * 0.55),
+        (rh * 1.06, z0 - 0.002),                       # up to the dish floor, near vertical
+        (rh * 1.35, z0),
+        (rh * 1.35 + (out_r - rh * 1.35) * 0.55, z0 + (wall_z - z0) * 0.62),
+        (out_r - rim, wall_z),                         # out and up the dish wall
         (out_r, wall_z + rim * 0.25),                  # the lip, level with the paint
     ]
-    prof = section_to_profile(sec, floor=-throat - 0.030, outer=out_r * 1.02)
+    prof = section_to_profile(sec, floor=z0 - throat - 0.030, outer=out_r * 1.02)
     p = (MeshProgram().profile(prof, plane="xz")
          .spin(axis="z", steps=steps, plan=superellipse_plan(squareness, steps),
                plan_from=blend_from, mark=mark))

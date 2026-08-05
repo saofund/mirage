@@ -28,7 +28,8 @@ from .dataset import _render_bin, _read_pgm16, _read_pfm, _read_ppm, render_fram
 OUT = Path(__file__).resolve().parent / "_out"
 
 
-def _render(prog, out, eye, target, w=340, h=340, spp=64, up=(0, 0, 1), fov=0.7, ids=None):
+def _render(prog, out, eye, target, w=340, h=340, spp=64, up=(0, 0, 1), fov=0.7, ids=None,
+            env=1.1, sun=2.2):
     out.parent.mkdir(parents=True, exist_ok=True)
     js = out.with_suffix(".json")
     js.write_text(prog.to_json(), encoding="utf-8")
@@ -37,7 +38,7 @@ def _render(prog, out, eye, target, w=340, h=340, spp=64, up=(0, 0, 1), fov=0.7,
             "--cam-eye", *[f"{x:.5f}" for x in eye],
             "--cam-target", *[f"{x:.5f}" for x in target],
             "--cam-up", *[f"{x:.5f}" for x in up],
-            "--cam-fov", f"{fov:.4f}", "--no-ground", "--env", "1.1", "--sun", "2.2",
+            "--cam-fov", f"{fov:.4f}", "--no-ground", "--env", f"{env:.3f}", "--sun", f"{sun:.3f}",
             "--sun-dir", "0.4", "-0.5", "0.75", "--sky-flat", "0.4", "--smooth-angle", "24"]
     if ids:
         args += ["--ids", str(out.with_suffix(".pgm")), "--id-tags", ",".join(ids)]
@@ -347,8 +348,13 @@ def closeup_sheet(n=8, seed=11, size=300, real=True, skip=0):
         js = tmp / "scene.json"
         js.write_text(prog.to_json(), encoding="utf-8")
         fov = 2.0 * math.atan(v["d_cap"] * 0.80 / v["dist"])
+        # Two stops down from this module's default. The reference crops have the cap at
+        # sRGB 25-60 out of 255; at env 1.1 / sun 2.2 the synthetic one sits at 110-150, and
+        # comparing a correctly exposed photograph with an over-exposed render is comparing
+        # the exposure, not the model. This is the row that gets judged, so it has to be lit
+        # like the row above it.
         img = _render(prog, tmp / f"c{len(tiles)}", eye=gt["eye"], target=gt["target"],
-                      w=size, h=size, spp=96, up=gt["up"], fov=fov)
+                      w=size, h=size, spp=96, up=gt["up"], fov=fov, env=0.45, sun=0.95)
         tiles.append(img)
     row = np.hstack([t[:, :, ::-1] for t in tiles])
     cv2.putText(row, "SYNTH", (8, 24), 0, 0.6, (60, 255, 255), 2)
