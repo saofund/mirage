@@ -191,7 +191,7 @@ def test_the_door_hinges_on_the_side_it_was_told_to(az):
     assert float(got @ want) > 0.9, f"az={az}: door centroid at {c[:2]}"
 
 
-@pytest.mark.parametrize("style", ["liner", "dish", "box"])
+@pytest.mark.parametrize("style", ["box"])
 def test_nothing_is_placed_over_the_cap_face(style):
     """No surface may sit above the cap's own face inside the cap's radius.
 
@@ -217,10 +217,18 @@ def test_nothing_is_placed_over_the_cap_face(style):
             f"{over[:, 2].max() * 1000:.1f} mm vs handle top {top * 1000:.1f} mm")
 
 
-def test_both_pocket_families_are_actually_drawn():
+def test_the_pocket_family_spans_shallow_painted_to_deep_lined():
+    """One family, two ends. A painted pressing is shallow and the cap stands proud of it;
+    a moulded liner is deep and the cap sits down inside. They used to be two separate parts
+    and drifted apart — the shallow one ended up with no walls worth the name."""
     rng = np.random.default_rng(0)
-    seen = {S.sample(rng)["pocket_style"] for _ in range(60)}
-    assert seen == {"box", "dish"}
+    vs = [S.sample(rng) for _ in range(80)]
+    assert {v["pocket_style"] for v in vs} == {"box"}
+    painted = [v["recess"] for v in vs if v["well_metal"]]
+    lined = [v["recess"] for v in vs if not v["well_metal"]]
+    assert painted and lined
+    assert max(painted) < min(lined) + 0.002
+    assert min(lined) > 0.015 and max(lined) > 0.030
 
 
 def test_every_variant_builds():

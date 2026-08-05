@@ -72,6 +72,8 @@ def sample(rng, camera="orbbec640", domain="wide"):
     # because a radius-binned cloud cannot separate the two.
     rib_len = d_cap * _lerp(rng, 0.84, 0.96)
     rib_w = d_cap * _lerp(rng, 0.30, 0.42)
+    # drawn first because the pocket's depth follows it: a painted pressing is shallow
+    v_metal = bool(rng.random() < 0.30)
     v = dict(
         camera=camera,
         # The visible side wall — 10 to 14 mm on the photographed caps, which is where the
@@ -116,7 +118,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # a wall rather than a filler let into a wing. See fit.recess_depth.
 
         neck=bool(rng.random() < 0.75),
-        well_metal=bool(rng.random() < 0.25),
+        well_metal=v_metal,
         # THE OTHER HALF OF THE WORLD. Roughly half the reference cars have no moulded
         # liner at all: the body panel itself is drawn into a shallow dish and the cap sits
         # in a hole in its floor, so the biggest surface next to the cap is BODY PAINT and
@@ -124,7 +126,13 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # half, which biases far more than the geometry — it sets the exposure of the whole
         # scene, and a network trained only on light-trap pockets meets a silver one on the
         # first white car it is pointed at.
-        pocket_style=str(rng.choice(["box", "box", "box", "dish"])),
+        # ONE pocket family. `dish` was a separate part invented from the photographs of
+        # cars whose pocket is shallow painted metal rather than a deep black moulding — but
+        # those are not a different SHAPE, they are the same box pressed less deep and
+        # painted instead of lined. Kept as two parts they drifted: the dish had no walls
+        # worth the name, its cap sat nearly flush, and it was the only thing in the wide
+        # sheet that still looked like a render. Depth and material carry the difference.
+        pocket_style="box",
         dish_gap=_lerp(rng, 0.0035, 0.010),      # how much wider than the cap its hole is
         dish_throat=_lerp(rng, 0.018, 0.042),    # the drawn wall down from that hole
         dish_sq=float(rng.choice([2.4, 3.0, 3.4, 4.0, 4.6])),
@@ -139,7 +147,9 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # 22 mm, and every photograph agrees: the cap sits well DOWN inside the box, with
         # its whole fluted wall below the body surface. The kit had 10.5, from a statistic
         # that was averaging a box into a saucer.
-        recess=_lerp(rng, 0.015, 0.034),
+        # and the two ends of that family: a painted pressing is shallow and the cap stands
+        # well proud of it; a moulded liner is deep and the cap sits down inside
+        recess=(_lerp(rng, 0.008, 0.019) if v_metal else _lerp(rng, 0.018, 0.036)),
         # The rolled edge round the opening is TIGHT — 3 to 6 mm. At 7-14, with a seal bead
         # on top, it read as a garden hose laid round the aperture.
         box_lip=_lerp(rng, 0.003, 0.0065), box_draft=_lerp(rng, 0.80, 0.93),
