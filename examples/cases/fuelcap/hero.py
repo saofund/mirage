@@ -64,15 +64,22 @@ AZIMUTH_DEG = 55.8
 # whose extent is unambiguous, since the aperture's edge is a threshold and the cap's is an
 # annotation.
 CAP_FILL = 0.192
-# Camera roll about the view axis, and it is worth saying how this number was got, because
-# the obvious way is wrong twice over. `up = +y` leaves the pocket 60-odd degrees rotated
-# against the photograph. Projecting the model's outline and solving for the roll gets the
-# SHAPE right — the projected elongation is 1.16 against the photographed contour's 1.22 —
-# but lands 35 degrees out, because the renderer's image basis is not the one that
-# projection assumed. So the last step is a calibration rather than a derivation: render at
-# two rolls, measure the aperture's principal axis in each, and interpolate. -1.21 degrees
-# of image per degree of roll, and the photograph wants +2.4.
-ROLL_DEG = 58.0
+# Camera roll about the view axis. `up = +y` leaves the pocket 25 degrees rotated against
+# the photograph, which was the largest single difference in the first side-by-side and one
+# that no work on the geometry would have touched.
+#
+# Solved, not tuned: project the model's own outline through this camera and turn it until
+# its principal axis matches the photographed contour's. +2.48 degrees against +2.44, with
+# the projected elongation 1.16 against 1.22. The projection is the renderer's own — fwd,
+# right = cross(fwd, up), up2 = cross(right, fwd), image y downward — read off
+# `core/src/raytrace.cpp`, so this is arithmetic rather than a guess at a convention.
+#
+# It was briefly "calibrated" to 58 instead, by rendering at two rolls and measuring the
+# aperture's principal axis in each. That measurement is worthless: the aperture is a
+# threshold and it merges with the equally black hinge strap and door, which drags its
+# principal axis by a constant 37 degrees. Both render measurements are off by that same
+# amount, which is what gives it away.
+ROLL_DEG = 22.5
 RECESS = 9.4 * MM              # cap face below the paint, from the parallax above
 DEPTH = 45.0 * MM              # paint to pocket floor
 OPENING_REF = 96.5 * MM        # the radius the opening's plan is authored against
