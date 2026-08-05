@@ -104,8 +104,12 @@ def build(paint=None, cap_material=None, printing=True):
     plan = _plan(steps)
 
     # 1. the body panel, its aperture cut to the measured outline
-    prog = P.panel(size=0.46, thick=0.010, ring=steps, material=paint,
-                   crown=0.020, crown_ax=math.radians(78.0),
+    # Big enough to fill the frame at this obliquity, and crowned like a car's flank rather
+    # than flat. `crown` is the sag at the panel's own EDGE, so it scales with the square of
+    # the panel size for a fixed curvature — a value carried over from a smaller panel is a
+    # different car.
+    prog = P.panel(size=0.75, thick=0.010, ring=steps, material=paint,
+                   crown=0.053, crown_ax=math.radians(78.0),
                    hole_plan=[OPENING_REF * k for k in plan])
 
     # 2. the liner: flange, fold, wall, ledge, floor
@@ -124,17 +128,19 @@ def build(paint=None, cap_material=None, printing=True):
     # 4. the cap
     prog = prog.place(obj=cap(cap_mat, printing=printing), at=(0.0, 0.0, -RECESS))
 
-    # 5. the coiled tether: off the cap's lug, up to an anchor on the +x wall
-    lug_a = math.radians(BAR_AZ + 96.0)
-    lug = (CAP_D * 0.50 * math.cos(lug_a), CAP_D * 0.50 * math.sin(lug_a), -RECESS - 4.0 * MM)
-    anchor = (OPENING_REF * 0.60, 26.0 * MM, -DEPTH + 20.0 * MM)
+    # 5. the coiled tether. It leaves the cap at about four o'clock and runs out to an anchor
+    # on the +x wall — read straight off the rectified photograph, where the coil sits
+    # between x = +30 and +85 mm and rises about 15 mm across that run.
+    lug_a = math.radians(-14.0)
+    lug = (CAP_D * 0.50 * math.cos(lug_a), CAP_D * 0.50 * math.sin(lug_a), -RECESS - 5.0 * MM)
+    anchor = (OPENING_REF * 0.88, 14.0 * MM, -20.0 * MM)
     prog = prog.place(obj=P.coil_cord(lug, anchor, coils=COIL_TURNS, coil_r=COIL_R,
                                       wire_r=COIL_WIRE, up=(0.0, 0.0, 1.0),
                                       material=M.mat((0.024, 0.024, 0.026), 0.0, 0.55)),
                       at=(0.0, 0.0, 0.0))
-    prog = prog.place(obj=P.cap_boss(CAP_D / 2.0, spin=BAR_AZ + 96.0, material=cap_mat),
+    prog = prog.place(obj=P.cap_boss(CAP_D / 2.0, spin=-14.0, material=cap_mat),
                       at=(CAP_D * 0.46 * math.cos(lug_a), CAP_D * 0.46 * math.sin(lug_a),
-                          -RECESS - 5.0 * MM))
+                          -RECESS - 5.5 * MM))
 
     # 6. the door bumper, on the wall opposite the hinge
     prog = prog.place(obj=P.bump_stop(r=6.5 * MM, h=12.0 * MM),
@@ -174,14 +180,16 @@ def door(prog, plan, liner_mat, paint):
     plan scaled up, not a separately described rounded rectangle, so the two agree at the
     shut line by construction.
     """
+    # `plan` is a multiplier on the door's own reference radius, so the door is grown by
+    # growing w and h — multiplying the plan as well applies the growth twice, which is a
+    # door 11% oversize and was the first thing the render showed.
     grow = 1.055
     prog = prog.place(obj=P.fuel_door(w=OPENING_REF * 2 * grow, h=OPENING_REF * 2 * grow,
                                       flange=15.0 * MM, face=7.0 * MM, rim=14.0 * MM,
                                       open_deg=112.0, az=0.0,
                                       hinge_r=OPENING_REF * 1.06, gap=3.0 * MM,
                                       steps=96, skin=paint, liner=liner_mat,
-                                      arm_w=22.0 * MM, arm_t=3.0 * MM,
-                                      plan=[k * grow for k in plan]),
+                                      strap=False, plan=list(plan)),
                       at=(0.0, 0.0, 2.0 * MM))
     prog = prog.place(obj=P.door_strap(length=90.0 * MM, w=22.0 * MM, t=3.4 * MM,
                                        bend_at=0.38, bend_deg=26.0, material=liner_mat),

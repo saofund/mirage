@@ -467,6 +467,25 @@ HERO_BBOX = (327, 349, 553, 430)
 HERO_FILL = 0.62          # fraction of the frame the opening's width takes, in both rows
 
 
+def hero_part_sheet(size=520, spp=200):
+    """The reproduction's own cap, alone and big, from two angles.
+
+    Inside the pocket this part is 100 pixels across in a light trap, and a bar that is the
+    wrong height or a flute that never cut is invisible there — the frame is dark either way.
+    """
+    from . import hero as H
+    tmp = OUT / "_hero"
+    tiles = []
+    for tag, printing in (("printed", True), ("bare", False)):
+        prog = H.cap(M.mat((0.021, 0.021, 0.023), 0.0, 0.44), printing=printing)
+        for ang, nm in ((0.18, "near head-on"), (0.66, "oblique")):
+            eye = (0.15 * math.sin(ang) * 0.35, -0.15 * math.sin(ang), 0.15 * math.cos(ang))
+            tiles.append((_render(prog, tmp / f"cap_{tag}_{nm[:4]}", eye=eye,
+                                  target=(0, 0, 0.001), w=size, h=size, spp=spp,
+                                  fov=0.50, up=(0, 1, 0)), f"hero cap  {tag}  {nm}"))
+    _grid(tiles, 4, OUT / "hero_cap.png", cell=size)
+
+
 def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52):
     """The measured reproduction, rendered at the photograph's own obliquity.
 
@@ -534,7 +553,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("what", choices=("parts", "scenes", "ids", "roi", "depth",
                                      "closeup", "cap", "compose", "wide", "composewide",
-                                     "hero", "heroaz", "herocompose"))
+                                     "hero", "heroaz", "herocompose", "herocap"))
     ap.add_argument("--synth", default=None, help="a generated dataset dir (for roi)")
     ap.add_argument("-n", type=int, default=6)
     ap.add_argument("--seed", type=int, default=3)
@@ -549,6 +568,8 @@ def main(argv=None):
         hero_sheet()
     elif a.what == "heroaz":
         hero_sheet(azimuths=(55.8, 145.8, 235.8, 325.8))
+    elif a.what == "herocap":
+        hero_part_sheet()
     elif a.what == "herocompose":
         hero_compose()
     elif a.what == "closeup":
