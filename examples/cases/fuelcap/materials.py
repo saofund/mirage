@@ -57,8 +57,12 @@ CAP_FAMILY = (CAP_BLACK, CAP_BLACK_G, CAP_BLACK_M, CAP_GREY)
 # --------------------------------------------------------------------------- #
 # the pocket
 # --------------------------------------------------------------------------- #
-WELL_PLASTIC = mat((0.022, 0.022, 0.024), 0.0, 0.55)   # the moulded liner
-WELL_METAL   = mat((0.085, 0.085, 0.088), 0.35, 0.55)  # bare painted metal well
+# Rough, and that is the point: the pocket is a matt moulding full of road dirt, and at 0.55
+# the specular lobe was tight enough to lay an even sheen across four flat walls at once,
+# which is what made a deep box render as a pale grey tray. A light trap is made of surfaces
+# that scatter, not surfaces that reflect.
+WELL_PLASTIC = mat((0.020, 0.020, 0.022), 0.0, 0.78)   # the moulded liner
+WELL_METAL   = mat((0.062, 0.062, 0.065), 0.30, 0.68)  # bare painted metal well
 # The filler-neck ring, down a hole under a cap: it is bare steel but it is also the least
 # lit surface in the pocket, so a "correct" bright steel albedo renders as the brightest
 # object in a frame whose subject is black. Kept dark and rough — a used filler neck is.

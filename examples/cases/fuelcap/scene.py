@@ -148,6 +148,12 @@ def sample(rng, camera="orbbec640", domain="wide"):
         door_flange=_lerp(rng, 0.010, 0.020), door_face=_lerp(rng, 0.005, 0.011),
         door_latch=bool(rng.random() < 0.8), door_strap=bool(rng.random() < 0.85),
         seal=bool(rng.random() < 0.85), seal_bead=_lerp(rng, 0.0030, 0.0060),
+        # the groove that outlines the shut door — present whether it is shut or not
+        shutline=bool(rng.random() < 0.92), shut_gap=_lerp(rng, 0.0030, 0.0060),
+        shut_step=_lerp(rng, 0.0018, 0.0040),
+        # A bright ring round the filler neck, on the floor where it belongs. It used to be
+        # placed five millimetres above the cap's face, in mid-air inside the box.
+        neck_ring=bool(rng.random() < 0.35), neck_ring_w=_lerp(rng, 0.006, 0.014),
         # the furniture down the recess, and the shape of the aperture — both are what
         # `fit.complexity` says is missing between 6 and 24 mm
         well_ribs=int(rng.choice([0, 3, 4, 4, 5, 6])),
@@ -206,7 +212,11 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # box: at an 18 mm return flange it renders as a tray held out toward the camera.
         # And a real one is usually swung well back toward the wing rather than standing
         # square, so it presents its edge, not its face.
-        door_open=_lerp(rng, 118.0, 176.0),
+        # How far back the door is swung. Counted off the wide reference crops the mode is
+        # around 120 — standing up beside the opening, not lying flat against the wing.
+        # 118-176 put nearly every door outside the frame the region is judged in, which is
+        # also the frame the ROI crop comes from.
+        door_open=float(88.0 + 95.0 * rng.beta(1.7, 2.3)),
         door_w=_lerp(rng, 0.115, 0.160), door_h=_lerp(rng, 0.115, 0.165),
         paint=str(rng.choice(M.PAINT_NAMES)),
         tether=bool(rng.random() < 0.7), tether_az=_lerp(rng, 0.0, 360.0),
@@ -389,8 +399,13 @@ def build(v):
     if style == "box":
         lip = v["box_lip"]
         ref = max(v["open_w"], v["open_h"]) / 2.0
-        hole_plan = [k * (ref + lip * 1.7) for k in
-                     P.rrect_plan(v["open_w"] + 2 * lip * 1.7, v["open_h"] + 2 * lip * 1.7,
+        # The hole meets the lip's OUTER edge exactly. At 1.7 x lip it stood a centimetre
+        # clear of it, and that centimetre rendered as a flat pale band right round the
+        # opening — a picture frame, on a car that has none. What a real one has there is
+        # paint running up to a rolled edge and a black bead.
+        f = 1.0
+        hole_plan = [k * (ref + lip * f) for k in
+                     P.rrect_plan(v["open_w"] + 2 * lip * f, v["open_h"] + 2 * lip * f,
                                   v["open_sq"], 48, ref)]
         hole_at = hole_at - R @ np.array([v["boss_off"][0], v["boss_off"][1], 0.0])
     prog = prog.place(obj=P.panel(size=panel_size, hole_d=2 * pocket_r * 0.995,
@@ -406,7 +421,39 @@ def build(v):
                                   # an id map, the well comes out as a crescent.
                                   hole_ax=baz + math.pi / 2),
                       at=tuple(hole_at), rotate=body_rot)
-    if v["trim"]:
+    if style == "box" and v["shutline"]:
+        # THE DOOR'S OWN SHUT LINE — the groove that outlines the door when it is shut, and
+        # is still there when it is open. It is in every reference photograph and the model
+        # had nothing at all where it goes.
+        #
+        # Built as a real slot, not a painted stripe: a second skin standing `step` proud of
+        # the panel, with a hole the size of the door plus half a gap. Rays go down between
+        # the two skins, so the depth map gets the groove as well as the render — which is
+        # the half that matters, since a stripe of dark paint is invisible in a cloud.
+        ref = max(v["open_w"], v["open_h"]) / 2.0
+        ov, lip = v["door_overlap"], v["box_lip"]
+        dw = v["open_w"] + 2 * (lip + ov) + v["shut_gap"]
+        dh = v["open_h"] + 2 * (lip + ov) + v["shut_gap"]
+        plan = [k * (max(dw, dh) / 2.0) for k in
+                P.rrect_plan(dw, dh, v["open_sq"], 48, max(dw, dh) / 2.0)]
+        prog = prog.place(obj=P.panel(size=panel_size, thick=v["shut_step"],
+                                      material=paint, hole_plan=plan, crown=v["crown"],
+                                      crown_ax=v["crown_ax"]),
+                          at=tuple(hole_at + axis * v["shut_step"]), rotate=body_rot)
+    if style == "box":
+        if v["neck_ring"]:
+            # The bright ring some cars have round the filler neck. It sits ON THE FLOOR,
+            # against the boss — which is where it is on the two reference cars that have
+            # one. It used to be placed five millimetres above the CAP's face, so on every
+            # frame that drew it there was a chrome annulus hanging in mid-air inside the
+            # box, in front of the subject and lit from every side. `recess_depth` changed
+            # meaning under it and nothing noticed, because nothing looked at the region.
+            rin = v["d_cap"] * 0.62
+            prog = prog.place(obj=P.trim_ring(r_in=rin, r_out=rin + v["neck_ring_w"],
+                                              thick=0.0022, screws=0,
+                                              material=M.jitter(M.CATCH_STEEL, rng, dc=0.2)),
+                              at=tuple(cap_c - axis * (v["flange"] + 0.0015)), rotate=tilt)
+    elif v["trim"]:
         prog = prog.place(obj=P.trim_ring(r_in=pocket_r * 0.62,
                                           r_out=pocket_r * 0.62 + v["trim_w"],
                                           screws=int(rng.integers(4, 8))),
