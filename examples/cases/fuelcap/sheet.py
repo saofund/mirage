@@ -29,7 +29,7 @@ OUT = Path(__file__).resolve().parent / "_out"
 
 
 def _render(prog, out, eye, target, w=340, h=340, spp=64, up=(0, 0, 1), fov=0.7, ids=None,
-            env=1.1, sun=2.2):
+            env=1.1, sun=2.2, sky_tint=(1.0, 1.0, 1.0), sky_flat=0.4):
     out.parent.mkdir(parents=True, exist_ok=True)
     js = out.with_suffix(".json")
     js.write_text(prog.to_json(), encoding="utf-8")
@@ -39,7 +39,9 @@ def _render(prog, out, eye, target, w=340, h=340, spp=64, up=(0, 0, 1), fov=0.7,
             "--cam-target", *[f"{x:.5f}" for x in target],
             "--cam-up", *[f"{x:.5f}" for x in up],
             "--cam-fov", f"{fov:.4f}", "--no-ground", "--env", f"{env:.3f}", "--sun", f"{sun:.3f}",
-            "--sun-dir", "0.4", "-0.5", "0.75", "--sky-flat", "0.4", "--smooth-angle", "24"]
+            "--sun-dir", "0.4", "-0.5", "0.75",
+            "--sky-tint", *[f"{x:.3f}" for x in sky_tint],
+            "--sky-flat", f"{sky_flat:.3f}", "--smooth-angle", "24"]
     if ids:
         args += ["--ids", str(out.with_suffix(".pgm")), "--id-tags", ",".join(ids)]
     r = subprocess.run(args, capture_output=True, text=True)
@@ -512,7 +514,8 @@ def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52, az=None):
         return
     p = H.pose(dist=dist, azimuth_deg=az)
     img = _render(prog, tmp / "hero", eye=p["eye"], target=p["target"], up=p["up"],
-                  w=size, h=size, spp=spp, fov=fov, env=0.45, sun=0.95)
+                  w=size, h=size, spp=spp, fov=fov, env=0.55, sun=0.45,
+                  sky_tint=(1.14, 1.06, 0.92), sky_flat=0.78)
     import cv2
     name = "hero_synth.png" if az is None else f"hero_synth_{int(round(az))}.png"
     cv2.imwrite(str(OUT / name), img[:, :, ::-1])
