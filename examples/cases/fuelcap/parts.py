@@ -1337,8 +1337,16 @@ def cap_boss(r_cap, spin=0.0, material=None):
 
     Small, and present on every cap in the reference set that has a cord. Without it the
     cord appears to grow out of a smooth disc, which is the sort of detail that is invisible
-    until it is missing."""
+    until it is missing.
+
+    `spin` is applied HERE, to the lug's own plan, and not by the caller's `place`. Same
+    reason as for the cap: `place` composes Rz @ Ry @ Rx, so a z-rotation handed to it lands
+    OUTSIDE the assembly's tilt and becomes a rotation about a tilted axis. On a 12 mm lug
+    at 15 degrees of tilt that lifted a corner clear of the cap's own face — which is how it
+    was found, by the invariant that says nothing may sit above that face."""
     a = math.radians(spin)
-    return (prism([(-0.006, -0.004), (0.006, -0.004), (0.005, 0.004), (-0.005, 0.004)],
-                  0.0, 0.005, mark="cap_body")
+    c, s = math.cos(a), math.sin(a)
+    plan = [(-0.006, -0.004), (0.006, -0.004), (0.005, 0.004), (-0.005, 0.004)]
+    return (prism([(x * c - y * s, x * s + y * c) for x, y in plan], 0.0, 0.005,
+                  mark="cap_body")
             .material({"by": "all"}, **(material or CAP_BLACK)))

@@ -559,11 +559,14 @@ def build(v):
                           at=tuple(cap_c + axis * (body_z + 0.004)), rotate=body_rot)
     if v["tether"]:
         a = math.radians(v["cap_spin"] + v["tether_az"])
-        prog = prog.place(obj=P.cap_boss(v["d_cap"] / 2, material=cap_mat),
+        # rotate=tilt ONLY; the lug's own turn is baked into its plan, for the same reason
+        # the cap's is (see parts.cap_boss and parts.cap)
+        prog = prog.place(obj=P.cap_boss(v["d_cap"] / 2, spin=v["cap_spin"] + v["tether_az"],
+                                         material=cap_mat),
                           at=tuple(cap_c + R @ np.array([0.46 * v["d_cap"] * math.cos(a),
                                                          0.46 * v["d_cap"] * math.sin(a),
-                                                         -0.002])),
-                          rotate=(v["tilt_x"], v["tilt_y"], v["cap_spin"] + v["tether_az"]))
+                                                         -0.004])),
+                          rotate=tilt)
         s = cap_c + R @ np.array([0.47 * v["d_cap"] * math.cos(a),
                                   0.47 * v["d_cap"] * math.sin(a), 0.001])
         e = np.array([pocket_r * 0.55, 0.010, -0.020 * v["z_gain"]])
