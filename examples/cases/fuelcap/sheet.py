@@ -111,7 +111,7 @@ def scenes_sheet(n=6, seed=3, domain="orbbec"):
     print(OUT / "scenes.png", sheet.shape)
 
 
-def ids_sheet(seed=0, n=3, domain="orbbec"):
+def ids_sheet(seed=0, n=3, domain="orbbec", style=None, closeup=False):
     """The assembly coloured by object id — which pixel belongs to which part.
 
     This is the sheet that finds the errors a beauty render hides: a cap that is really the
@@ -127,11 +127,19 @@ def ids_sheet(seed=0, n=3, domain="orbbec"):
     tiles = []
     for i in range(n):
         v = S.sample(rng, domain=domain)
+        if style:
+            v["pocket_style"] = style
+        if closeup:
+            # An id map at the sensor's own working distance is 60 px of cap: enough to see
+            # that a part is missing, never enough to see that it is the wrong shape.
+            v["dist"], v["obliq"], v["aim_off"] = 0.40, min(v["obliq"], 18.0), [0.0, 0.0]
         prog, gt = S.build(v)
         (tmp / "scene.json").write_text(prog.to_json(), encoding="utf-8")
-        rgb, ids, depth = render_frame(v, gt, tmp, spp=24)
+        rgb, ids, depth = render_frame(v, gt, tmp, spp=24,
+                                       fov=(2.0 * math.atan(v["d_cap"] * 0.85 / v["dist"])
+                                            if closeup else None))
         col = palette[np.clip(ids, 0, len(palette) - 1)]
-        tiles.append((cv2.resize(rgb, (340, 255)), f"rgb  d={v['dist']:.2f}"))
+        tiles.append((cv2.resize(rgb, (340, 255)), f"rgb {v['pocket_style']} d={v['dist']:.2f}"))
         tiles.append((cv2.resize(col, (340, 255), interpolation=cv2.INTER_NEAREST), "ids"))
         dv = depth.copy()
         m = dv > 0
@@ -425,6 +433,9 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=3)
     ap.add_argument("--domain", default="orbbec")
     ap.add_argument("--skip", type=int, default=0, help="offset into the real-crop row")
+    ap.add_argument("--style", default=None, choices=(None, "liner", "dish"),
+                    help="force one pocket family (ids)")
+    ap.add_argument("--closeup", action="store_true", help="ids at photograph magnification")
     a = ap.parse_args(argv)
     OUT.mkdir(parents=True, exist_ok=True)
     if a.what == "closeup":
@@ -442,7 +453,7 @@ def main(argv=None):
     elif a.what == "depth":
         depth_sheet(a.synth, a.n, a.seed)
     else:
-        ids_sheet(a.seed, max(1, a.n // 3), a.domain)
+        ids_sheet(a.seed, max(1, a.n // 3), a.domain, style=a.style, closeup=a.closeup)
 
 
 if __name__ == "__main__":

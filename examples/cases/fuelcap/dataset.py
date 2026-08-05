@@ -261,8 +261,13 @@ def _dropout(valid, rgb, rng, fill=0.60, blob_px=11, speckle=0.0):
 # --------------------------------------------------------------------------- #
 # one frame
 # --------------------------------------------------------------------------- #
-def render_frame(v, gt, work: Path, spp=48, threads=0, denoise=4):
-    """Run the tracer for one variant. Returns (rgb, ids, depth)."""
+def render_frame(v, gt, work: Path, spp=48, threads=0, denoise=4, fov=None):
+    """Run the tracer for one variant. Returns (rgb, ids, depth).
+
+    `fov` overrides the camera's own field for INSPECTION only — a sheet that wants the cap
+    filling the frame rather than sixty pixels of it. Never pass it when generating data:
+    the labels are computed against `gt["fov_y"]`, so a different field silently mislabels
+    everything it renders."""
     prog, _ = None, None
     oplog = work / "scene.json"
     cam = gt
@@ -273,7 +278,7 @@ def render_frame(v, gt, work: Path, spp=48, threads=0, denoise=4):
             "--cam-eye", *[f"{x:.6f}" for x in cam["eye"]],
             "--cam-target", *[f"{x:.6f}" for x in cam["target"]],
             "--cam-up", *[f"{x:.6f}" for x in cam["up"]],
-            "--cam-fov", f"{cam['fov_y']:.6f}",
+            "--cam-fov", f"{(fov if fov else cam['fov_y']):.6f}",
             "--no-ground", "--bounce", "5",
             "--sun", f"{v['sun']:.3f}", "--env", f"{v['env']:.3f}",
             "--sky-flat", f"{v['sky_flat']:.2f}",
