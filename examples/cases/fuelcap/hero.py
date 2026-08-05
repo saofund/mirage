@@ -256,16 +256,18 @@ def exterior_details(prog, paint):
     disc = (MeshProgram().cylinder(sides=96, radius=wheel_r, height=4.0 * MM,
                                    mark="wheel_opening")
             .material({"by": "tag", "name": "wheel_opening"}, **rubber))
-    prog = prog.place(obj=disc, at=(wheel_c[0], wheel_c[1], 1.0 * MM))
+    # The visible upper arc lies on the crowned panel at about z=-7 mm. Keeping the disc
+    # there removes the detached blue shadow cast by the first, front-floating version.
+    prog = prog.place(obj=disc, at=(wheel_c[0], wheel_c[1], -7.0 * MM))
     # A narrow painted return around the wheel aperture, just enough to catch the same soft
     # highlight as the photographed fender lip.
     ring = (MeshProgram()
-            .profile([(wheel_r, 0.0), (wheel_r + 8.0 * MM, 0.0),
-                      (wheel_r + 8.0 * MM, -3.0 * MM), (wheel_r, -3.0 * MM)],
+            .profile([(wheel_r, 0.0), (wheel_r + 2.5 * MM, 0.0),
+                      (wheel_r + 2.5 * MM, -2.0 * MM), (wheel_r, -2.0 * MM)],
                      plane="xz", closed=True)
             .spin(axis="z", steps=96, mark="wheel_lip")
             .material({"by": "tag", "name": "wheel_lip"}, **paint))
-    prog = prog.place(obj=ring, at=(wheel_c[0], wheel_c[1], 3.2 * MM))
+    prog = prog.place(obj=ring, at=(wheel_c[0], wheel_c[1], -4.8 * MM))
 
     # The rear-door seam follows the crowned panel instead of hovering over it as a flat
     # rectangle. It is mostly occluded by the open fuel door, exactly as in the source.
@@ -313,9 +315,9 @@ def door(prog, plan, liner_mat, paint):
                                       strap=False, plan=list(plan),
                                       inside_material=door_inside, inner_details=True),
                       at=(0.0, 0.0, 2.0 * MM))
-    prog = prog.place(obj=P.door_strap(length=94.0 * MM, w=24.0 * MM, t=3.4 * MM,
+    prog = prog.place(obj=P.door_strap(length=125.0 * MM, w=24.0 * MM, t=3.4 * MM,
                                        bend_at=0.38, bend_deg=26.0,
-                                       material=M.mat((0.024, 0.024, 0.027), 0.0, 0.66)),
+                                       material=M.mat((0.019, 0.019, 0.021), 0.0, 0.72)),
                       # Clear of the cap. It was starting at x = 13 mm and running 90 mm,
                       # so it lay straight across the cap's face and hid the printing; in
                       # the photograph it enters at the pocket's right-hand edge and never

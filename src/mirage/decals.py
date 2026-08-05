@@ -378,18 +378,21 @@ def _fuelcap_boyue_door(w, h):
     d = ImageDraw.Draw(im)
     # The photographed label is a small white fuel icon and a large 92 octane callout on a
     # black pad. Keep it small: it is a scale cue, not a signboard.
-    x0, y0, x1, y1 = int(w * 0.20), int(h * 0.56), int(w * 0.41), int(h * 0.74)
+    # Authored in the opposite quadrant because the finished image is rotated for the
+    # camera-facing -z side below. After that turn the label sits beside the hinge, which
+    # is the part of the open door that remains inside the photograph-matched crop.
+    x0, y0, x1, y1 = int(w * 0.56), int(h * 0.26), int(w * 0.77), int(h * 0.44)
     d.rounded_rectangle((x0, y0, x1, y1), radius=max(2, w // 90), fill=(6, 6, 7))
     ink = (152, 152, 145)
     lw = max(2, w // 180)
-    bx, by = int(w * 0.225), int(h * 0.588)
+    bx, by = int(w * 0.585), int(h * 0.288)
     d.rounded_rectangle((bx, by, bx + int(w * 0.043), by + int(h * 0.071)),
                         radius=lw, outline=ink, width=lw)
     d.line((bx + int(w * 0.034), by + int(h * 0.017), bx + int(w * 0.055),
             by + int(h * 0.038), bx + int(w * 0.055), by + int(h * 0.067)),
            fill=ink, width=lw)
-    _text(d, (w * 0.335, h * 0.625), ">92", int(h * 0.078), ink)
-    _text(d, (w * 0.310, h * 0.695), "RON", int(h * 0.024), (105, 105, 101))
+    _text(d, (w * 0.695, h * 0.325), ">92", int(h * 0.078), ink)
+    _text(d, (w * 0.670, h * 0.395), "RON", int(h * 0.024), (105, 105, 101))
     # A few faint rub marks stop the full-face decal background reading as perfectly flat.
     for k in range(7):
         yy = int(h * (0.18 + 0.095 * k))
