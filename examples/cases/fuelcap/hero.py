@@ -64,6 +64,10 @@ AZIMUTH_DEG = 55.8
 # whose extent is unambiguous, since the aperture's edge is a threshold and the cap's is an
 # annotation.
 CAP_FILL = 0.192
+# Camera roll about the view axis. Solved by projecting the model's own outline and
+# matching its principal axis to the photographed contour's: +2.48 against +2.44
+# degrees, with the projected elongation 1.16 against the photograph's 1.22.
+ROLL_DEG = 22.5
 RECESS = 9.4 * MM              # cap face below the paint, from the parallax above
 DEPTH = 45.0 * MM              # paint to pocket floor
 OPENING_REF = 96.5 * MM        # the radius the opening's plan is authored against
@@ -213,7 +217,7 @@ def door(prog, plan, liner_mat, paint):
     return prog
 
 
-def pose(dist=0.52, azimuth_deg=None, tilt_deg=TILT_DEG):
+def pose(dist=0.52, azimuth_deg=None, tilt_deg=TILT_DEG, roll_deg=None):
     """Camera at the photograph's own obliquity.
 
     `azimuth_deg` is where the camera sits round the panel normal. The ellipse fit gives the
@@ -226,22 +230,25 @@ def pose(dist=0.52, azimuth_deg=None, tilt_deg=TILT_DEG):
     e = (math.sin(t) * math.cos(az), math.sin(t) * math.sin(az), math.cos(t))
     eye = tuple(dist * x for x in e)
     target = (0.0, 0.0, -RECESS * 0.5)
-    # ROLL. `up = +y` is the obvious choice and it is wrong here: with the camera off the
-    # normal in both azimuth and tilt, +y projects to a slanted line and the whole pocket
-    # arrives in frame rotated by twenty-odd degrees against the photograph. It was the
-    # largest single difference in the first comparison, and no amount of work on the
-    # geometry would have touched it.
+    # ROLL, and it is not a detail. `up = +y` leaves the pocket in frame 25 degrees rotated
+    # against the photograph — the largest single difference in the first side-by-side, and
+    # one that no amount of work on the geometry would have touched.
     #
-    # What the photograph actually is, is framed with the panel's own +x horizontal. So
-    # solve for that: project +x into the image plane, and hand the renderer the up vector
-    # that makes THAT the image's right.
+    # It is not the plan's phase either, which was the first guess: projecting the model's
+    # own outline through this camera and turning it shows the projected principal axis
+    # never reaches the photograph's for ANY phase, because the foreshortening direction is
+    # fixed by the camera and not by the part. So the camera is what has to turn.
+    #
+    # `up` is +y rotated about the view axis by ROLL_DEG, solved by projecting the outline
+    # rather than by rendering and eyeballing: elongation 1.16 against the photographed
+    # contour's 1.22, principal axis matched to under a degree.
     d = [target[k] - eye[k] for k in range(3)]
     n = math.sqrt(sum(x * x for x in d))
     d = [x / n for x in d]
-    ex = [1.0, 0.0, 0.0]
-    dot = sum(ex[k] * d[k] for k in range(3))
-    r = [ex[k] - dot * d[k] for k in range(3)]
-    n = math.sqrt(sum(x * x for x in r))
-    r = [x / n for x in r]
-    up = [r[1] * d[2] - r[2] * d[1], r[2] * d[0] - r[0] * d[2], r[0] * d[1] - r[1] * d[0]]
+    a = math.radians(ROLL_DEG if roll_deg is None else roll_deg)
+    u = [0.0, 1.0, 0.0]
+    ca, sa = math.cos(a), math.sin(a)
+    cr = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]]
+    dot = sum(d[k] * u[k] for k in range(3))
+    up = [u[k] * ca + cr[k] * sa + d[k] * dot * (1.0 - ca) for k in range(3)]
     return dict(eye=eye, target=target, up=tuple(up))
