@@ -138,7 +138,7 @@ FLUTE_DEPTH = 0.016
 # The coil. Six and a half turns of roughly 20 mm diameter between the cap's lug and an
 # anchor high on the far wall.
 COIL_TURNS = 6.5
-COIL_R = 10.0 * MM
+COIL_R = 9.0 * MM
 COIL_WIRE = 2.1 * MM
 
 
@@ -192,7 +192,7 @@ def build(paint=None, cap_material=None, printing=True):
     lug_a = math.radians(-26.0)
     lug = (CAP_D * 0.50 * math.cos(lug_a), CAP_D * 0.50 * math.sin(lug_a),
            -RECESS - 5.0 * MM)
-    anchor = (OPENING_REF * 0.86, -1.0 * MM, -23.0 * MM)
+    anchor = (OPENING_REF * 0.80, 2.0 * MM, -25.0 * MM)
     prog = prog.place(obj=P.coil_cord(lug, anchor, coils=COIL_TURNS, coil_r=COIL_R,
                                       wire_r=COIL_WIRE, up=(0.0, 0.0, 1.0),
                                       material=M.mat((0.024, 0.024, 0.026), 0.0, 0.55)),
@@ -245,15 +245,15 @@ def door(prog, plan, liner_mat, paint):
     grow = 1.055
     prog = prog.place(obj=P.fuel_door(w=OPENING_REF * 2 * grow, h=OPENING_REF * 2 * grow,
                                       flange=11.0 * MM, face=6.0 * MM, rim=13.0 * MM,
-                                      open_deg=134.0, az=0.0,
+                                      open_deg=150.0, az=0.0,
                                       hinge_r=OPENING_REF * 1.06, gap=3.0 * MM,
                                       steps=96, skin=paint, liner=liner_mat,
                                       strap=False, plan=list(plan)),
                       at=(0.0, 0.0, 2.0 * MM))
     prog = prog.place(obj=P.door_strap(length=90.0 * MM, w=22.0 * MM, t=3.4 * MM,
                                        bend_at=0.38, bend_deg=26.0, material=liner_mat),
-                      at=(OPENING_REF * 0.16, 30.0 * MM, -7.0 * MM),
-                      rotate=(0.0, 0.0, -6.0))
+                      at=(OPENING_REF * 0.14, 17.0 * MM, -8.0 * MM),
+                      rotate=(0.0, 0.0, -4.0))
     return prog
 
 
