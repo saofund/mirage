@@ -133,9 +133,9 @@ DEPTH = 64.0 * MM
 # the cap's width, where the kit's default is a third, and a bar that width changes the
 # whole silhouette — at this scale the cap reads as a bar with two crescents beside it, not
 # as a disc with a rib on it.
-BAR_W = 0.46                   # bar width / cap diameter, at its base
+BAR_W = 0.40                   # bar width / cap diameter, at its base
 BAR_H = 0.105                  # bar height / cap diameter
-BAR_SHOULDER = 0.42            # where its flat top starts, as a fraction of the half width
+BAR_SHOULDER = 0.48            # where its flat top starts, as a fraction of the half width
 BAR_AZ = -19.0                 # bar angle in the panel, degrees, from the photograph
 FLUTES = 14
 # Shallow. The flutes on this cap do reach the silhouette — you can count the scallops on

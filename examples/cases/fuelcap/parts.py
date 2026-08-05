@@ -223,13 +223,18 @@ def handle(length, w_end, w_mid, height, dish=0.20, sag=0.10, ends_down=0.004,
     # bar with a wide top and a crowned ridge whose top is barely half its base, and the
     # difference is the whole silhouette of the part.
     sh = max(0.05, min(0.97, shoulder))
-    mid = sh + (1.0 - sh) * 0.45
+    # The point between the shoulder and the centre is a fraction of the SHOULDER's own
+    # position, not of a value interpolated toward the rim. Written the other way it lands
+    # exactly on the shoulder once `shoulder` drops below about 0.5 — two profile points at
+    # the same x and different heights, which is a vertical wall, and it renders as a hard
+    # crease running the length of the bar.
+    mid = sh * 0.52
     prof = [
         (-hw, -base), (hw, -base),                 # buried base, well below the face
         (hw, height * 0.34), (hw * (1.0 - (1.0 - sh) * 0.30), height * 0.88), (hw * sh, height),
-        (hw * mid * 0.62, height * (1.0 - dish * 0.40)),
+        (hw * mid, height * (1.0 - dish * 0.40)),
         (0.0, height * (1.0 - dish)),              # the scoop (or crown) across the bar
-        (-hw * mid * 0.62, height * (1.0 - dish * 0.40)),
+        (-hw * mid, height * (1.0 - dish * 0.40)),
         (-hw * sh, height), (-hw * (1.0 - (1.0 - sh) * 0.30), height * 0.88), (-hw, height * 0.34),
     ]
     waist = max(0.0, 1.0 - w_mid / max(w_end, 1e-6))
