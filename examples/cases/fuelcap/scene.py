@@ -145,7 +145,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         box_lip=_lerp(rng, 0.003, 0.0065), box_draft=_lerp(rng, 0.80, 0.93),
         # the filler boss is OFF-CENTRE in the box, low and toward the hinge
         boss_off=[_lerp(rng, -0.020, 0.020), _lerp(rng, -0.026, 0.006)],
-        boss_h=_lerp(rng, 0.006, 0.016),
+        boss_h=_lerp(rng, 0.006, 0.016), boss_r=_lerp(rng, 1.02, 1.14),
         # which side the door hinges on, and how far back it is swung
         hinge_az=float(rng.choice([0.0, 90.0, 180.0, 180.0, 270.0])),
         door_overlap=_lerp(rng, 0.006, 0.016),
@@ -157,7 +157,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         shut_step=_lerp(rng, 0.0018, 0.0040),
         # A bright ring round the filler neck, on the floor where it belongs. It used to be
         # placed five millimetres above the cap's face, in mid-air inside the box.
-        neck_ring=bool(rng.random() < 0.35), neck_ring_w=_lerp(rng, 0.006, 0.014),
+        neck_ring=bool(rng.random() < 0.18), neck_ring_w=_lerp(rng, 0.0035, 0.008),
         # the furniture down the recess, and the shape of the aperture — both are what
         # `fit.complexity` says is missing between 6 and 24 mm
         well_ribs=int(rng.choice([0, 3, 4, 4, 5, 6])),
@@ -321,7 +321,15 @@ def build(v):
     # have white, yellow, silver ones. A generic 0.06 grey rendered as a pale tray that
     # matched no car in the frame it was in, which is a worse error than the geometry it
     # was sitting in: the pocket is the largest surface next to the cap.
-    well_mat = (M.jitter(dict(M.PAINTS[v["paint"]], roughness=0.42), rng, dc=0.14)
+    #
+    # Dulled and darkened, not the body's own finish verbatim. Inside a box the paint is
+    # never wiped, never polished, and is lit only by what gets through the opening — at
+    # full saturation and 0.16 roughness a red car came back with a pocket that GLOWED, the
+    # brightest thing in the frame. The reference pockets read as chalky versions of the
+    # car's colour.
+    _p = M.PAINTS[v["paint"]]
+    well_mat = (M.jitter(dict(color=[c * 0.62 for c in _p["color"]],
+                              metallic=_p["metallic"] * 0.35, roughness=0.62), rng, dc=0.16)
                 if v["well_metal"] else M.jitter(M.WELL_PLASTIC, rng, dc=0.22))
 
     # The CAP FACE is the world origin, and everything is placed relative to it. That is
@@ -362,7 +370,14 @@ def build(v):
         depth = body_z + v["flange"] + 0.002 + v["boss_h"]
         prog = prog.place(obj=P.filler_box(open_w=v["open_w"], open_h=v["open_h"],
                                            depth=depth, draft=v["box_draft"],
-                                           sq=v["open_sq"], neck_r=v["d_cap"] * 0.62,
+                                           # The boss is the neck's flange and the cap very
+                                           # nearly covers it — a couple of millimetres show
+                                           # and no more. At 0.62 of the DIAMETER it was
+                                           # 96 mm under a 78 mm cap, so a nine-millimetre
+                                           # grey collar ran round every cap in the set and
+                                           # read as part of the cap.
+                                           sq=v["open_sq"],
+                                           neck_r=v["d_cap"] * 0.5 * v["boss_r"],
                                            neck_h=v["boss_h"], boss_off=(0.0, 0.0),
                                            lip=v["box_lip"], drain=v["well_drain"],
                                            material=well_mat),
