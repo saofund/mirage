@@ -52,60 +52,74 @@ MM = 1e-3
 # --------------------------------------------------------------------------- #
 # what the photograph says, in millimetres
 # --------------------------------------------------------------------------- #
+# The model frame is the OPENING'S OWN AXES: +x along its long axis (toward the hinge),
+# +y up on the car, +z out of the paint, origin at the cap's centre. Defining it that way
+# rather than off the rectification's arbitrary axes is what finally made the numbers below
+# agree with each other — see the note on RECESS.
 CAP_D = 57.0 * MM              # the assumed scale; everything else is a ratio to it
 TILT_DEG = 32.6                # camera off the panel normal, from the cap's ellipse
+
+# The opening. 3.30 by 2.66 cap diameters, and that ratio is the headline of this whole
+# exercise: `scene.py` draws 2.25 by 2.0, so every frame the case has ever produced has a
+# cap around 40% too big for its pocket.
+#
+# Three numbers rather than the 36-entry measured table this started with. The table was
+# taken about the bounding box of a contour that leaks along the hinge strap, in a frame
+# whose rotation came from a superellipse fit whose two axes had been read the wrong way
+# round — so it described an egg, and it rendered as one. Re-fitting on the clean sectors
+# gives a proper stamped rounded rectangle: exponent 2.90, residual 4.5 mm rms, which is
+# 2.4% of the radius and is dominated by the segmentation rather than by any real
+# lumpiness. `parts.measured_plan` stays in the kit for outlines that genuinely are not
+# superelliptic; this one is.
+OPEN_W = 188.1 * MM
+OPEN_H = 151.8 * MM
+OPEN_N = 2.90
+OPENING_REF = max(OPEN_W, OPEN_H) / 2.0
+
 # Which SIDE of the tilt axis the camera is on. A circle projects to the same ellipse from
-# either, so this is the one number the photograph cannot supply and it was settled by
-# rendering both and looking: at 235.8 the cap's printing arrives upside down against the
-# photograph's, at 55.8 it reads the same way round.
-AZIMUTH_DEG = 55.8
+# either, so the cap's own ellipse cannot say — but the PARALLAX can, see RECESS.
+AZIMUTH_DEG = 40.5
 # The cap's width as a fraction of the frame, so the render and the photograph crop can be
 # framed on the same feature. The cap, not the opening: it is the one thing in both pictures
 # whose extent is unambiguous, since the aperture's edge is a threshold and the cap's is an
 # annotation.
 CAP_FILL = 0.192
-# Camera roll about the view axis. `up = +y` leaves the pocket 25 degrees rotated against
-# the photograph, which was the largest single difference in the first side-by-side and one
-# that no work on the geometry would have touched.
+# Camera roll about the view axis. `up = +y` leaves the pocket badly rotated against the
+# photograph, and that was the largest single difference in the first side-by-side — one
+# that no amount of work on the geometry would have touched.
 #
 # Solved, not tuned: project the model's own outline through this camera and turn it until
-# its principal axis matches the photographed contour's. +2.48 degrees against +2.44, with
-# the projected elongation 1.16 against 1.22. The projection is the renderer's own — fwd,
-# right = cross(fwd, up), up2 = cross(right, fwd), image y downward — read off
-# `core/src/raytrace.cpp`, so this is arithmetic rather than a guess at a convention.
+# its principal axis matches the photographed contour's. The projection is the renderer's
+# own — fwd, right = cross(fwd, up), up2 = cross(right, fwd), image y downward — read off
+# `core/src/raytrace.cpp`, so this is arithmetic and not a guess at a convention.
 #
-# It was briefly "calibrated" to 58 instead, by rendering at two rolls and measuring the
+# It was briefly "calibrated" instead, by rendering at two rolls and measuring the
 # aperture's principal axis in each. That measurement is worthless: the aperture is a
 # threshold and it merges with the equally black hinge strap and door, which drags its
-# principal axis by a constant 37 degrees. Both render measurements are off by that same
-# amount, which is what gives it away.
-ROLL_DEG = 22.5
-RECESS = 10.5 * MM             # cap face below the paint
-# The cap is NOT concentric with the opening: fitting a superellipse to the aperture with
-# the hinge-strap sector excluded puts its centre 7.6 mm from the cap's, at 143 degrees.
-# That was read as parallax at first, and it is not — parallax displaces a recessed feature
-# along the camera's AZIMUTH, which is perpendicular to the tilt axis, and this displacement
-# is along the tilt axis itself. It is the neck boss sitting off-centre, low and toward the
-# hinge, which is where every off-centre boss in the reference set sits.
-BOSS_OFF = (6.1 * MM, -4.5 * MM)
-DEPTH = 45.0 * MM              # paint to pocket floor
-OPENING_REF = 96.5 * MM        # the radius the opening's plan is authored against
+# principal axis by a constant 37 degrees. Both render measurements were off by that same
+# amount, which is what gave it away.
+# Solving gives two answers 180 degrees apart; the other one is the same framing with
+# the picture upside down. In the corrected frame the projected outline lands at +2.46
+# degrees against the photograph's +2.44, with elongation 1.205 against 1.219 and image
+# aspect 1.260 against 1.287.
+ROLL_DEG = 33.25
 
-# The opening's outline, measured: radius divided by OPENING_REF every 10 degrees counter-
-# clockwise from +x (+x is toward the hinge, +y is up on the car). Taken off the rectified
-# photograph by thresholding the aperture out of the body paint. Between 10 and 70 degrees
-# the aperture's dark region runs straight out along the equally dark hinge strap, so the
-# contour there is the strap's silhouette and not the opening's; that sector alone is a
-# smooth blend across its neighbours, and it is the only part of this table that is not
-# measured.
-OPENING_PLAN = (
-    0.9512, 0.9466, 0.9419, 0.9373, 0.9326, 0.9280,
-    0.9234, 0.9187, 0.9141, 0.8488, 0.8119, 0.7979,
-    0.8059, 0.8379, 0.8921, 0.9523, 0.9921, 1.0000,
-    0.9786, 0.9445, 0.9098, 0.8866, 0.8849, 0.9053,
-    0.9465, 0.9826, 0.9497, 0.8731, 0.8089, 0.7686,
-    0.7535, 0.7589, 0.7857, 0.8344, 0.8918, 0.9343,
-)
+# The cap's face below the paint, and this one is worth the paragraph.
+#
+# The cap's centre sits 10.1 mm from the opening's in the rectified photograph. Read as
+# parallax that gives the recess directly: a feature `d` below the panel appears displaced
+# by `d * tan(tilt)` toward the camera's azimuth, so 10.1 mm at 32.6 degrees is 15.8 mm.
+#
+# In the first, broken frame that same displacement came out along the tilt AXIS rather than
+# along the camera's azimuth — which parallax cannot do — and it was written up as an
+# off-centre neck boss instead, complete with the observation that the reference bosses do
+# sit off-centre. It was a wrong conclusion drawn confidently from a frame that was 90
+# degrees out. In the corrected frame the displacement is at 57 degrees against the camera's
+# 40.5, so it is parallax, the boss is central, and the DIRECTION of the displacement also
+# settles which side of the tilt axis the camera is on — the number the ellipse alone could
+# not supply.
+RECESS = 15.8 * MM
+DEPTH = 45.0 * MM              # paint to pocket floor
 
 # The cap, read off the rectified close-up. The bar is the number that matters: it is HALF
 # the cap's width, where the kit's default is a third, and a bar that width changes the
@@ -129,7 +143,7 @@ COIL_WIRE = 2.1 * MM
 
 
 def _plan(steps):
-    return P.measured_plan(OPENING_PLAN, steps)
+    return P.rrect_plan(OPEN_W, OPEN_H, OPEN_N, steps, OPENING_REF)
 
 
 def build(paint=None, cap_material=None, printing=True):
@@ -166,26 +180,26 @@ def build(paint=None, cap_material=None, printing=True):
     flange = 13.0 * MM
     prog = prog.place(obj=P.neck_stack(CAP_D * 0.46, -DEPTH, -RECESS - flange + 1.0 * MM,
                                        flare=1.30, material=liner_mat),
-                      at=(BOSS_OFF[0], BOSS_OFF[1], 0.0))
+                      at=(0.0, 0.0, 0.0))
 
     # 4. the cap
     prog = prog.place(obj=cap(cap_mat, printing=printing),
-                      at=(BOSS_OFF[0], BOSS_OFF[1], -RECESS))
+                      at=(0.0, 0.0, -RECESS))
 
     # 5. the coiled tether. It leaves the cap at about four o'clock and runs out to an anchor
     # on the +x wall — read straight off the rectified photograph, where the coil sits
     # between x = +30 and +85 mm and rises about 15 mm across that run.
     lug_a = math.radians(-26.0)
-    lug = (BOSS_OFF[0] + CAP_D * 0.50 * math.cos(lug_a),
-           BOSS_OFF[1] + CAP_D * 0.50 * math.sin(lug_a), -RECESS - 5.0 * MM)
+    lug = (CAP_D * 0.50 * math.cos(lug_a), CAP_D * 0.50 * math.sin(lug_a),
+           -RECESS - 5.0 * MM)
     anchor = (OPENING_REF * 0.86, -1.0 * MM, -23.0 * MM)
     prog = prog.place(obj=P.coil_cord(lug, anchor, coils=COIL_TURNS, coil_r=COIL_R,
                                       wire_r=COIL_WIRE, up=(0.0, 0.0, 1.0),
                                       material=M.mat((0.024, 0.024, 0.026), 0.0, 0.55)),
                       at=(0.0, 0.0, 0.0))
     prog = prog.place(obj=P.cap_boss(CAP_D / 2.0, spin=-26.0, material=cap_mat),
-                      at=(BOSS_OFF[0] + CAP_D * 0.46 * math.cos(lug_a),
-                          BOSS_OFF[1] + CAP_D * 0.46 * math.sin(lug_a), -RECESS - 5.5 * MM))
+                      at=(CAP_D * 0.46 * math.cos(lug_a),
+                          CAP_D * 0.46 * math.sin(lug_a), -RECESS - 5.5 * MM))
 
     # 6. the door bumper, on the wall opposite the hinge
     prog = prog.place(obj=P.bump_stop(r=6.5 * MM, h=12.0 * MM),
@@ -194,7 +208,7 @@ def build(paint=None, cap_material=None, printing=True):
 
     # 7. the moulding pips round the flange
     for a in (24.0, 96.0, 152.0, 208.0, 262.0, 318.0):
-        k = P.measured_plan(OPENING_PLAN, 360)[int(a) % 360]
+        k = P.rrect_plan(OPEN_W, OPEN_H, OPEN_N, 360, OPENING_REF)[int(a) % 360]
         r = OPENING_REF * k - 5.5 * MM
         prog = prog.place(obj=P.pip(r=2.2 * MM, h=0.9 * MM, material=liner_mat),
                           at=(r * math.cos(math.radians(a)), r * math.sin(math.radians(a)),
