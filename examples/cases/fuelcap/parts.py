@@ -185,7 +185,7 @@ def lobe_plan(lobes, depth, steps, phase=0.0):
     return [k / m for k in ks]
 
 
-def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.004,
+def handle(length, w_end, w_mid, height, dish=0.20, sag=0.10, ends_down=0.004,
            base=0.003, tip=0.72, stations=34, mark="cap_rib"):
     """The moulded grip across a fuel cap: a WAISTED bar with a TROUGH along its top.
 
@@ -210,13 +210,17 @@ def handle(length, w_end, w_mid, height, dish=0.34, sag=0.10, ends_down=0.004,
     where the bar's flank crosses the face, not an end cap somebody drew.
     """
     hw = w_end / 2.0
+    # The scoop is WIDE and SHALLOW — the shoulders are out at 0.80 of the half width and the
+    # centre is a fifth down, not a third. Narrow and deep it reads as a groove milled down
+    # the bar rather than as a place to put a thumb, and with a smoothed normal it puts two
+    # bright rails and a black valley on a part the photographs show as one soft surface.
     prof = [
         (-hw, -base), (hw, -base),                 # buried base, well below the face
-        (hw, height * 0.34), (hw * 0.90, height * 0.86), (hw * 0.66, height),
-        (hw * 0.30, height * (1.0 - dish * 0.55)),
-        (0.0, height * (1.0 - dish)),              # the trough, across the bar
-        (-hw * 0.30, height * (1.0 - dish * 0.55)),
-        (-hw * 0.66, height), (-hw * 0.90, height * 0.86), (-hw, height * 0.34),
+        (hw, height * 0.34), (hw * 0.94, height * 0.88), (hw * 0.80, height),
+        (hw * 0.42, height * (1.0 - dish * 0.40)),
+        (0.0, height * (1.0 - dish)),              # the scoop, across the bar
+        (-hw * 0.42, height * (1.0 - dish * 0.40)),
+        (-hw * 0.80, height), (-hw * 0.94, height * 0.88), (-hw, height * 0.34),
     ]
     waist = max(0.0, 1.0 - w_mid / max(w_end, 1e-6))
     path, scale = [], []
@@ -437,14 +441,23 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
                     at=(0.0, 0.0, 0.0), material=rib_material)
         return p
 
-    # Clamp the bar so its tilted end section cannot reach past the rim: the end dips, so
-    # the section there leans, and the corner of a bar buried `base` deep sticks out by
-    # roughly base/2 beyond the path's last station.
-    half = min(rib_len / 2.0, rf * 0.99 - 0.0018)
-    p = p.place(obj=handle(2.0 * half, rib_w, rib_w * waist, rib_h,
-                           dish=0.34, sag=0.10, ends_down=rib_h * 1.15,
-                           base=0.003, mark="cap_rib"),
-                at=(0.0, 0.0, min(dome, 0.0)), rotate=(0.0, 0.0, spin), material=rib_material)
+    # Keep the bar inside the cap's silhouette, MEASURED rather than estimated. The path
+    # dips steeply at the ends to bury the open rings, so the section there leans by nearly
+    # forty degrees and its top corner reaches several millimetres past the last station —
+    # diagonally, so what matters is a radius, not an x. Two closed-form guesses at that
+    # overhang were both wrong (one by 4 mm, one so conservative it cost a fifth of the
+    # bar's length), and the mesh is 370 vertices, so it is cheaper to ask it.
+    bar = lambda L: handle(L, rib_w, rib_w * waist, rib_h, dish=0.20, sag=0.10,
+                           ends_down=rib_h * 1.15, base=0.003, mark="cap_rib")
+    lim, L = r * 0.995, rib_len
+    for _ in range(4):
+        co = [v.co for v in bar(L).build().verts]
+        reach = max(math.hypot(c[0], c[1]) for c in co)
+        if reach <= lim:
+            break
+        L -= 2.0 * (reach - lim)
+    p = p.place(obj=bar(L), at=(0.0, 0.0, min(dome, 0.0)), rotate=(0.0, 0.0, spin),
+                material=rib_material)
     if rib_slot > 0:
         # The groove down the spine of a raised bar — the double-decker variant. Sunk into
         # the handle's top, narrower than the waist so it survives the pinch.
