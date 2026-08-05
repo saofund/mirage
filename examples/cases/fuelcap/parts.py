@@ -905,6 +905,47 @@ def filler_box(open_w=0.170, open_h=0.152, depth=0.062, draft=0.86, sq=4.4,
     return p
 
 
+def box_details(open_w, open_h, depth, draft=0.86, sq=4.4, keep_out=0.045, screws=2,
+                catches=1, grommets=1, seed=0, material=None):
+    """The hardware down a box pocket — on the WALLS, which is where a box has walls.
+
+    `well_details` scatters its parts on a ring, because the pocket it was written for was a
+    solid of revolution. A box has four flat sides and a floor, and everything real in these
+    photographs is bolted to one of them: the striker on the wall nearest the latch, screws
+    through the liner, a grommet where the breather leaves, the tether's anchor.
+
+    Empty, a box reads as a render. It is also the only structure inside the ROI, so it is
+    what `fit.complexity` is measuring when it asks how much relief there is between 6 and
+    24 mm."""
+    import random
+    rr = random.Random(seed)
+    material = material or WELL_PLASTIC
+    ref = max(open_w, open_h) / 2.0
+    p = MeshProgram()
+
+    def on_wall(frac_depth, jitter=0.10):
+        """A point on the box's wall at a given depth, and the outward normal's azimuth."""
+        a = rr.uniform(0, TAU)
+        k = rrect_plan(open_w, open_h, sq, 96, ref)[int(a / TAU * 96) % 96]
+        t = frac_depth
+        r = ref * k * (1.0 - (1.0 - draft) * t) * (1.0 - jitter * rr.random())
+        return r * math.cos(a), r * math.sin(a), -depth * t, math.degrees(a)
+
+    for _ in range(screws):
+        x, y, z, a = on_wall(rr.uniform(0.30, 0.85))
+        p = p.place(obj=screw(r=rr.uniform(0.0028, 0.0040)), at=(x, y, z),
+                    rotate=(0.0, 0.0, a))
+    for _ in range(catches):
+        x, y, z, a = on_wall(rr.uniform(0.16, 0.40), jitter=0.02)
+        p = p.place(obj=catch(w=rr.uniform(0.012, 0.019), h=rr.uniform(0.016, 0.026)),
+                    at=(x, y, z), rotate=(90.0, 0.0, a + 90.0))
+    for _ in range(grommets):
+        x, y, z, a = on_wall(rr.uniform(0.70, 0.95))
+        p = p.place(obj=grommet(r=rr.uniform(0.0045, 0.0070)), at=(x, y, z),
+                    rotate=(0.0, 0.0, a))
+    return p
+
+
 def opening_seal(open_w=0.170, open_h=0.152, sq=4.4, bead=0.0045, lip=0.010, steps=72,
                  material=None):
     """The rubber weatherstrip round the opening — the black band in every reference frame.

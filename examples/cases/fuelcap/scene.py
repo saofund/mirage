@@ -132,13 +132,17 @@ def sample(rng, camera="orbbec640", domain="wide"):
         # THE OPENING. A rounded rectangle about 170 x 150 with a 25 mm corner radius, on
         # car after car — never a circle, and never as tall as it is wide.
         open_w=_lerp(rng, 0.152, 0.198), open_h=_lerp(rng, 0.136, 0.176),
-        open_sq=_lerp(rng, 3.2, 6.0),
+        # Corner sharpness. 6 is a sheet-metal impossibility — a drawn corner has a 20-30 mm
+        # radius, which on a 170 mm opening is n around 3.
+        open_sq=_lerp(rng, 2.6, 4.4),
         # How far the paint stands proud of the cap's face. Measured on the real clouds at
         # 22 mm, and every photograph agrees: the cap sits well DOWN inside the box, with
         # its whole fluted wall below the body surface. The kit had 10.5, from a statistic
         # that was averaging a box into a saucer.
         recess=_lerp(rng, 0.015, 0.034),
-        box_lip=_lerp(rng, 0.007, 0.014), box_draft=_lerp(rng, 0.80, 0.93),
+        # The rolled edge round the opening is TIGHT — 3 to 6 mm. At 7-14, with a seal bead
+        # on top, it read as a garden hose laid round the aperture.
+        box_lip=_lerp(rng, 0.003, 0.0065), box_draft=_lerp(rng, 0.80, 0.93),
         # the filler boss is OFF-CENTRE in the box, low and toward the hinge
         boss_off=[_lerp(rng, -0.020, 0.020), _lerp(rng, -0.026, 0.006)],
         boss_h=_lerp(rng, 0.006, 0.016),
@@ -147,7 +151,7 @@ def sample(rng, camera="orbbec640", domain="wide"):
         door_overlap=_lerp(rng, 0.006, 0.016),
         door_flange=_lerp(rng, 0.010, 0.020), door_face=_lerp(rng, 0.005, 0.011),
         door_latch=bool(rng.random() < 0.8), door_strap=bool(rng.random() < 0.85),
-        seal=bool(rng.random() < 0.85), seal_bead=_lerp(rng, 0.0030, 0.0060),
+        seal=bool(rng.random() < 0.85), seal_bead=_lerp(rng, 0.0018, 0.0034),
         # the groove that outlines the shut door — present whether it is shut or not
         shutline=bool(rng.random() < 0.92), shut_gap=_lerp(rng, 0.0030, 0.0060),
         shut_step=_lerp(rng, 0.0018, 0.0040),
@@ -312,7 +316,13 @@ def build(v):
     cap_mat = (M.jitter(M.CAP_METAL_FAMILY[int(rng.integers(0, len(M.CAP_METAL_FAMILY)))],
                         rng, dc=0.12, dr=0.14) if v["alu"]
                else M.jitter(M.CAP_FAMILY[int(rng.integers(0, len(M.CAP_FAMILY)))], rng))
-    well_mat = M.jitter(M.WELL_METAL if v["well_metal"] else M.WELL_PLASTIC, rng, dc=0.22)
+    # A "metal" pocket is not grey — it is the CAR'S OWN COLOUR, because it is the same
+    # panel, pressed and painted in the same booth. The reference cars with a bare pocket
+    # have white, yellow, silver ones. A generic 0.06 grey rendered as a pale tray that
+    # matched no car in the frame it was in, which is a worse error than the geometry it
+    # was sitting in: the pocket is the largest surface next to the cap.
+    well_mat = (M.jitter(dict(M.PAINTS[v["paint"]], roughness=0.42), rng, dc=0.14)
+                if v["well_metal"] else M.jitter(M.WELL_PLASTIC, rng, dc=0.22))
 
     # The CAP FACE is the world origin, and everything is placed relative to it. That is
     # not a convenience: the measured section is a height-above-the-cap-face table, so
@@ -363,6 +373,17 @@ def build(v):
             prog = prog.place(obj=P.opening_seal(open_w=v["open_w"], open_h=v["open_h"],
                                                  sq=v["open_sq"], bead=v["seal_bead"],
                                                  lip=v["box_lip"]),
+                              at=tuple(cap_c + axis * body_z - R @ boss), rotate=tilt)
+        if v["n_screws"] or v["n_catches"] or v["n_grommets"]:
+            # An empty box reads as a render, and it is also the only structure inside the
+            # ROI — which is what `fit.complexity` is asking about when it measures relief
+            # between 6 and 24 mm.
+            prog = prog.place(obj=P.box_details(v["open_w"], v["open_h"], depth,
+                                                draft=v["box_draft"], sq=v["open_sq"],
+                                                screws=v["n_screws"], catches=v["n_catches"],
+                                                grommets=v["n_grommets"],
+                                                seed=int(v["cap_spin"] * 13) % 9999,
+                                                material=well_mat),
                               at=tuple(cap_c + axis * body_z - R @ boss), rotate=tilt)
     elif dish:
         # The pressed-metal family: the panel itself is the pocket, so it is painted, and
