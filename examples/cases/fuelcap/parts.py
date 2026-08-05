@@ -416,7 +416,13 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
         # what is underneath is the cap body's own solid top face. Sinking the floor past
         # it just buries the well: the body's face is what the camera then sees, which is
         # why this rendered as a flat disc with a pad on it through three attempts.
-        land = max(rib_h * 0.62, 0.008)
+        # The land is a nuisance, not a feature: on the photographed slot caps the well is
+        # sunk straight into the face and there is no raised platform at all. It exists here
+        # only because `place` unions, so a floor cannot go below the cap body's own top
+        # face — the well has to be lifted just far enough to have somewhere to sink into.
+        # At 8 mm that lift stood taller than the handle on the other grip family and put a
+        # tower in the middle of the cap; 3.5 mm reads as a sunk grip.
+        land = max(rib_h * 0.45, 0.0035)
         depth = land * 0.90
         p = p.place(obj=slotted_face(rf, turn(stadium(rib_len * 0.86, rib_w * 1.05, arc=22)),
                                      dome + land, dome + land - depth,
@@ -434,7 +440,7 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
     # roughly base/2 beyond the path's last station.
     half = min(rib_len / 2.0, rf * 0.99 - 0.0018)
     p = p.place(obj=handle(2.0 * half, rib_w, rib_w * waist, rib_h,
-                           dish=0.34, sag=0.10, ends_down=rib_h * 0.55,
+                           dish=0.34, sag=0.10, ends_down=rib_h * 1.15,
                            base=0.003, mark="cap_rib"),
                 at=(0.0, 0.0, min(dome, 0.0)), rotate=(0.0, 0.0, spin), material=rib_material)
     if rib_slot > 0:
@@ -541,7 +547,8 @@ def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, screws=2,
     if drain:
         # the notch at the low point, where water is meant to leave
         p = p.place(obj=prism(superellipse(0.008, 0.0045, 2.6, 14), 0.0, 0.011, mark="well"),
-                    at=(0.0, -(rf - 0.005), -depth - 0.001), material=GRIME)
+                    at=(0.0, -max(rf - 0.005, keep_out + 0.011), -depth - 0.001),
+                    material=GRIME)
     # The hardware. Scattered on a deterministic pseudo-random ring rather than at fixed
     # angles: on the reference cars these sit wherever the moulding allowed, and a fixed
     # arrangement would be one more constant for a network to learn instead of the pose.
@@ -555,7 +562,10 @@ def well_details(rim_r, floor_d, depth, rng=None, ribs=4, drain=True, screws=2,
     # because a screw sitting on the cap still measures as a cap-shaped surface.
     import random
     rr = random.Random(seed)
-    lo = max(keep_out * 1.10, rim_r * 0.50)
+    # `lo` clears the cap by the widest HALF-EXTENT anything here has (a catch is 20 mm
+    # across), not merely by its centre. Clearing centres is what let a 16 mm bracket
+    # centred 4 mm outside the cap still lie half on top of it.
+    lo = max(keep_out + 0.013, rim_r * 0.50)
     hi = max(lo + 0.004, rim_r)
     ring = lambda f0, f1: lo + (hi - lo) * rr.uniform(f0, f1)
     for i in range(screws):
@@ -954,9 +964,22 @@ def trim_ring(r_in=0.062, r_out=0.076, thick=0.003, screws=6, steps=44, material
     subject is matt black, which changes what the ROI looks like far more than its size
     suggests."""
     material = material or CAP_CHROME
-    p = lathe([(0.0, 0.0), (r_out, 0.0), (r_out, -thick), (r_in, -thick * 0.55),
-               (r_in, 0.0), (0.0, 0.0)], steps=steps, mark="panel")
-    p = p.material({"by": "tag", "name": "panel"}, **material)
+    # A CLOSED section spun 360 degrees — an annulus with a hole, not a disc.
+    #
+    # `lathe` insists its section start and end ON the axis, because that is what closes an
+    # open polyline into a solid. This part is the one shape in the kit that must NOT: it
+    # has a hole in the middle. Written as a lathe it began (0, 0) -> (r_out, 0), which
+    # sweeps a solid plate from the axis outwards, five millimetres ABOVE the cap face —
+    # so on every frame that drew a trim ring the whole pocket was capped by a chrome plate
+    # with the cap invisible underneath and only the handle poking through. Three of eight
+    # closeup frames, and it had been in the kit unnoticed since it was written, because at
+    # the sixty-pixel scale everything was judged at, a plate over the pocket and a pocket
+    # are the same grey blob.
+    p = (MeshProgram()
+         .profile([(r_in, 0.0), (r_out, 0.0), (r_out, -thick), (r_in, -thick * 0.55)],
+                  plane="xz", closed=True)
+         .spin(axis="z", steps=steps, angle=360.0, mark="panel")
+         .material({"by": "tag", "name": "panel"}, **material))
     rm = (r_in + r_out) / 2
     for i in range(screws):
         a = TAU * (i + 0.5) / screws
