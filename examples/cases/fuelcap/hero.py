@@ -122,7 +122,12 @@ ROLL_DEG = 19.90
 # settles which side of the tilt axis the camera is on — the number the ellipse alone could
 # not supply.
 RECESS = 15.8 * MM
-DEPTH = 45.0 * MM              # paint to pocket floor
+# Paint to pocket floor. 45 mm leaves a floor that sees a large solid angle of sky and
+# renders as a lit grey ramp under the cap, where the photograph has no readable floor
+# at all — just the cap standing in black. A pocket is dark because it is DEEP and
+# steep-sided, not because its walls are painted dark; the albedo in here is already
+# 0.017 and there is nothing left to take away.
+DEPTH = 64.0 * MM
 
 # The cap, read off the rectified close-up. The bar is the number that matters: it is HALF
 # the cap's width, where the kit's default is a third, and a bar that width changes the
@@ -178,8 +183,8 @@ def build(paint=None, cap_material=None, printing=True):
                                   # the sky enough to render as a bright gradient where the
                                   # photograph has near-black. A moulded liner is a box with
                                   # just enough draft to leave the tool.
-                                  flange_z=2.0 * MM, fold=5.0 * MM, wall_k=0.865,
-                                  ledge=7.0 * MM, floor_k=0.80, steps=steps,
+                                  flange_z=2.0 * MM, fold=5.0 * MM, wall_k=0.875,
+                                  ledge=7.0 * MM, floor_k=0.78, steps=steps,
                                   material=liner_mat),
                       at=(0.0, 0.0, 0.0))
 
