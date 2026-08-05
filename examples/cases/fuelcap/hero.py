@@ -98,11 +98,14 @@ CAP_FILL = 0.192
 # threshold and it merges with the equally black hinge strap and door, which drags its
 # principal axis by a constant 37 degrees. Both render measurements were off by that same
 # amount, which is what gave it away.
-# Solving gives two answers 180 degrees apart; the other one is the same framing with
-# the picture upside down. In the corrected frame the projected outline lands at +2.46
-# degrees against the photograph's +2.44, with elongation 1.205 against 1.219 and image
-# aspect 1.260 against 1.287.
-ROLL_DEG = 33.25
+# Solved against the CAP's projected ellipse, not against the aperture's outline. The
+# aperture in the photograph is a threshold that runs out along the equally black hinge
+# strap, so its principal axis is biased; the cap's ellipse comes from an annotation polygon
+# and is the same measurement on both sides. At this roll the projected cap's major axis is
+# 34.22 degrees against the photograph's 34.2, and its minor/major is 0.851 against 0.842 —
+# which is also an independent confirmation of the 32.6-degree tilt, since nothing was
+# fitted to that ratio.
+ROLL_DEG = 19.90
 
 # The cap's face below the paint, and this one is worth the paragraph.
 #
@@ -254,10 +257,14 @@ def door(prog, plan, liner_mat, paint):
                                       steps=96, skin=paint, liner=liner_mat,
                                       strap=False, plan=list(plan)),
                       at=(0.0, 0.0, 2.0 * MM))
-    prog = prog.place(obj=P.door_strap(length=90.0 * MM, w=22.0 * MM, t=3.4 * MM,
+    prog = prog.place(obj=P.door_strap(length=72.0 * MM, w=22.0 * MM, t=3.4 * MM,
                                        bend_at=0.38, bend_deg=26.0,
                                        material=M.mat((0.017, 0.017, 0.019), 0.0, 0.80)),
-                      at=(OPENING_REF * 0.14, 17.0 * MM, -8.0 * MM),
+                      # Clear of the cap. It was starting at x = 13 mm and running 90 mm,
+                      # so it lay straight across the cap's face and hid the printing; in
+                      # the photograph it enters at the pocket's right-hand edge and never
+                      # crosses the cap at all.
+                      at=(58.0 * MM, 20.0 * MM, -10.0 * MM),
                       rotate=(0.0, 0.0, -4.0))
     return prog
 
