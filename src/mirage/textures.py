@@ -548,6 +548,8 @@ _LIBRARY = {
     "shop_tile":          lambda: _wall_tile(RES, 149, (0.72, 0.725, 0.71), (0.30, 0.30, 0.295), tiles=6),
     "fuelcap_plastic":    lambda: _moulded_plastic(RES, 181, (0.0165, 0.0165, 0.018), rough_base=0.68, wear=0.18),
     "fuelcap_white_paint": lambda: _automotive_paint(RES, 191, (0.76, 0.765, 0.76), rough_base=0.15),
+    "fuelcap_polo_blue_paint": lambda: _automotive_paint(
+        RES, 197, (0.080, 0.285, 0.470), rough_base=0.16),
     # The painted lines were the last flat surface in the frame -- one constant colour over
     # their whole length, where the reference has them clean at one end of the array (luma
     # 0.836) and trodden grey at the other (0.669). Same generator as a bay, because a line
