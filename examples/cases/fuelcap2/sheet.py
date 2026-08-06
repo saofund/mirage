@@ -38,7 +38,15 @@ def render(size=1000, spp=160):
             "--exposure", "0.96", "--smooth-angle", "34", "--bounce", "7", "--no-ground"]
     subprocess.run(args, check=True)
     import cv2
-    cv2.imwrite(str(png), _read_ppm(ppm)[:, :, ::-1])
+    rgb = _read_ppm(ppm).astype(np.float32)
+    # The source is a compact-camera frame, not a noiseless float buffer. Preserve the
+    # path-traced edges while adding the low-amplitude luma/chroma grain visible across its
+    # blue paint. This is deterministic so a visual diff still means something.
+    rng = np.random.default_rng(2007)
+    luma = rng.normal(0.0, 1.25, rgb.shape[:2])[..., None]
+    chroma = rng.normal(0.0, 0.55, rgb.shape)
+    rgb = np.clip(rgb + luma + chroma, 0, 255).astype(np.uint8)
+    cv2.imwrite(str(png), rgb[:, :, ::-1])
     print(png)
     return png
 

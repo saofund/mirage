@@ -48,13 +48,16 @@ LINER = mat((0.038, 0.040, 0.043), 0.0, 0.70,
             maps=TEX["fuelcap_polo_liner"], uv_scale=0.014)
 CAP = mat((0.072, 0.074, 0.077), 0.0, 0.50,
           maps=TEX["fuelcap_polo_cap"], uv_scale=0.010)
+CAP_GRIP = mat((0.043, 0.045, 0.048), 0.0, 0.58)
 RUBBER = mat((0.008, 0.008, 0.009), 0.0, 0.84)
-STEEL = mat((0.038, 0.040, 0.043), 0.58, 0.52)
+STEEL = mat((0.060, 0.063, 0.068), 0.52, 0.50)
 WATER = mat((0.34, 0.38, 0.42), 0.0, 0.055)
 LAMP_RED = mat((0.31, 0.006, 0.008), 0.18, 0.090)
 LAMP_DARK = mat((0.045, 0.002, 0.003), 0.10, 0.18)
 LAMP_CLEAR = mat((0.65, 0.66, 0.62), 0.05, 0.08)
 LAMP_RIB = mat((0.14, 0.003, 0.004), 0.12, 0.14)
+DOOR_INNER = mat((0.105, 0.330, 0.500), 0.18, 0.28)
+HINGE_BLUE = mat((0.120, 0.365, 0.540), 0.16, 0.30)
 
 
 def _ellipse_plan(rx, ry, steps):
@@ -169,12 +172,12 @@ def _panel_details(prog):
 
 def _latch(prog):
     # A square pocket and spring-loaded circular plunger on the left wall.
-    plate = _box((34 * MM, 39 * MM, 4 * MM), "well", RUBBER)
-    prog = prog.place(obj=plate, at=(-82 * MM, -3 * MM, -22 * MM))
-    prog = prog.place(obj=_disc(9.2 * MM, 7.0 * MM, "well", STEEL, 32),
-                      at=(-82 * MM, -3 * MM, -19 * MM))
-    prog = prog.place(obj=_disc(5.7 * MM, 8.0 * MM, "well", LINER, 32),
-                      at=(-82 * MM, -3 * MM, -12 * MM))
+    plate = _box((40 * MM, 44 * MM, 4 * MM), "well", RUBBER)
+    prog = prog.place(obj=plate, at=(-78 * MM, -3 * MM, -22 * MM))
+    prog = prog.place(obj=_disc(11.0 * MM, 7.0 * MM, "well", STEEL, 32),
+                      at=(-78 * MM, -3 * MM, -19 * MM))
+    prog = prog.place(obj=_disc(6.8 * MM, 8.0 * MM, "well", LINER, 32),
+                      at=(-78 * MM, -3 * MM, -12 * MM))
     for x, y in ((-94, 9), (-70, 10), (-94, -17), (-69, -16)):
         prog = prog.place(obj=P.screw(r=2.1 * MM, head_h=0.8 * MM, material=STEEL),
                           at=(x * MM, y * MM, -17 * MM))
@@ -191,7 +194,7 @@ def _cap(prog):
                     flutes=18, flute_depth=0.010, skirt=18 * MM,
                     neck_d=CAP_D * 0.72, bevel=0.040, spin=CAP_SPIN,
                     printing=False, grip="rib", waist=0.90, rib_dish=-0.04,
-                    rib_shoulder=0.66, material=CAP, steps=96)
+                    rib_shoulder=0.66, material=CAP, rib_material=CAP_GRIP, steps=96)
     # Unlike the old hero, this cap is not parallel to the body. Its face ellipse and the
     # visible lower skirt in the source require a separately tilted filler-neck axis.
     prog = prog.place(obj=cap_obj, at=(4 * MM, -38 * MM, -18 * MM),
@@ -202,7 +205,9 @@ def _cap(prog):
     droplets = [(-31, 20, 0.8), (-20, 28, 1.1), (-9, 25, 0.7), (3, 31, 1.0),
                 (17, 24, 0.8), (27, 17, 1.2), (-35, 5, 0.7), (-24, -5, 1.0),
                 (-12, 7, 0.8), (8, 10, 1.3), (22, 2, 0.7), (31, -10, 1.0),
-                (-28, -22, 1.2), (-8, -26, 0.8), (15, -21, 1.0), (29, -27, 0.7)]
+                (-28, -22, 1.2), (-8, -26, 0.8), (15, -21, 1.0), (29, -27, 0.7),
+                (-34, 13, 0.7), (-18, 15, 0.8), (-2, 18, 0.6), (13, 17, 0.7),
+                (34, 8, 0.8), (-18, -14, 0.7), (1, -10, 0.9), (18, -8, 0.6)]
     # Droplets are kept close to the face. The small positive z survives the cap tilt and
     # prevents coplanar flicker without making the beads float visibly.
     rx, ry = math.radians(CAP_TILT), math.radians(-5.0)
@@ -217,7 +222,8 @@ def _cap(prog):
         return (4 * MM + qx, -38 * MM + qy, -18 * MM + qz)
 
     for x, y, r in droplets:
-        bead = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r * MM, mark="water")
+        bead = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r * MM * 1.45,
+                                        mark="water")
                 .scale({"by": "all"}, [1.0, 1.0, 0.42])
                 .material({"by": "tag", "name": "water"}, **WATER))
         prog = prog.place(obj=bead, at=world_on_cap(x * MM, y * MM, 1.6 * MM),
@@ -231,8 +237,8 @@ def _door(prog):
     door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
                        rim=8 * MM, open_deg=118.0, az=0.0, hinge_r=102 * MM,
-                       gap=3 * MM, steps=96, skin=PAINT, liner=PAINT, strap=False,
-                       latch=False, plan=door_plan, inside_material=PAINT,
+                       gap=3 * MM, steps=96, skin=PAINT, liner=DOOR_INNER, strap=False,
+                       latch=False, plan=door_plan, inside_material=DOOR_INNER,
                        inner_details=True)
     prog = prog.place(obj=door, at=(0.0, -65 * MM, 2.0 * MM))
 
@@ -240,12 +246,12 @@ def _door(prog):
     # edge. Three raised ribs sit on it; isolated bars read as an exploded assembly.
     hinge_plate = P.prism([(82 * MM, 48 * MM), (166 * MM, 39 * MM),
                            (171 * MM, -50 * MM), (88 * MM, -31 * MM)],
-                          12 * MM, 16 * MM, mark="door").material(
-                              {"by": "tag", "name": "door"}, **PAINT)
+                          31 * MM, 36 * MM, mark="door").material(
+                              {"by": "tag", "name": "door"}, **HINGE_BLUE)
     prog = prog.place(obj=hinge_plate)
     for y in (-42, -8, 27):
-        prog = prog.place(obj=_box((63 * MM, 7 * MM, 4 * MM), "door", PAINT),
-                          at=(126 * MM, y * MM, 17 * MM), rotate=(0.0, 0.0, -7.0))
+        prog = prog.place(obj=_box((63 * MM, 7 * MM, 4 * MM), "door", HINGE_BLUE),
+                          at=(126 * MM, y * MM, 37 * MM), rotate=(0.0, 0.0, -7.0))
     pin = _disc(5.0 * MM, 72 * MM, "door", STEEL, 28)
     prog = prog.place(obj=pin, at=(111 * MM, -43 * MM, -1 * MM),
                       rotate=(90.0, 0.0, 0.0))
@@ -283,7 +289,7 @@ def build():
     shroud = (MeshProgram().uv_sphere(segments=48, rings=28, radius=1.0, mark="well")
               .scale({"by": "all"}, [76 * MM, 91 * MM, 24 * MM])
               .material({"by": "tag", "name": "well"}, **LINER))
-    prog = prog.place(obj=shroud, at=(3 * MM, 38 * MM, -44 * MM),
+    prog = prog.place(obj=shroud, at=(3 * MM, 64 * MM, -48 * MM),
                       rotate=(8.0, 0.0, 0.0))
     # Fasteners and moulding pips break the perfect radial symmetry of a generated bowl.
     for x, y, r in ((63, 86, 3.0), (-57, 84, 2.2), (67, -76, 2.0), (-62, -74, 1.8)):
