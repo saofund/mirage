@@ -22,8 +22,8 @@ def test_polo_region_builds_and_replays_identically():
     assert fa == fb
 
 
-def test_polo_scene_retains_the_measured_oval_aperture():
-    # The top edge is a real oval in the panel, independently of camera foreshortening.
+def test_polo_scene_retains_the_measured_aperture_axes():
+    # The mild oval is measured separately from the camera's remaining foreshortening.
     radii = polo._ellipse_plan(polo.OPEN_RX, polo.OPEN_RY, 96)
     plan = [r / polo.OPEN_R for r in radii]
     mesh = polo._smooth_liner(plan, polo.OPEN_R, steps=96).build()
@@ -32,3 +32,4 @@ def test_polo_scene_retains_the_measured_oval_aperture():
     radii = np.hypot(rim[:, 0], rim[:, 1])
     assert abs(radii.min() - polo.OPEN_RX) < 1 * polo.MM
     assert abs(radii.max() - polo.OPEN_RY) < 1 * polo.MM
+    assert 0.90 < polo.OPEN_RX / polo.OPEN_RY < 0.92

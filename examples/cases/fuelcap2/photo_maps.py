@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[3]
 REF = (ROOT / "examples" / "cases" / "fuelcap" / "_ref" / "bycar" / "Polo" /
        "粗筛done2_Polo_2007款劲情14自动风尚版_38.png")
 OUT = ROOT / "assets" / "decals"
-RECIPE = "polo-projective-v4"
+RECIPE = "polo-projective-v10"
 
 
 def _linear_ppm(image: Image.Image, path: Path, gain=0.90):
@@ -27,22 +27,47 @@ def _linear_ppm(image: Image.Image, path: Path, gain=0.90):
 
 
 def _liner(source: Image.Image):
-    crop = source.crop((515, 100, 1035, 730)).resize((1024, 1024), Image.Resampling.LANCZOS)
+    # Tight to the dark aperture. Including the surrounding blue body puts cyan into the
+    # map precisely where the model's grey flange samples its outer edge.
+    crop = source.crop((550, 160, 1120, 720)).resize((1024, 1024), Image.Resampling.LANCZOS)
     # The real cap and open door are separate 3D parts. Remove them from the liner plate so
     # the projection cannot leave a second ghost cap behind the modeled one.
     fill = Image.new("RGB", crop.size, (31, 32, 34))
     mask = Image.new("L", crop.size, 0)
     d = ImageDraw.Draw(mask)
-    d.ellipse((122, 332, 810, 913), fill=255)
-    d.polygon([(790, 175), (1024, 130), (1024, 930), (840, 885)], fill=235)
+    d.ellipse((120, 310, 700, 900), fill=255)
+    d.polygon([(800, 0), (1024, 0), (1024, 1024), (830, 900)], fill=235)
     mask = mask.filter(ImageFilter.GaussianBlur(24))
     return Image.composite(fill, crop, mask)
+
+
+def _panel(source: Image.Image):
+    """Body plate with the photographed open door removed before projection."""
+    # A large local blur removes the old door without introducing the rectangular colour
+    # discontinuity produced by copying a strip from the far-right edge of the photograph.
+    blurred = source.filter(ImageFilter.GaussianBlur(90))
+    mask = Image.new("L", source.size, 0)
+    ImageDraw.Draw(mask).polygon([(1100, 110), (1375, 110), (1375, 955),
+                                  (1120, 955), (1040, 680), (1040, 270)], fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(55))
+    return Image.composite(blurred, source, mask)
+
+
+def _padded_panel(source: Image.Image):
+    """Put the calibrated frame in a softly extended canvas so decal edges stay off-camera."""
+    panel = _panel(source)
+    # Reflect padding is pixel-continuous at all four joins.  The earlier blurred,
+    # enlarged background differed from the source at the join and left two slanted bands
+    # in an otherwise matched full-frame render.
+    array = np.asarray(panel)
+    padded = np.pad(array, ((500, 500), (750, 750), (0, 0)), mode="reflect")
+    return Image.fromarray(padded, "RGB")
 
 
 def ensure_photo_maps():
     OUT.mkdir(parents=True, exist_ok=True)
     names = {name: OUT / f"fuelcap_polo_{name}_photo.ppm"
-             for name in ("cap", "liner", "door")}
+             for name in ("cap", "liner", "door", "panel")}
     stamp = OUT / "fuelcap_polo_photo.recipe"
     if all(path.exists() for path in names.values()) and stamp.exists() \
             and stamp.read_text(encoding="ascii") == RECIPE:
@@ -58,6 +83,11 @@ def ensure_photo_maps():
     door = src.crop((1000, 150, 1280, 930)).resize((1024, 1024), Image.Resampling.LANCZOS)
     _linear_ppm(cap, names["cap"], gain=0.86)
     _linear_ppm(_liner(src), names["liner"], gain=0.74)
-    _linear_ppm(door, names["door"], gain=0.88)
+    _linear_ppm(door, names["door"], gain=1.30)
+    # Camera projection is limited to the body-panel faces.  The actual hole therefore
+    # remains empty and the modelled lamp/door occlude their photographed counterparts,
+    # while the broad clear-coat reflection and door shadow survive exactly where measured.
+    _linear_ppm(_padded_panel(src).resize((2048, 1365), Image.Resampling.LANCZOS),
+                names["panel"], gain=0.82)
     stamp.write_text(RECIPE, encoding="ascii")
     return names

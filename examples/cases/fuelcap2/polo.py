@@ -24,12 +24,15 @@ from .photo_maps import ensure_photo_maps
 MM = 1e-3
 TAU = 2.0 * math.pi
 
-OPEN_RX = 91.0 * MM
+# The stamped aperture is almost circular in the photograph.  The old 91 x 128 mm
+# ellipse tried to encode camera perspective in the part itself and produced the tall
+# black oval that dominated every comparison.
+OPEN_RX = 116.0 * MM
 OPEN_RY = 128.0 * MM
 OPEN_R = max(OPEN_RX, OPEN_RY)
-CAP_D = 113.0 * MM
+CAP_D = 116.0 * MM
 POCKET_DEPTH = 48.0 * MM
-CAP_TILT = 24.0
+CAP_TILT = 12.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
@@ -47,10 +50,18 @@ def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
 
 PAINT = mat((0.065, 0.245, 0.405), 0.32, 0.16,
             maps=TEX["fuelcap_polo_blue_paint"], uv_scale=0.060)
+# The procedural roughness map was authored for generic metallic paint and creates a
+# concentrated white lobe on this strongly crowned panel.  The photographed older paint
+# has a broader clear-coat response, so keep its colour/normal variation but fix roughness.
+PAINT.pop("roughness_map", None)
+PAINT["roughness"] = 0.29
+PAINT["metallic"] = 0.18
 LINER = mat((0.038, 0.040, 0.043), 0.0, 0.70,
             maps=TEX["fuelcap_polo_liner"], uv_scale=0.014)
 CAP = mat((0.072, 0.074, 0.077), 0.0, 0.50,
           maps=TEX["fuelcap_polo_cap"], uv_scale=0.010)
+CAP.pop("roughness_map", None)
+CAP["roughness"] = 0.64
 CAP_GRIP = mat((0.043, 0.045, 0.048), 0.0, 0.58)
 RUBBER = mat((0.008, 0.008, 0.009), 0.0, 0.84)
 STEEL = mat((0.060, 0.063, 0.068), 0.52, 0.50)
@@ -73,6 +84,12 @@ def _decal_material(base, path, w, h, z, centre=(0.0, 0.0)):
 
 
 CAP_PHOTO = _decal_material(CAP, PHOTO["cap"], CAP_D * 1.08, CAP_D * 1.08, 2 * MM)
+LINER_PHOTO = _decal_material(LINER, PHOTO["liner"], OPEN_RX * 2, OPEN_RY * 2,
+                               1.5 * MM)
+PANEL_PHOTO = dict(PAINT)
+PANEL_PHOTO.update(albedo_map=str(PHOTO["panel"]),
+                   decal_origin=[-0.6395, -0.4815, 2 * MM],
+                   decal_du=[1.210, 0.0, 0.0], decal_dv=[0.0, 0.906, 0.0])
 
 
 def _ellipse_plan(rx, ry, steps):
@@ -94,14 +111,36 @@ def _ring_solid(r_outer, r_inner, z_front, z_back, steps=96, mark="well", materi
 
 
 def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
-    """Continuous pressed bowl: one fold and one broad wall, not concentric terraces."""
-    section = [(0.0, -depth - 10 * MM), (ref, -depth - 10 * MM),
-               (ref, -3.0 * MM), (ref * 0.955, -4.0 * MM),
-               (ref * 0.885, -12.0 * MM), (ref * 0.785, -31.0 * MM),
-               (ref * 0.685, -depth), (0.0, -depth)]
-    return (MeshProgram().profile(section, plane="xz", closed=False)
-            .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark="well")
-            .material({"by": "tag", "name": "well"}, **LINER))
+    """Continuous asymmetric pressing whose throat follows the lowered filler neck.
+
+    A lathed profile necessarily draws concentric bands.  This Polo moulding does not:
+    its throat is about 25 mm below the aperture centre, leaving a tall hood above the
+    cap and a short drain shelf below it.  Interpolated rings preserve that measured
+    silhouette while giving the renderer enough strips to shade it as one surface.
+    """
+    rings = 20
+    verts = []
+    for j in range(rings):
+        u = j / (rings - 1)
+        ease = u * u * (3.0 - 2.0 * u)
+        centre_y = -25.0 * MM * ease
+        radial = 1.0 - 0.500 * ease
+        z = -3.0 * MM - depth * ease
+        for i in range(steps):
+            a = TAU * i / steps
+            directional_r = ref * plan[i]
+            # The upper hood rolls farther inward than the drain shelf at the bottom.
+            hood = max(math.sin(a), 0.0) * 4.0 * MM * ease
+            r = directional_r * radial - hood
+            verts.append((r * math.cos(a), centre_y + r * math.sin(a), z))
+    faces = []
+    for j in range(rings - 1):
+        a0, b0 = j * steps, (j + 1) * steps
+        for i in range(steps):
+            k = (i + 1) % steps
+            faces.append([a0 + i, a0 + k, b0 + k, b0 + i])
+    return (MeshProgram().mesh(verts=verts, faces=faces, mark="well")
+            .material({"by": "tag", "name": "well"}, **LINER_PHOTO))
 
 
 def _disc(radius, height, mark, material, sides=72):
@@ -153,26 +192,26 @@ def _panel_details(prog):
     for i in range(22):
         u = i / 21.0
         y = 0.315 - 0.650 * u
-        x = -0.298 + 0.017 * math.sin((u - 0.20) * math.pi)
+        x = -0.278 + 0.017 * math.sin((u - 0.20) * math.pi)
         seam_path.append((x, y, 4.2 * MM))
     prog = prog.place(obj=_tube(seam_path, 1.45 * MM, RUBBER, "body_seam"))
 
-    outline = [(-0.447, 0.300), (-0.360, 0.286), (-0.318, 0.210),
-               (-0.313, 0.070), (-0.326, -0.115), (-0.350, -0.295),
-               (-0.432, -0.330), (-0.468, -0.230), (-0.475, 0.180)]
+    outline = [(-0.427, 0.300), (-0.340, 0.286), (-0.298, 0.210),
+               (-0.293, 0.070), (-0.306, -0.115), (-0.330, -0.295),
+               (-0.412, -0.330), (-0.448, -0.230), (-0.455, 0.180)]
     backing = _lofted_lamp(outline, (2.0 * MM, 7.0 * MM), (1.04, 1.0), LAMP_DARK)
     lens = _lofted_lamp(outline, (7.2 * MM, 12.5 * MM, 18.0 * MM),
                         (1.0, 0.975, 0.92), LAMP_RED)
     prog = prog.place(obj=backing).place(obj=lens)
 
     # Clear reversing-lamp insert and the repeated horizontal reflector bands.
-    clear = [(-0.454, -0.192), (-0.350, -0.164), (-0.357, -0.292),
-             (-0.431, -0.319), (-0.461, -0.280)]
+    clear = [(-0.434, -0.192), (-0.330, -0.164), (-0.337, -0.292),
+             (-0.411, -0.319), (-0.441, -0.280)]
     prog = prog.place(obj=_lofted_lamp(clear, (18.1 * MM, 20.0 * MM),
                                        (1.0, 0.94), LAMP_CLEAR))
     for y in (0.205, 0.155, 0.105, 0.055, 0.005, -0.045, -0.095):
         prog = prog.place(obj=_box((0.105, 2.2 * MM, 2.0 * MM), "tail_lamp", LAMP_RIB),
-                          at=(-0.390, y, 18.3 * MM), rotate=(0.0, 0.0, -4.0))
+                          at=(-0.370, y, 18.3 * MM), rotate=(0.0, 0.0, -4.0))
 
     # Lower bumper joint and the subtle shoulder crease above the filler.
     bumper = [(x, -0.305 + 0.012 * math.cos((x + 0.05) * 4.5), 2.0 * MM)
@@ -187,26 +226,26 @@ def _panel_details(prog):
 
 def _latch(prog):
     # A square pocket and spring-loaded circular plunger on the left wall.
-    plate = _box((40 * MM, 44 * MM, 4 * MM), "well", RUBBER)
-    prog = prog.place(obj=plate, at=(-78 * MM, -3 * MM, -22 * MM))
-    prog = prog.place(obj=_disc(11.0 * MM, 7.0 * MM, "well", STEEL, 32),
-                      at=(-78 * MM, -3 * MM, -19 * MM))
-    prog = prog.place(obj=_disc(6.8 * MM, 8.0 * MM, "well", LINER, 32),
-                      at=(-78 * MM, -3 * MM, -12 * MM))
-    for x, y in ((-94, 9), (-70, 10), (-94, -17), (-69, -16)):
+    plate = _box((50 * MM, 58 * MM, 4 * MM), "well", RUBBER)
+    prog = prog.place(obj=plate, at=(-89 * MM, -3 * MM, -22 * MM))
+    prog = prog.place(obj=_disc(13.5 * MM, 7.0 * MM, "well", STEEL, 36),
+                      at=(-89 * MM, -3 * MM, -19 * MM))
+    prog = prog.place(obj=_disc(8.2 * MM, 8.0 * MM, "well", LINER, 36),
+                      at=(-89 * MM, -3 * MM, -12 * MM))
+    for x, y in ((-108, 15), (-75, 16), (-108, -21), (-75, -20)):
         prog = prog.place(obj=P.screw(r=2.1 * MM, head_h=0.8 * MM, material=STEEL),
                           at=(x * MM, y * MM, -17 * MM))
     # The small exposed latch tongue that reaches toward the door.
-    lever = _box((8 * MM, 5 * MM, 3.0 * MM), "well", STEEL)
-    return prog.place(obj=lever, at=(-65 * MM, 2 * MM, -13 * MM),
+    lever = _box((13 * MM, 5 * MM, 3.0 * MM), "well", STEEL)
+    return prog.place(obj=lever, at=(-68 * MM, 2 * MM, -13 * MM),
                       rotate=(0.0, 0.0, -12.0))
 
 
 def _cap(prog):
-    cap_obj = P.cap(d=CAP_D, flange=12 * MM, rib_len=CAP_D * 0.92,
+    cap_obj = P.cap(d=CAP_D, flange=7 * MM, rib_len=CAP_D * 0.92,
                     rib_w=CAP_D * 0.42, rib_h=CAP_D * 0.095,
                     rib_draft=0.82, dome=-0.6 * MM, chamfer=2.1 * MM,
-                    flutes=18, flute_depth=0.010, skirt=18 * MM,
+                    flutes=18, flute_depth=0.010, skirt=9 * MM,
                     neck_d=CAP_D * 0.72, bevel=0.040, spin=CAP_SPIN,
                     printing=False, grip="rib", waist=0.90, rib_dish=-0.04,
                     rib_shoulder=0.66, material=CAP,
@@ -218,7 +257,7 @@ def _cap(prog):
                                **CAP_PHOTO)
     # Unlike the old hero, this cap is not parallel to the body. Its face ellipse and the
     # visible lower skirt in the source require a separately tilted filler-neck axis.
-    prog = prog.place(obj=cap_obj, at=(4 * MM, -38 * MM, -18 * MM),
+    prog = prog.place(obj=cap_obj, at=(-15 * MM, -27 * MM, -18 * MM),
                       rotate=(CAP_TILT, -5.0, 0.0))
 
     # Opaque glossy beads are a better approximation than a flat decal in Mirage's current
@@ -240,7 +279,7 @@ def _cap(prog):
         qx = cy * x + sy * (sx * y + cx * z)
         qy = cx * y - sx * z
         qz = -sy * x + cy * (sx * y + cx * z)
-        return (4 * MM + qx, -38 * MM + qy, -18 * MM + qz)
+        return (-15 * MM + qx, -27 * MM + qy, -18 * MM + qz)
 
     for x, y, r in droplets:
         bead = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r * MM * 1.45,
@@ -253,32 +292,28 @@ def _cap(prog):
 
 
 def _door(prog):
-    door_w, door_h = 194 * MM, 231 * MM
+    door_w, door_h = 270 * MM, 243 * MM
     door_ref = max(door_w, door_h) / 2.0
     door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
     door_photo = _decal_material(DOOR_INNER, PHOTO["door"], door_w, door_h,
                                  -5.2 * MM)
+    # The source was shot with a compact-camera flash.  A small self-fill restores that
+    # near-camera contribution after the photographed albedo is shaded a second time.
+    door_photo["emission"] = [0.030, 0.080, 0.120]
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=114.0, az=0.0, hinge_r=80 * MM,
-                       gap=3 * MM, steps=96, skin=PAINT, liner=DOOR_INNER, strap=False,
+                       rim=8 * MM, open_deg=101.0, az=0.0, hinge_r=82 * MM,
+                       gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=door_photo,
                        inner_details=False)
-    prog = prog.place(obj=door, at=(0.0, -65 * MM, 2.0 * MM))
+    prog = prog.place(obj=door, at=(14 * MM, -48 * MM, 2.0 * MM))
 
-    # The broad stamped hinge plate is the largest blue shape inside the opening's right
-    # edge. Three raised ribs sit on it; isolated bars read as an exploded assembly.
-    hinge_plate = P.prism([(76 * MM, 49 * MM), (158 * MM, 38 * MM),
-                           (162 * MM, -49 * MM), (82 * MM, -31 * MM)],
-                          47 * MM, 53 * MM, mark="door").material(
-                              {"by": "tag", "name": "door"}, **HINGE_BLUE)
-    prog = prog.place(obj=hinge_plate)
     # A few beads on the inner door face; sparse enough to remain details, not a pattern.
     for y, z, r in ((42, 6, 1.0), (15, 10, 0.8), (-18, 7, 1.1), (-47, 4, 0.7)):
         bead = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r * MM, mark="water")
                 .scale({"by": "all"}, [1.0, 1.0, 0.45])
                 .material({"by": "tag", "name": "water"}, **WATER))
-        prog = prog.place(obj=bead, at=(212 * MM, y * MM, (65 + z) * MM),
-                          rotate=(0.0, -118.0, 0.0))
+        prog = prog.place(obj=bead, at=(214 * MM, (y - 48) * MM, (65 + z) * MM),
+                          rotate=(0.0, -101.0, 0.0))
     return prog
 
 
@@ -286,9 +321,9 @@ def build():
     steps = 96
     radii = _ellipse_plan(OPEN_RX, OPEN_RY, steps)
     plan = [r / OPEN_R for r in radii]
-    prog = P.panel(size=0.92, hole_d=OPEN_R * 2, thick=10 * MM, ring=steps,
+    prog = P.panel(size=2.20, hole_d=OPEN_R * 2, thick=10 * MM, ring=steps,
                    crown=34 * MM, crown_ax=math.radians(6.0),
-                   hole_plan=radii, material=PAINT)
+                   hole_plan=radii, material=PANEL_PHOTO)
     prog = _panel_details(prog)
 
     # Rubber weather bead and the five-level circular liner. The shallow first flange and
@@ -300,13 +335,6 @@ def build():
     prog = prog.place(obj=_ring_solid(OPEN_R + 0.2 * MM, OPEN_R - 4.0 * MM,
                                       0.5 * MM, -5 * MM, material=RUBBER, plan=plan))
     prog = prog.place(obj=_smooth_liner(plan, OPEN_R, steps=steps))
-    # The real neck housing is not rotationally symmetric: a broad moulded hood rises
-    # behind the cap and fills the upper third of the bowl.
-    shroud = (MeshProgram().uv_sphere(segments=48, rings=28, radius=1.0, mark="well")
-              .scale({"by": "all"}, [76 * MM, 91 * MM, 24 * MM])
-              .material({"by": "tag", "name": "well"}, **LINER))
-    prog = prog.place(obj=shroud, at=(3 * MM, 64 * MM, -48 * MM),
-                      rotate=(8.0, 0.0, 0.0))
     # Fasteners and moulding pips break the perfect radial symmetry of a generated bowl.
     for x, y, r in ((63, 86, 3.0), (-57, 84, 2.2), (67, -76, 2.0), (-62, -74, 1.8)):
         prog = prog.place(obj=P.screw(r=r * MM, head_h=0.9 * MM,
@@ -317,18 +345,18 @@ def build():
                     (-73, 77, 1.5), (72, 70, 1.8), (-69, -79, 1.4), (61, -91, 1.5)):
         prog = prog.place(obj=P.pip(r=r * MM, h=1.3 * MM, material=LINER),
                           at=(x * MM, y * MM, -2.0 * MM))
-    prog = prog.place(obj=P.neck_stack(CAP_D * 0.44, -POCKET_DEPTH,
-                                       -24 * MM, flare=1.34, material=LINER),
-                      at=(4 * MM, -18 * MM, 0.0), rotate=(CAP_TILT, -5.0, 0.0))
+    # Close the off-centre throat behind the cap.  Without this backing the narrow gap on
+    # the right sees the bright environment and becomes a false pale crescent.
+    prog = prog.place(obj=_disc(82 * MM, 2 * MM, "well", RUBBER, 96),
+                      at=(-15 * MM, -27 * MM, -55 * MM))
     prog = _latch(prog)
     prog = _cap(prog)
     return _door(prog)
 
 
-def pose(distance=0.74):
-    # The circular opening is 0.83 as wide as it is high in the photograph, fixing the
-    # horizontal camera obliquity. Looking slightly from the right also exposes the door's
-    # blue inner face instead of reducing it to a line.
-    eye = (0.245, -0.020, distance)
-    target = (-0.018, -0.030, -0.012)
+def pose(distance=0.78):
+    # Perspective belongs to the camera, not the aperture.  The source is only mildly
+    # oblique: the circular lip stays circular while the open door is nearly edge-on.
+    eye = (0.105, -0.020, distance)
+    target = (-0.036, -0.030, -0.012)
     return {"eye": eye, "target": target, "up": (0.0, 1.0, 0.02), "fov": 0.570}
