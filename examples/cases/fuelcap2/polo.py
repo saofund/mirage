@@ -106,8 +106,11 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
            .material({"by": "tag", "name": "well"}, **LINER))
     # The photograph supplies wear only on the near-horizontal flange and floor. Projecting
     # it onto the steep bowl wall wraps the cap and hinge into long vertical ghosts.
-    return out.material({"by": "normal", "axis": "z", "sign": 1, "tol": 0.18},
-                        **LINER_PHOTO)
+    horizontal = {"or": [
+        {"by": "normal", "axis": "z", "sign": 1, "tol": 0.18},
+        {"by": "normal", "axis": "z", "sign": -1, "tol": 0.18},
+    ]}
+    return out.material(horizontal, **LINER_PHOTO)
 
 
 def _disc(radius, height, mark, material, sides=72):
