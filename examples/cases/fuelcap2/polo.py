@@ -60,7 +60,7 @@ LAMP_DARK = mat((0.045, 0.002, 0.003), 0.10, 0.18)
 LAMP_CLEAR = mat((0.65, 0.66, 0.62), 0.05, 0.08)
 LAMP_RIB = mat((0.14, 0.003, 0.004), 0.12, 0.14)
 DOOR_INNER = mat((0.105, 0.330, 0.500), 0.18, 0.28)
-HINGE_BLUE = mat((0.120, 0.365, 0.540), 0.16, 0.30)
+HINGE_BLUE = mat((0.155, 0.405, 0.570), 0.14, 0.32)
 
 
 def _decal_material(base, path, w, h, z, centre=(0.0, 0.0)):
@@ -101,9 +101,13 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
                (ref, -3.0 * MM), (ref * 0.955, -4.0 * MM),
                (ref * 0.885, -12.0 * MM), (ref * 0.785, -31.0 * MM),
                (ref * 0.685, -depth), (0.0, -depth)]
-    return (MeshProgram().profile(section, plane="xz", closed=False)
-            .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark="well")
-            .material({"by": "tag", "name": "well"}, **LINER))
+    out = (MeshProgram().profile(section, plane="xz", closed=False)
+           .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark="well")
+           .material({"by": "tag", "name": "well"}, **LINER))
+    # The photograph supplies wear only on the near-horizontal flange and floor. Projecting
+    # it onto the steep bowl wall wraps the cap and hinge into long vertical ghosts.
+    return out.material({"by": "normal", "axis": "z", "sign": 1, "tol": 0.18},
+                        **LINER_PHOTO)
 
 
 def _disc(radius, height, mark, material, sides=72):
@@ -274,13 +278,6 @@ def _door(prog):
                           47 * MM, 53 * MM, mark="door").material(
                               {"by": "tag", "name": "door"}, **HINGE_BLUE)
     prog = prog.place(obj=hinge_plate)
-    for y in (-42, -8, 27):
-        prog = prog.place(obj=_box((63 * MM, 7 * MM, 4 * MM), "door", HINGE_BLUE),
-                          at=(120 * MM, y * MM, 54 * MM), rotate=(0.0, 0.0, -7.0))
-    pin = _disc(4.2 * MM, 72 * MM, "door", STEEL, 28)
-    prog = prog.place(obj=pin, at=(91 * MM, -43 * MM, 17 * MM),
-                      rotate=(90.0, 0.0, 0.0))
-
     # A few beads on the inner door face; sparse enough to remain details, not a pattern.
     for y, z, r in ((42, 6, 1.0), (15, 10, 0.8), (-18, 7, 1.1), (-47, 4, 0.7)):
         bead = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r * MM, mark="water")
