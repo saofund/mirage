@@ -73,8 +73,6 @@ def _decal_material(base, path, w, h, z, centre=(0.0, 0.0)):
 
 
 CAP_PHOTO = _decal_material(CAP, PHOTO["cap"], CAP_D * 1.08, CAP_D * 1.08, 2 * MM)
-LINER_PHOTO = _decal_material(LINER, PHOTO["liner"], OPEN_RX * 2, OPEN_RY * 2,
-                               2 * MM)
 
 
 def _ellipse_plan(rx, ry, steps):
@@ -101,16 +99,9 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
                (ref, -3.0 * MM), (ref * 0.955, -4.0 * MM),
                (ref * 0.885, -12.0 * MM), (ref * 0.785, -31.0 * MM),
                (ref * 0.685, -depth), (0.0, -depth)]
-    out = (MeshProgram().profile(section, plane="xz", closed=False)
-           .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark="well")
-           .material({"by": "tag", "name": "well"}, **LINER))
-    # The photograph supplies wear only on the near-horizontal flange and floor. Projecting
-    # it onto the steep bowl wall wraps the cap and hinge into long vertical ghosts.
-    horizontal = {"or": [
-        {"by": "normal", "axis": "z", "sign": 1, "tol": 0.18},
-        {"by": "normal", "axis": "z", "sign": -1, "tol": 0.18},
-    ]}
-    return out.material(horizontal, **LINER_PHOTO)
+    return (MeshProgram().profile(section, plane="xz", closed=False)
+            .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark="well")
+            .material({"by": "tag", "name": "well"}, **LINER))
 
 
 def _disc(radius, height, mark, material, sides=72):
