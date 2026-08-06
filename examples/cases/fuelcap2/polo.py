@@ -43,13 +43,15 @@ def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
 
 PAINT = mat((0.080, 0.285, 0.470), 0.32, 0.16,
             maps=TEX["fuelcap_polo_blue_paint"], uv_scale=0.060)
-LINER = mat((0.023, 0.024, 0.026), 0.0, 0.70,
-            maps=TEX["fuelcap_plastic"], uv_scale=0.014)
-CAP = mat((0.030, 0.031, 0.032), 0.0, 0.54,
-          maps=TEX["fuelcap_plastic"], uv_scale=0.010)
+LINER = mat((0.038, 0.040, 0.043), 0.0, 0.72)
+LINER.update(roughness_map=str(TEX["fuelcap_plastic"]["rough"]),
+             normal_map=str(TEX["fuelcap_plastic"]["normal"]), uv_scale=0.014)
+CAP = mat((0.072, 0.074, 0.077), 0.0, 0.50)
+CAP.update(roughness_map=str(TEX["fuelcap_plastic"]["rough"]),
+           normal_map=str(TEX["fuelcap_plastic"]["normal"]), uv_scale=0.010)
 RUBBER = mat((0.008, 0.008, 0.009), 0.0, 0.84)
 STEEL = mat((0.038, 0.040, 0.043), 0.58, 0.52)
-WATER = mat((0.46, 0.50, 0.54), 0.0, 0.035)
+WATER = mat((0.20, 0.23, 0.26), 0.0, 0.055)
 LAMP_RED = mat((0.46, 0.006, 0.008), 0.18, 0.075)
 LAMP_DARK = mat((0.045, 0.002, 0.003), 0.10, 0.18)
 LAMP_CLEAR = mat((0.65, 0.66, 0.62), 0.05, 0.08)
@@ -177,8 +179,8 @@ def _latch(prog):
         prog = prog.place(obj=P.screw(r=2.1 * MM, head_h=0.8 * MM, material=STEEL),
                           at=(x * MM, y * MM, -17 * MM))
     # The small exposed latch tongue that reaches toward the door.
-    tongue = _box((19 * MM, 7 * MM, 3.0 * MM), "well", STEEL)
-    return prog.place(obj=tongue, at=(-63 * MM, -3 * MM, -13 * MM),
+    tongue = _box((11 * MM, 7 * MM, 3.0 * MM), "well", STEEL)
+    return prog.place(obj=tongue, at=(-67 * MM, -3 * MM, -13 * MM),
                       rotate=(0.0, 0.0, 8.0))
 
 
@@ -224,11 +226,11 @@ def _cap(prog):
 
 
 def _door(prog):
-    door_w, door_h = 205 * MM, 231 * MM
+    door_w, door_h = 184 * MM, 211 * MM
     door_ref = max(door_w, door_h) / 2.0
     door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=135.0, az=0.0, hinge_r=110 * MM,
+                       rim=8 * MM, open_deg=110.0, az=0.0, hinge_r=110 * MM,
                        gap=3 * MM, steps=96, skin=PAINT, liner=PAINT, strap=False,
                        latch=False, plan=door_plan, inside_material=PAINT,
                        inner_details=True)
@@ -248,8 +250,8 @@ def _door(prog):
         bead = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r * MM, mark="water")
                 .scale({"by": "all"}, [1.0, 1.0, 0.45])
                 .material({"by": "tag", "name": "water"}, **WATER))
-        prog = prog.place(obj=bead, at=(230 * MM, y * MM, (42 + z) * MM),
-                          rotate=(0.0, -135.0, 0.0))
+        prog = prog.place(obj=bead, at=(194 * MM, y * MM, (78 + z) * MM),
+                          rotate=(0.0, -110.0, 0.0))
     return prog
 
 
@@ -264,9 +266,20 @@ def build():
 
     # Rubber weather bead and the five-level circular liner. The shallow first flange and
     # steep wall reproduce the strong black ring plus broad soft inner bowl of the Polo.
-    prog = prog.place(obj=_ring_solid(OPEN_R + 4 * MM, OPEN_R - 2 * MM,
-                                      1.2 * MM, -5 * MM, material=RUBBER, plan=plan))
+    # A painted rolled lip catches the thin cyan highlight in the photograph; the rubber
+    # weather bead begins inside it instead of replacing the whole edge with black.
+    prog = prog.place(obj=_ring_solid(OPEN_R + 4 * MM, OPEN_R + 0.4 * MM,
+                                      1.6 * MM, -2.5 * MM, material=PAINT, plan=plan))
+    prog = prog.place(obj=_ring_solid(OPEN_R + 0.2 * MM, OPEN_R - 4.0 * MM,
+                                      0.5 * MM, -5 * MM, material=RUBBER, plan=plan))
     prog = prog.place(obj=_smooth_liner(plan, OPEN_R, steps=steps))
+    # The real neck housing is not rotationally symmetric: a broad moulded hood rises
+    # behind the cap and fills the upper third of the bowl.
+    shroud = (MeshProgram().uv_sphere(segments=48, rings=28, radius=1.0, mark="well")
+              .scale({"by": "all"}, [76 * MM, 91 * MM, 24 * MM])
+              .material({"by": "tag", "name": "well"}, **LINER))
+    prog = prog.place(obj=shroud, at=(3 * MM, 38 * MM, -44 * MM),
+                      rotate=(8.0, 0.0, 0.0))
     prog = prog.place(obj=P.neck_stack(CAP_D * 0.44, -POCKET_DEPTH,
                                        -24 * MM, flare=1.34, material=LINER),
                       at=(4 * MM, -18 * MM, 0.0), rotate=(CAP_TILT, -5.0, 0.0))
@@ -281,4 +294,4 @@ def pose(distance=0.74):
     # blue inner face instead of reducing it to a line.
     eye = (0.245, -0.020, distance)
     target = (-0.018, -0.010, -0.012)
-    return {"eye": eye, "target": target, "up": (0.0, 1.0, 0.02), "fov": 0.515}
+    return {"eye": eye, "target": target, "up": (0.0, 1.0, 0.02), "fov": 0.630}
