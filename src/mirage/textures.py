@@ -549,7 +549,7 @@ _LIBRARY = {
     "fuelcap_plastic":    lambda: _moulded_plastic(RES, 181, (0.0165, 0.0165, 0.018), rough_base=0.68, wear=0.18),
     "fuelcap_white_paint": lambda: _automotive_paint(RES, 191, (0.76, 0.765, 0.76), rough_base=0.15),
     "fuelcap_polo_blue_paint": lambda: _automotive_paint(
-        RES, 197, (0.080, 0.285, 0.470), rough_base=0.16),
+        RES, 197, (0.065, 0.245, 0.405), rough_base=0.16),
     "fuelcap_polo_liner": lambda: _moulded_plastic(
         RES, 199, (0.038, 0.040, 0.043), rough_base=0.70, wear=0.58),
     "fuelcap_polo_cap": lambda: _moulded_plastic(

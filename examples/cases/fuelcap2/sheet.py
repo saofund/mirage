@@ -74,9 +74,39 @@ def compose(size=1000):
     return out
 
 
+def compose_closeup(size=900):
+    """Square inspection crop: opening, cap, latch, hinge and door, without the tail lamp."""
+    import cv2
+    raw = cv2.imdecode(np.fromfile(REF, np.uint8), cv2.IMREAD_COLOR)
+    synth = cv2.imread(str(OUT / "polo_synth.png"))
+    if raw is None or synth is None:
+        raise SystemExit("reference and polo_synth.png are required")
+
+    # Measured once on the fixed source framing. The synthetic crop uses the same subject
+    # bounds, not the same raw pixel indices, because its renderer output may be any size.
+    real = raw[35:1035, 315:1315]
+    h, w = synth.shape[:2]
+    side = min(h, int(w * 0.76))
+    cx, cy = int(w * 0.57), int(h * 0.47)
+    x0 = max(0, min(w - side, cx - side // 2))
+    y0 = max(0, min(h - side, cy - side // 2))
+    syn = synth[y0:y0 + side, x0:x0 + side]
+    real = cv2.resize(real, (size, size), interpolation=cv2.INTER_AREA)
+    syn = cv2.resize(syn, (size, size), interpolation=cv2.INTER_AREA)
+    cv2.putText(real, "PHOTOGRAPH", (18, 38), cv2.FONT_HERSHEY_SIMPLEX,
+                0.85, (35, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(syn, "MIRAGE", (18, 38), cv2.FONT_HERSHEY_SIMPLEX,
+                0.85, (35, 255, 255), 2, cv2.LINE_AA)
+    out = OUT / "polo_closeup.png"
+    cv2.imwrite(str(out), np.hstack([real, syn]))
+    print(out)
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=("render", "compose", "all"), default="all", nargs="?")
+    ap.add_argument("what", choices=("render", "compose", "closeup", "all"),
+                    default="all", nargs="?")
     ap.add_argument("--size", type=int, default=1000)
     ap.add_argument("--spp", type=int, default=160)
     a = ap.parse_args(argv)
@@ -84,6 +114,9 @@ def main(argv=None):
         render(a.size, a.spp)
     if a.what in ("compose", "all"):
         compose(a.size)
+        compose_closeup(a.size)
+    elif a.what == "closeup":
+        compose_closeup(a.size)
 
 
 if __name__ == "__main__":

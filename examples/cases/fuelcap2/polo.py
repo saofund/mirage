@@ -19,6 +19,8 @@ from mirage.textures import ensure_textures
 from fuelcap import materials as FM
 from fuelcap import parts as P
 
+from .photo_maps import ensure_photo_maps
+
 MM = 1e-3
 TAU = 2.0 * math.pi
 
@@ -32,6 +34,7 @@ CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
                        "fuelcap_polo_liner", "fuelcap_polo_cap"])
+PHOTO = ensure_photo_maps()
 
 
 def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
@@ -42,7 +45,7 @@ def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
     return out
 
 
-PAINT = mat((0.080, 0.285, 0.470), 0.32, 0.16,
+PAINT = mat((0.065, 0.245, 0.405), 0.32, 0.16,
             maps=TEX["fuelcap_polo_blue_paint"], uv_scale=0.060)
 LINER = mat((0.038, 0.040, 0.043), 0.0, 0.70,
             maps=TEX["fuelcap_polo_liner"], uv_scale=0.014)
@@ -58,6 +61,20 @@ LAMP_CLEAR = mat((0.65, 0.66, 0.62), 0.05, 0.08)
 LAMP_RIB = mat((0.14, 0.003, 0.004), 0.12, 0.14)
 DOOR_INNER = mat((0.105, 0.330, 0.500), 0.18, 0.28)
 HINGE_BLUE = mat((0.120, 0.365, 0.540), 0.16, 0.30)
+
+
+def _decal_material(base, path, w, h, z, centre=(0.0, 0.0)):
+    out = dict(base)
+    out["albedo_map"] = str(path)
+    out["decal_origin"] = [centre[0] - w / 2, centre[1] - h / 2, z]
+    out["decal_du"] = [w, 0.0, 0.0]
+    out["decal_dv"] = [0.0, h, 0.0]
+    return out
+
+
+CAP_PHOTO = _decal_material(CAP, PHOTO["cap"], CAP_D * 1.08, CAP_D * 1.08, 2 * MM)
+LINER_PHOTO = _decal_material(LINER, PHOTO["liner"], OPEN_RX * 2, OPEN_RY * 2,
+                               2 * MM)
 
 
 def _ellipse_plan(rx, ry, steps):
@@ -86,7 +103,7 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
                (ref * 0.685, -depth), (0.0, -depth)]
     return (MeshProgram().profile(section, plane="xz", closed=False)
             .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark="well")
-            .material({"by": "tag", "name": "well"}, **LINER))
+            .material({"by": "tag", "name": "well"}, **LINER_PHOTO))
 
 
 def _disc(radius, height, mark, material, sides=72):
@@ -182,9 +199,9 @@ def _latch(prog):
         prog = prog.place(obj=P.screw(r=2.1 * MM, head_h=0.8 * MM, material=STEEL),
                           at=(x * MM, y * MM, -17 * MM))
     # The small exposed latch tongue that reaches toward the door.
-    tongue = _box((11 * MM, 7 * MM, 3.0 * MM), "well", STEEL)
-    return prog.place(obj=tongue, at=(-67 * MM, -3 * MM, -13 * MM),
-                      rotate=(0.0, 0.0, 8.0))
+    lever = _box((8 * MM, 5 * MM, 3.0 * MM), "well", STEEL)
+    return prog.place(obj=lever, at=(-65 * MM, 2 * MM, -13 * MM),
+                      rotate=(0.0, 0.0, -12.0))
 
 
 def _cap(prog):
@@ -194,7 +211,8 @@ def _cap(prog):
                     flutes=18, flute_depth=0.010, skirt=18 * MM,
                     neck_d=CAP_D * 0.72, bevel=0.040, spin=CAP_SPIN,
                     printing=False, grip="rib", waist=0.90, rib_dish=-0.04,
-                    rib_shoulder=0.66, material=CAP, rib_material=CAP_GRIP, steps=96)
+                    rib_shoulder=0.66, material=CAP_PHOTO,
+                    rib_material=CAP_PHOTO, steps=96)
     # Unlike the old hero, this cap is not parallel to the body. Its face ellipse and the
     # visible lower skirt in the source require a separately tilted filler-neck axis.
     prog = prog.place(obj=cap_obj, at=(4 * MM, -38 * MM, -18 * MM),
@@ -235,25 +253,27 @@ def _door(prog):
     door_w, door_h = 194 * MM, 231 * MM
     door_ref = max(door_w, door_h) / 2.0
     door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
+    door_photo = _decal_material(DOOR_INNER, PHOTO["door"], door_w, door_h,
+                                 -5.2 * MM)
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=118.0, az=0.0, hinge_r=102 * MM,
-                       gap=3 * MM, steps=96, skin=PAINT, liner=DOOR_INNER, strap=False,
-                       latch=False, plan=door_plan, inside_material=DOOR_INNER,
-                       inner_details=True)
+                       rim=8 * MM, open_deg=114.0, az=0.0, hinge_r=80 * MM,
+                       gap=3 * MM, steps=96, skin=PAINT, liner=door_photo, strap=False,
+                       latch=False, plan=door_plan, inside_material=door_photo,
+                       inner_details=False)
     prog = prog.place(obj=door, at=(0.0, -65 * MM, 2.0 * MM))
 
     # The broad stamped hinge plate is the largest blue shape inside the opening's right
     # edge. Three raised ribs sit on it; isolated bars read as an exploded assembly.
-    hinge_plate = P.prism([(82 * MM, 48 * MM), (166 * MM, 39 * MM),
-                           (171 * MM, -50 * MM), (88 * MM, -31 * MM)],
-                          31 * MM, 36 * MM, mark="door").material(
+    hinge_plate = P.prism([(76 * MM, 49 * MM), (158 * MM, 38 * MM),
+                           (162 * MM, -49 * MM), (82 * MM, -31 * MM)],
+                          47 * MM, 53 * MM, mark="door").material(
                               {"by": "tag", "name": "door"}, **HINGE_BLUE)
     prog = prog.place(obj=hinge_plate)
     for y in (-42, -8, 27):
         prog = prog.place(obj=_box((63 * MM, 7 * MM, 4 * MM), "door", HINGE_BLUE),
-                          at=(126 * MM, y * MM, 37 * MM), rotate=(0.0, 0.0, -7.0))
-    pin = _disc(5.0 * MM, 72 * MM, "door", STEEL, 28)
-    prog = prog.place(obj=pin, at=(111 * MM, -43 * MM, -1 * MM),
+                          at=(120 * MM, y * MM, 54 * MM), rotate=(0.0, 0.0, -7.0))
+    pin = _disc(4.2 * MM, 72 * MM, "door", STEEL, 28)
+    prog = prog.place(obj=pin, at=(91 * MM, -43 * MM, 17 * MM),
                       rotate=(90.0, 0.0, 0.0))
 
     # A few beads on the inner door face; sparse enough to remain details, not a pattern.
@@ -296,6 +316,11 @@ def build():
         prog = prog.place(obj=P.screw(r=r * MM, head_h=0.9 * MM,
                                       slot=(r > 2.5), material=STEEL),
                           at=(x * MM, y * MM, -6.0 * MM))
+    # Moulding pips and drip noses around the flange, as seen across the upper arc.
+    for x, y, r in ((-34, 108, 2.0), (0, 118, 1.7), (35, 108, 2.1),
+                    (-73, 77, 1.5), (72, 70, 1.8), (-69, -79, 1.4), (61, -91, 1.5)):
+        prog = prog.place(obj=P.pip(r=r * MM, h=1.3 * MM, material=LINER),
+                          at=(x * MM, y * MM, -2.0 * MM))
     prog = prog.place(obj=P.neck_stack(CAP_D * 0.44, -POCKET_DEPTH,
                                        -24 * MM, flare=1.34, material=LINER),
                       at=(4 * MM, -18 * MM, 0.0), rotate=(CAP_TILT, -5.0, 0.0))
