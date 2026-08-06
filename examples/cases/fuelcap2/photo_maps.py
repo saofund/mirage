@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[3]
 REF = (ROOT / "examples" / "cases" / "fuelcap" / "_ref" / "bycar" / "Polo" /
        "粗筛done2_Polo_2007款劲情14自动风尚版_38.png")
 OUT = ROOT / "assets" / "decals"
-RECIPE = "polo-projective-v2"
+RECIPE = "polo-projective-v3"
 
 
 def _linear_ppm(image: Image.Image, path: Path, gain=0.90):
@@ -53,7 +53,9 @@ def ensure_photo_maps():
 
     src = Image.open(REF).convert("RGB")
     cap = src.crop((585, 315, 925, 655)).resize((1024, 1024), Image.Resampling.LANCZOS)
-    door = src.crop((895, 135, 1295, 945)).resize((1024, 1024), Image.Resampling.LANCZOS)
+    # Start right of the photographed cap. The previous crop began at x=895 and literally
+    # baked half the cap into the door map, which reappeared as a ghost on the opened door.
+    door = src.crop((1000, 150, 1280, 930)).resize((1024, 1024), Image.Resampling.LANCZOS)
     _linear_ppm(cap, names["cap"], gain=0.86)
     _linear_ppm(_liner(src), names["liner"], gain=0.74)
     _linear_ppm(door, names["door"], gain=0.88)

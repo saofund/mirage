@@ -103,7 +103,7 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
                (ref * 0.685, -depth), (0.0, -depth)]
     return (MeshProgram().profile(section, plane="xz", closed=False)
             .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark="well")
-            .material({"by": "tag", "name": "well"}, **LINER_PHOTO))
+            .material({"by": "tag", "name": "well"}, **LINER))
 
 
 def _disc(radius, height, mark, material, sides=72):
@@ -211,8 +211,13 @@ def _cap(prog):
                     flutes=18, flute_depth=0.010, skirt=18 * MM,
                     neck_d=CAP_D * 0.72, bevel=0.040, spin=CAP_SPIN,
                     printing=False, grip="rib", waist=0.90, rib_dish=-0.04,
-                    rib_shoulder=0.66, material=CAP_PHOTO,
-                    rib_material=CAP_PHOTO, steps=96)
+                    rib_shoulder=0.66, material=CAP,
+                    rib_material=CAP_GRIP, steps=96)
+    # Project the photographed wear only onto camera-facing local top surfaces. Applying it
+    # to the fluted wall and drafted grip sides wraps unrelated image regions round every
+    # edge and turns one cap into a collage.
+    cap_obj = cap_obj.material({"by": "normal", "axis": "z", "sign": 1, "tol": 0.22},
+                               **CAP_PHOTO)
     # Unlike the old hero, this cap is not parallel to the body. Its face ellipse and the
     # visible lower skirt in the source require a separately tilted filler-neck axis.
     prog = prog.place(obj=cap_obj, at=(4 * MM, -38 * MM, -18 * MM),
@@ -257,7 +262,7 @@ def _door(prog):
                                  -5.2 * MM)
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
                        rim=8 * MM, open_deg=114.0, az=0.0, hinge_r=80 * MM,
-                       gap=3 * MM, steps=96, skin=PAINT, liner=door_photo, strap=False,
+                       gap=3 * MM, steps=96, skin=PAINT, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=door_photo,
                        inner_details=False)
     prog = prog.place(obj=door, at=(0.0, -65 * MM, 2.0 * MM))
