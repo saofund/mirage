@@ -22,7 +22,9 @@ from fuelcap import parts as P
 MM = 1e-3
 TAU = 2.0 * math.pi
 
-OPEN_R = 109.0 * MM
+OPEN_RX = 106.0 * MM
+OPEN_RY = 128.0 * MM
+OPEN_R = max(OPEN_RX, OPEN_RY)
 CAP_D = 101.0 * MM
 POCKET_DEPTH = 48.0 * MM
 CAP_TILT = 24.0
@@ -41,24 +43,45 @@ def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
 
 PAINT = mat((0.080, 0.285, 0.470), 0.32, 0.16,
             maps=TEX["fuelcap_polo_blue_paint"], uv_scale=0.060)
-LINER = mat((0.017, 0.018, 0.019), 0.0, 0.70,
+LINER = mat((0.023, 0.024, 0.026), 0.0, 0.70,
             maps=TEX["fuelcap_plastic"], uv_scale=0.014)
 CAP = mat((0.030, 0.031, 0.032), 0.0, 0.54,
           maps=TEX["fuelcap_plastic"], uv_scale=0.010)
 RUBBER = mat((0.008, 0.008, 0.009), 0.0, 0.84)
-STEEL = mat((0.105, 0.108, 0.112), 0.68, 0.42)
+STEEL = mat((0.038, 0.040, 0.043), 0.58, 0.52)
 WATER = mat((0.46, 0.50, 0.54), 0.0, 0.035)
 LAMP_RED = mat((0.46, 0.006, 0.008), 0.18, 0.075)
 LAMP_DARK = mat((0.045, 0.002, 0.003), 0.10, 0.18)
 LAMP_CLEAR = mat((0.65, 0.66, 0.62), 0.05, 0.08)
 
 
-def _ring_solid(r_outer, r_inner, z_front, z_back, steps=96, mark="well", material=None):
+def _ellipse_plan(rx, ry, steps):
+    out = []
+    for i in range(steps):
+        a = TAU * i / steps
+        c, s = math.cos(a), math.sin(a)
+        out.append(1.0 / math.sqrt((c / rx) ** 2 + (s / ry) ** 2))
+    return out
+
+
+def _ring_solid(r_outer, r_inner, z_front, z_back, steps=96, mark="well", material=None,
+                plan=None):
     section = [(r_inner, z_front), (r_outer, z_front), (r_outer, z_back),
                (r_inner, z_back)]
     return (MeshProgram().profile(section, plane="xz", closed=True)
-            .spin(axis="z", steps=steps, mark=mark)
+            .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark=mark)
             .material({"by": "tag", "name": mark}, **(material or LINER)))
+
+
+def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
+    """Continuous pressed bowl: one fold and one broad wall, not concentric terraces."""
+    section = [(0.0, -depth - 10 * MM), (ref, -depth - 10 * MM),
+               (ref, -3.0 * MM), (ref * 0.955, -4.0 * MM),
+               (ref * 0.885, -12.0 * MM), (ref * 0.785, -31.0 * MM),
+               (ref * 0.685, -depth), (0.0, -depth)]
+    return (MeshProgram().profile(section, plane="xz", closed=False)
+            .spin(axis="z", steps=steps, plan=plan, plan_from=0.0, mark="well")
+            .material({"by": "tag", "name": "well"}, **LINER))
 
 
 def _disc(radius, height, mark, material, sides=72):
@@ -201,11 +224,13 @@ def _cap(prog):
 
 
 def _door(prog):
-    circle = [1.0] * 96
-    door = P.fuel_door(w=207 * MM, h=207 * MM, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=78.0, az=0.0, hinge_r=111 * MM,
+    door_w, door_h = 205 * MM, 231 * MM
+    door_ref = max(door_w, door_h) / 2.0
+    door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
+    door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
+                       rim=8 * MM, open_deg=135.0, az=0.0, hinge_r=110 * MM,
                        gap=3 * MM, steps=96, skin=PAINT, liner=PAINT, strap=False,
-                       latch=False, plan=circle, inside_material=PAINT,
+                       latch=False, plan=door_plan, inside_material=PAINT,
                        inner_details=True)
     prog = prog.place(obj=door, at=(0.0, 0.0, 2.0 * MM))
 
@@ -223,27 +248,25 @@ def _door(prog):
         bead = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r * MM, mark="water")
                 .scale({"by": "all"}, [1.0, 1.0, 0.45])
                 .material({"by": "tag", "name": "water"}, **WATER))
-        prog = prog.place(obj=bead, at=(207 * MM, y * MM, z * MM),
-                          rotate=(0.0, -78.0, 0.0))
+        prog = prog.place(obj=bead, at=(230 * MM, y * MM, (42 + z) * MM),
+                          rotate=(0.0, -135.0, 0.0))
     return prog
 
 
 def build():
     steps = 96
-    circle = [1.0] * steps
+    radii = _ellipse_plan(OPEN_RX, OPEN_RY, steps)
+    plan = [r / OPEN_R for r in radii]
     prog = P.panel(size=0.92, hole_d=OPEN_R * 2, thick=10 * MM, ring=steps,
                    crown=34 * MM, crown_ax=math.radians(6.0),
-                   hole_plan=[OPEN_R] * steps, material=PAINT)
+                   hole_plan=radii, material=PAINT)
     prog = _panel_details(prog)
 
     # Rubber weather bead and the five-level circular liner. The shallow first flange and
     # steep wall reproduce the strong black ring plus broad soft inner bowl of the Polo.
     prog = prog.place(obj=_ring_solid(OPEN_R + 4 * MM, OPEN_R - 2 * MM,
-                                      1.2 * MM, -5 * MM, material=RUBBER))
-    prog = prog.place(obj=P.liner(circle, OPEN_R, depth=POCKET_DEPTH,
-                                  flange_w=13 * MM, flange_z=3 * MM, fold=6 * MM,
-                                  wall_k=0.82, ledge=7 * MM, floor_k=0.70,
-                                  steps=steps, material=LINER))
+                                      1.2 * MM, -5 * MM, material=RUBBER, plan=plan))
+    prog = prog.place(obj=_smooth_liner(plan, OPEN_R, steps=steps))
     prog = prog.place(obj=P.neck_stack(CAP_D * 0.44, -POCKET_DEPTH,
                                        -24 * MM, flare=1.34, material=LINER),
                       at=(4 * MM, -18 * MM, 0.0), rotate=(CAP_TILT, -5.0, 0.0))
@@ -257,5 +280,5 @@ def pose(distance=0.74):
     # horizontal camera obliquity. Looking slightly from the right also exposes the door's
     # blue inner face instead of reducing it to a line.
     eye = (0.245, -0.020, distance)
-    target = (-0.018, -0.055, -0.012)
-    return {"eye": eye, "target": target, "up": (0.0, 1.0, 0.02), "fov": 0.595}
+    target = (-0.018, -0.010, -0.012)
+    return {"eye": eye, "target": target, "up": (0.0, 1.0, 0.02), "fov": 0.515}

@@ -32,10 +32,10 @@ def render(size=1000, spp=160):
             "--cam-eye", *[f"{v:.7f}" for v in p["eye"]],
             "--cam-target", *[f"{v:.7f}" for v in p["target"]],
             "--cam-up", *[f"{v:.7f}" for v in p["up"]],
-            "--cam-fov", f"{p['fov']:.7f}", "--env", "0.68", "--sun", "0.72",
+            "--cam-fov", f"{p['fov']:.7f}", "--env", "0.72", "--sun", "0.20",
             "--sun-dir", "-0.38", "-0.34", "0.86",
-            "--sky-tint", "1.02", "1.08", "1.12", "--sky-flat", "0.58",
-            "--smooth-angle", "34", "--bounce", "7", "--no-ground"]
+            "--sky-tint", "1.02", "1.08", "1.12", "--sky-flat", "0.76",
+            "--exposure", "0.90", "--smooth-angle", "34", "--bounce", "7", "--no-ground"]
     subprocess.run(args, check=True)
     import cv2
     cv2.imwrite(str(png), _read_ppm(ppm)[:, :, ::-1])
