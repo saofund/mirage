@@ -550,6 +550,10 @@ _LIBRARY = {
     "fuelcap_white_paint": lambda: _automotive_paint(RES, 191, (0.76, 0.765, 0.76), rough_base=0.15),
     "fuelcap_polo_blue_paint": lambda: _automotive_paint(
         RES, 197, (0.080, 0.285, 0.470), rough_base=0.16),
+    "fuelcap_polo_liner": lambda: _moulded_plastic(
+        RES, 199, (0.038, 0.040, 0.043), rough_base=0.70, wear=0.58),
+    "fuelcap_polo_cap": lambda: _moulded_plastic(
+        RES, 211, (0.072, 0.074, 0.077), rough_base=0.50, wear=0.68),
     # The painted lines were the last flat surface in the frame -- one constant colour over
     # their whole length, where the reference has them clean at one end of the array (luma
     # 0.836) and trodden grey at the other (0.669). Same generator as a bay, because a line

@@ -30,7 +30,8 @@ POCKET_DEPTH = 48.0 * MM
 CAP_TILT = 24.0
 CAP_SPIN = 84.0
 
-TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic"])
+TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
+                       "fuelcap_polo_liner", "fuelcap_polo_cap"])
 
 
 def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
@@ -43,12 +44,10 @@ def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
 
 PAINT = mat((0.080, 0.285, 0.470), 0.32, 0.16,
             maps=TEX["fuelcap_polo_blue_paint"], uv_scale=0.060)
-LINER = mat((0.048, 0.050, 0.054), 0.0, 0.72)
-LINER.update(roughness_map=str(TEX["fuelcap_plastic"]["rough"]),
-             normal_map=str(TEX["fuelcap_plastic"]["normal"]), uv_scale=0.014)
-CAP = mat((0.072, 0.074, 0.077), 0.0, 0.50)
-CAP.update(roughness_map=str(TEX["fuelcap_plastic"]["rough"]),
-           normal_map=str(TEX["fuelcap_plastic"]["normal"]), uv_scale=0.010)
+LINER = mat((0.038, 0.040, 0.043), 0.0, 0.70,
+            maps=TEX["fuelcap_polo_liner"], uv_scale=0.014)
+CAP = mat((0.072, 0.074, 0.077), 0.0, 0.50,
+          maps=TEX["fuelcap_polo_cap"], uv_scale=0.010)
 RUBBER = mat((0.008, 0.008, 0.009), 0.0, 0.84)
 STEEL = mat((0.038, 0.040, 0.043), 0.58, 0.52)
 WATER = mat((0.34, 0.38, 0.42), 0.0, 0.055)
@@ -231,11 +230,11 @@ def _door(prog):
     door_ref = max(door_w, door_h) / 2.0
     door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=122.0, az=0.0, hinge_r=102 * MM,
+                       rim=8 * MM, open_deg=118.0, az=0.0, hinge_r=102 * MM,
                        gap=3 * MM, steps=96, skin=PAINT, liner=PAINT, strap=False,
                        latch=False, plan=door_plan, inside_material=PAINT,
                        inner_details=True)
-    prog = prog.place(obj=door, at=(0.0, 0.0, 2.0 * MM))
+    prog = prog.place(obj=door, at=(0.0, -65 * MM, 2.0 * MM))
 
     # The broad stamped hinge plate is the largest blue shape inside the opening's right
     # edge. Three raised ribs sit on it; isolated bars read as an exploded assembly.
@@ -257,7 +256,7 @@ def _door(prog):
                 .scale({"by": "all"}, [1.0, 1.0, 0.45])
                 .material({"by": "tag", "name": "water"}, **WATER))
         prog = prog.place(obj=bead, at=(212 * MM, y * MM, (65 + z) * MM),
-                          rotate=(0.0, -122.0, 0.0))
+                          rotate=(0.0, -118.0, 0.0))
     return prog
 
 
@@ -304,5 +303,5 @@ def pose(distance=0.74):
     # horizontal camera obliquity. Looking slightly from the right also exposes the door's
     # blue inner face instead of reducing it to a line.
     eye = (0.245, -0.020, distance)
-    target = (-0.018, -0.040, -0.012)
-    return {"eye": eye, "target": target, "up": (0.0, 1.0, 0.02), "fov": 0.630}
+    target = (-0.018, -0.030, -0.012)
+    return {"eye": eye, "target": target, "up": (0.0, 1.0, 0.02), "fov": 0.570}
