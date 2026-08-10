@@ -854,9 +854,10 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                     // turns "how far along this ray" into "how far in front of the camera".
                     if (want_depth && gh.t < 1e29) img.depth[p] = float(gh.t * dot(gd, fwd));
                     if (want_normal && gh.t < 1e29) {
-                        img.normal[p * 3 + 0] = float(gh.ns.x);
-                        img.normal[p * 3 + 1] = float(gh.ns.y);
-                        img.normal[p * 3 + 2] = float(gh.ns.z);
+                        // V3 is std::array<double,3>, not a struct with .x/.y/.z.
+                        img.normal[p * 3 + 0] = float(gh.ns[0]);
+                        img.normal[p * 3 + 1] = float(gh.ns[1]);
+                        img.normal[p * 3 + 2] = float(gh.ns[2]);
                     }
                     if (want_guide && gh.t < 1e29) {
                         // Guide the denoiser with the SHADING normal: the flat normal breaks at every
