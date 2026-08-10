@@ -404,8 +404,13 @@ def _door(prog):
             .material({"by": "tag", "name": "door"}, **HINGE_BLUE))
     inner = ribs.place(obj=ring)
 
+    # OPEN ANGLE, from the depth residual rather than by eye. At 101 degrees the door
+    # presents its face to the camera and renders as a large lens over what the photograph
+    # shows as flat bodywork: the residual against the monocular prior put 83 mm mean and
+    # 265 mm p95 in that region against 26 mm inside the pocket, and the map is a single
+    # bright blob exactly the door's shape. The reference door is nearly edge-on.
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=101.0, az=0.0, hinge_r=82 * MM,
+                       rim=8 * MM, open_deg=134.0, az=0.0, hinge_r=82 * MM,
                        gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=DOOR_INNER,
                        inner_details=False, inner_parts=inner)
@@ -418,7 +423,7 @@ def _door(prog):
                 .scale({"by": "all"}, [1.0, 1.0, 0.45])
                 .material({"by": "tag", "name": "water"}, **WATER))
         prog = prog.place(obj=bead, at=(214 * MM, (y - 48) * MM, (65 + z) * MM),
-                          rotate=(0.0, -101.0, 0.0))
+                          rotate=(0.0, -134.0, 0.0))
     return prog
 
 
