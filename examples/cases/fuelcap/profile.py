@@ -14,10 +14,28 @@ dropouts on black plastic, a hole wherever the cap shadows the projector. The me
 hundred of them is the part. The inter-quartile spread is reported next to it, because a
 disagreement inside the spread is not a disagreement.
 
-What it found the first time it was run, against a model that had had a day of careful
-work on it: the trench that is the whole shape of a filler pocket -- 28 mm deep at r = 42 --
-was **entirely absent**, and the body panel beyond r = 100 was 33 mm too high. Both errors
-are an order of magnitude larger than anything that had been argued about all day.
+What it found the first time it was run, against a model that had had a day of work on it:
+a mean error of 6.7 mm with the trench in the wrong place -- present only at r = 42-48
+where the real one spans r = 30-66 -- and the body panel beyond r = 100 too high. Both are
+larger than anything that had been argued about all day.
+
+A CORRECTION belongs here, because the wrong version of it was committed. This tool was
+introduced alongside the claim that a monocular depth prior "has almost no signal at this
+scale". That is false, and it came from reading a colour map: the prior was being displayed
+over the render's full 206 mm depth range, in which a 44 mm pocket is a fifth of the ramp
+and looks flat. Measured instead of looked at, the prior carries 102 of the 149 units needed
+to express that relief -- 68% -- and its standard deviation inside the pocket is 1.5x its
+value on the flat body beside it. Displayed on its own scale it plainly resolves the hood,
+the cap's raised bar, and a deep crescent at the bottom of the bowl.
+
+So the two references are complementary and neither is "better":
+
+    monocular   dense, smooth, complete, good RELATIVE shape, no metric scale at all
+    Orbbec      metric and absolute, but per-frame noisy -- the inter-quartile spread in
+                the trench bins below is 20-35 mm, the same order as the feature
+
+The useful combination is the monocular map for dense shape, anchored by the captures'
+metric median for scale. Using either alone is what produced both of today's wrong turns.
 
     python -m fuelcap.profile              # the real profile vs hero.py
     python -m fuelcap.profile --sectors 8  # per-angle, for parts that are not round
