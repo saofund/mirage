@@ -606,6 +606,13 @@ _LIBRARY = {
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
     "clad_panel":         lambda: _painted_metal(RES, 137, (0.40, 0.405, 0.41), dirt=0.85, rough_base=0.36),
     "shop_tile":          lambda: _wall_tile(RES, 149, (0.72, 0.725, 0.71), (0.30, 0.30, 0.295), tiles=6),
+    # A cast/machined aluminium cap: fine directional turning marks under a coarse
+    # casting grain, plus beading. Photographed caps are visibly GRANULAR at the
+    # magnification these are judged at, and a perfectly smooth disc is the single
+    # thing that most makes one read as a render.
+    "fuelcap_cast_cap":   lambda: _beaded_water(RES, 241, (0.058, 0.059, 0.062),
+                                                rough_base=0.46, count=120,
+                                                r_lo=0.004, r_hi=0.017, coverage=0.34),
     "fuelcap_wet_liner":  lambda: _beaded_water(RES, 211, (0.024, 0.025, 0.027),
                                                 rough_base=0.70, count=260,
                                                 r_lo=0.0035, r_hi=0.013, coverage=0.42),

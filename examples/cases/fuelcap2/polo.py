@@ -62,7 +62,8 @@ CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
                        "fuelcap_polo_liner", "fuelcap_polo_cap",
-                       "fuelcap_wet_liner", "fuelcap_wet_cap"])
+                       "fuelcap_wet_liner", "fuelcap_wet_cap",
+                       "fuelcap_cast_cap"])
 
 
 def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
@@ -111,6 +112,11 @@ LINER_WET = mat((0.026, 0.027, 0.029), 0.0, 0.70,
                 maps=TEX["fuelcap_wet_liner"], uv_scale=0.075)
 CAP_WET = mat((0.062, 0.064, 0.068), 0.0, 0.58,
               maps=TEX["fuelcap_wet_cap"], uv_scale=0.045)
+# The cap's own surface, under the water. A photographed cap is granular at this
+# magnification; a perfectly smooth disc is the single thing that most makes one read as a
+# render, and no amount of correct silhouette fixes it.
+CAP_CAST = mat((0.058, 0.059, 0.062), 0.12, 0.50,
+               maps=TEX["fuelcap_cast_cap"], uv_scale=0.030)
 
 
 def _ellipse_plan(rx, ry, steps):
@@ -381,7 +387,7 @@ def _cap(prog):
                     # the turned groove, a few mm inside the rim
                     groove_r=CAP_D * 0.40, groove_w=2.2 * MM, groove_d=1.3 * MM,
                     printing=False, grip="rib", waist=0.90, rib_dish=-0.04,
-                    rib_shoulder=0.66, material=CAP,
+                    rib_shoulder=0.66, material=CAP_CAST,
                     rib_material=CAP_GRIP, steps=96)
     # Project the photographed wear only onto camera-facing local top surfaces. Applying it
     # to the fluted wall and drafted grip sides wraps unrelated image regions round every
