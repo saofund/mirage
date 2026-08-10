@@ -488,7 +488,7 @@ def hero_part_sheet(size=520, spp=200):
     _grid(tiles, 4, OUT / "hero_cap.png", cell=size)
 
 
-def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52, az=None):
+def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52, az=None, ids=False):
     """The measured reproduction, rendered at the photograph's own obliquity.
 
     `azimuths` renders a strip of candidates instead of the single answer. The cap's ellipse
@@ -515,11 +515,25 @@ def hero_sheet(size=760, spp=220, azimuths=None, dist=0.52, az=None):
     p = H.pose(dist=dist, azimuth_deg=az)
     img = _render(prog, tmp / "hero", eye=p["eye"], target=p["target"], up=p["up"],
                   w=size, h=size, spp=spp, fov=fov, env=0.55, sun=0.45,
-                  sky_tint=(1.14, 1.06, 0.92), sky_flat=0.78)
+                  sky_tint=(1.14, 1.06, 0.92), sky_flat=0.78,
+                  ids=(S.ID_TAGS if ids else None))
     import cv2
     name = "hero_synth.png" if az is None else f"hero_synth_{int(round(az))}.png"
     cv2.imwrite(str(OUT / name), img[:, :, ::-1])
     print(OUT / name)
+    if ids:
+        # WHICH PIXEL IS WHICH PART. Everything in this pocket is black plastic inside a
+        # black hole, so a wall, a floor and a collar that are all wrong in different ways
+        # render as one smooth dark shape and argue back convincingly. The id map does not.
+        pgm = _read_pgm16(tmp / "hero.pgm")
+        palette = np.array([[22, 22, 26]] + [
+            [255, 90, 90], [255, 210, 40], [120, 255, 120], [90, 200, 255],
+            [200, 120, 255], [255, 150, 60], [60, 255, 210], [170, 170, 170],
+            [90, 130, 255], [255, 255, 255]], np.uint8)
+        col = palette[np.clip(pgm, 0, len(palette) - 1)]
+        cv2.imwrite(str(OUT / "hero_ids.png"), col[:, :, ::-1])
+        print(OUT / "hero_ids.png",
+              {k + 1: t for k, t in enumerate(S.ID_TAGS)})
 
 
 def hero_compose(size=760, synth="hero_synth.png", out="hero.png"):
@@ -572,11 +586,13 @@ def main(argv=None):
                     help="force one pocket family (ids)")
     ap.add_argument("--az", type=float, default=None,
                     help="camera azimuth round the panel normal (hero)")
+    ap.add_argument("--ids", action="store_true",
+                    help="also write the object-id map (hero)")
     ap.add_argument("--closeup", action="store_true", help="ids at photograph magnification")
     a = ap.parse_args(argv)
     OUT.mkdir(parents=True, exist_ok=True)
     if a.what == "hero":
-        hero_sheet(az=a.az)
+        hero_sheet(az=a.az, ids=a.ids)
     elif a.what == "heroaz":
         hero_sheet(azimuths=(55.8, 145.8, 235.8, 325.8))
     elif a.what == "herocap":
