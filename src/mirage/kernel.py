@@ -446,7 +446,12 @@ def _inset_region(mesh: Mesh, region, thickness: float, mark: str | None):
     rv = sorted({lp.vert.id for f in region for lp in mesh.face_loops(f)})
     centroid = np.mean([pos[i] for i in rv], axis=0)
     nrm = {i: np.zeros(3) for i in rv}
-    for f in region:
+    # ID ORDER, not set order. `region` is a set of Face OBJECTS, so iterating it walks
+    # heap addresses; float addition is not associative, so the accumulated normals differ
+    # between runs by an ulp, the inset positions follow, and the same op-log builds a
+    # different mesh every time. Counts stay right, which is what makes it invisible until
+    # the replay-identically test catches it — as it just did.
+    for f in sorted(region, key=lambda g: g.id):
         n = np.array(face_normal(mesh, f), float)
         for lp in mesh.face_loops(f):
             nrm[lp.vert.id] += n
@@ -498,7 +503,13 @@ def extrude_faces(mesh: Mesh, faces, distance: float = 0.5, mark: str | None = N
     pos = [list(v.co) for v in mesh.verts]
     fn = {f: np.array(face_normal(mesh, f)) for f in region}
     vacc: dict = {}
-    for f in region:
+    # ID ORDER. `region` is a set of Face OBJECTS, so iterating it walks heap addresses,
+    # and float addition is not associative: the accumulated vertex normal differs by an ulp
+    # between runs, every extruded vertex moves by that much, and the same op-log builds a
+    # different mesh each time. Counts stay right, which is why it survives everything
+    # except the replay-identically test. The caps loop below was already fixed for this
+    # exact reason; this one was missed.
+    for f in sorted(region, key=lambda g: g.id):
         for v in mesh.face_verts(f):
             vacc[v.id] = vacc.get(v.id, np.zeros(3)) + fn[f]
 

@@ -602,7 +602,12 @@ Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double 
     std::unordered_map<const Face*, A3> fn;
     for (const Face* f : region) fn[f] = face_normal(mesh, f);
     std::unordered_map<int, A3> vacc;
-    for (const Face* f : region)
+    // ID ORDER. `region` is a std::set of Face POINTERS, so iterating it walks heap
+    // addresses, and float addition is not associative: the accumulated vertex normal
+    // differs by an ulp between runs and the same op-log builds a different mesh each
+    // time. Counts stay right, which is why only the replay-identically test sees it.
+    // The caps loop below was already fixed for this exact reason; this one was missed.
+    for (const Face* f : region_in_id_order(region))
         for (Vert* v : mesh.face_verts(f)) {
             auto it = vacc.find(v->id);
             vacc[v->id] = (it == vacc.end()) ? fn[f] : a3add(it->second, fn[f]);
