@@ -292,20 +292,47 @@ def _panel_details(prog):
 
 
 def _latch(prog):
-    # A square pocket and spring-loaded circular plunger on the left wall.
-    plate = _box((50 * MM, 58 * MM, 4 * MM), "well", RUBBER)
-    prog = prog.place(obj=plate, at=(-89 * MM, -3 * MM, -22 * MM))
-    prog = prog.place(obj=_disc(13.5 * MM, 7.0 * MM, "well", STEEL, 36),
-                      at=(-89 * MM, -3 * MM, -19 * MM))
-    prog = prog.place(obj=_disc(8.2 * MM, 8.0 * MM, "well", LINER, 36),
-                      at=(-89 * MM, -3 * MM, -12 * MM))
-    for x, y in ((-108, 15), (-75, 16), (-108, -21), (-75, -20)):
-        prog = prog.place(obj=P.screw(r=2.1 * MM, head_h=0.8 * MM, material=STEEL),
-                          at=(x * MM, y * MM, -17 * MM))
-    # The small exposed latch tongue that reaches toward the door.
-    lever = _box((13 * MM, 5 * MM, 3.0 * MM), "well", STEEL)
-    return prog.place(obj=lever, at=(-68 * MM, 2 * MM, -13 * MM),
-                      rotate=(0.0, 0.0, -12.0))
+    """The stamped latch housing on the left wall — a pressing, not a plate.
+
+    In the reference this is the second-largest object inside the aperture after the cap: a
+    squarish stamped housing let into the wall, with a deep recess in its face, a stepped
+    barrel standing out of it, a hook reaching toward the door and four fasteners. Built as
+    a flat box with two discs on it, which is what it was, it reads as a smudge.
+
+    The recess is `inset(region=True)` + `extrude` inward — the operator that makes a
+    pocket in a face that already exists, rather than a second box placed in front of one.
+    """
+    # the housing, let into the wall and drafted
+    plate = (_box((52 * MM, 60 * MM, 5 * MM), "well", LINER)
+             .inset({"by": "normal", "axis": "x", "sign": 1.0}, thickness=0.22, region=True)
+             .extrude({"by": "last_created"}, distance=-3.2 * MM)
+             .material({"by": "all"}, **LINER))
+    prog = prog.place(obj=plate, at=(-88 * MM, -3 * MM, -22 * MM))
+
+    # the stepped barrel: a wide collar, a shoulder, then the plunger
+    barrel = (MeshProgram()
+              .profile([(0.0, 0.0), (15.0 * MM, 0.0), (15.0 * MM, 5.0 * MM),
+                        (11.5 * MM, 6.2 * MM), (11.5 * MM, 11.0 * MM),
+                        (7.6 * MM, 12.4 * MM), (7.6 * MM, 17.5 * MM),
+                        (5.2 * MM, 18.6 * MM), (0.0, 18.6 * MM)], plane="xz", closed=False)
+              .spin(axis="z", steps=40, mark="well")
+              .material({"by": "tag", "name": "well"}, **STEEL))
+    prog = prog.place(obj=barrel, at=(-86 * MM, -1 * MM, -21 * MM), rotate=(0.0, 84.0, 0.0))
+
+    # the hook that reaches toward the door, and its return
+    hook = _box((17 * MM, 6 * MM, 3.4 * MM), "well", STEEL)
+    prog = prog.place(obj=hook, at=(-66 * MM, 3 * MM, -12 * MM), rotate=(0.0, 0.0, -12.0))
+    prog = prog.place(obj=_box((4 * MM, 6 * MM, 7 * MM), "well", STEEL),
+                      at=(-58 * MM, 3 * MM, -13 * MM))
+
+    # the tab at the far edge, folded out of the same pressing
+    prog = prog.place(obj=_box((6 * MM, 22 * MM, 3 * MM), "well", LINER),
+                      at=(-110 * MM, -6 * MM, -17 * MM), rotate=(0.0, 22.0, 0.0))
+
+    for x, y in ((-107, 17), (-72, 18), (-107, -23), (-72, -22)):
+        prog = prog.place(obj=P.screw(r=2.3 * MM, head_h=0.9 * MM, material=STEEL),
+                          at=(x * MM, y * MM, -17.5 * MM))
+    return prog
 
 
 def _cap(prog):
@@ -367,7 +394,26 @@ def _door(prog):
                        gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=DOOR_INNER,
                        inner_details=False)
+    # The stamped RIBS on the inner face. A fuel door is a pressing, and the reference's
+    # inner face is crossed by a raised outer ring and three radial webs — which is most of
+    # what tells you it is sheet steel and not a disc. Placed on the door before it swings,
+    # so they ride with it.
+    ribs = MeshProgram()
+    for a in (0.0, 118.0, 242.0):
+        ribs = ribs.place(obj=_box((0.088, 0.016, 0.004), "door", HINGE_BLUE),
+                          at=(0.0, 0.0, 0.0), rotate=(0.0, 0.0, a))
+    ring = (MeshProgram()
+            .profile([(0.086, 0.0), (0.098, 0.0), (0.098, 0.005), (0.086, 0.005)],
+                     plane="xz", closed=True)
+            .spin(axis="z", steps=64, mark="door")
+            .material({"by": "tag", "name": "door"}, **HINGE_BLUE))
+    inner = ribs.place(obj=ring)
+
     prog = prog.place(obj=door, at=(14 * MM, -48 * MM, 2.0 * MM))
+    # the ribs, swung with the door: same open angle, same hinge radius
+    prog = prog.place(obj=inner, at=(14 * MM - 82 * MM, -48 * MM, 2.0 * MM),
+                      rotate=(0.0, -101.0, 0.0))
+
 
     # A few beads on the inner door face; sparse enough to remain details, not a pattern.
     for y, z, r in ((42, 6, 1.0), (15, 10, 0.8), (-18, 7, 1.1), (-47, 4, 0.7)):
