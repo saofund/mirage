@@ -236,11 +236,12 @@ def build(paint=None, cap_material=None, printing=True):
     # measured carefully and the pocket was still empty. In the photograph the largest thing
     # inside the opening after the cap is this — a stamped plate in the top corner with the
     # door's arm running off it.
-    prog = prog.place(obj=P.hinge_bracket(w=58.0 * MM, h=44.0 * MM, t=2.8 * MM,
-                                          lip=11.0 * MM, lip_deg=66.0, bolts=2,
+    prog = prog.place(obj=P.hinge_bracket(w=46.0 * MM, h=34.0 * MM, t=2.6 * MM,
+                                          lip=9.0 * MM, lip_deg=66.0, bolts=2,
+                                          bolt_r=3.0 * MM,
                                           material=M.mat((0.020, 0.020, 0.022), 0.0, 0.58)),
-                      at=(OPENING_REF * 0.55, 40.0 * MM, -13.0 * MM),
-                      rotate=(-24.0, 0.0, -8.0))
+                      at=(OPENING_REF * 0.46, 22.0 * MM, -21.0 * MM),
+                      rotate=(-26.0, 0.0, -8.0))
 
     # 7. the door bumper, on the wall opposite the hinge
     prog = prog.place(obj=P.bump_stop(r=6.5 * MM, h=12.0 * MM),

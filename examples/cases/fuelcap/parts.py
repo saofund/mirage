@@ -1601,7 +1601,7 @@ def door_strap(length=0.078, w=0.021, t=0.0032, bend_at=0.42, bend_deg=34.0,
 
 
 def hinge_bracket(w=0.056, h=0.042, t=0.0028, lip=0.010, lip_deg=68.0, bolts=2,
-                  bolt_r=0.0042, material=None, mark="well"):
+                  bolt_r=0.0042, material=None, bolt_material=None, mark="well"):
     """The stamped plate the door's hinge is bolted to, standing on the pocket wall.
 
     The reason this exists: an id map of the finished pocket showed one continuous `well`
@@ -1640,5 +1640,10 @@ def hinge_bracket(w=0.056, h=0.042, t=0.0028, lip=0.010, lip_deg=68.0, bolts=2,
         p = p.place(obj=lathe([(0.0, bolt_r * 0.62), (bolt_r * 0.70, bolt_r * 0.62),
                                (bolt_r, bolt_r * 0.18), (bolt_r, 0.0), (0.0, 0.0)],
                               steps=16, mark=mark),
-                    at=(x, -hh * 0.42, t), material=SCREW_STEEL)
+                    at=(x, -hh * 0.42, t),
+                    # NOT SCREW_STEEL. A catalogue steel head is the brightest thing in
+                    # a frame whose subject is black plastic in shadow, and this kit has
+                    # already been round that loop once with the liner's screws. These
+                    # are dark fasteners in a pocket that fills with road dirt.
+                    material=bolt_material or mat((0.055, 0.055, 0.058), 0.55, 0.62))
     return p
