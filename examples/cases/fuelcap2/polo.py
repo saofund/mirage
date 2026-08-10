@@ -494,7 +494,13 @@ def build():
                           at=(x * MM, y * MM, -2.0 * MM))
     # Close the off-centre throat behind the cap.  Without this backing the narrow gap on
     # the right sees the bright environment and becomes a false pale crescent.
-    prog = prog.place(obj=_disc(82 * MM, 2 * MM, "well", RUBBER, 96),
+    # Sized FROM the throat, not written down. The backing has to be wider than whatever
+    # the bowl narrows to, and when the throat was widened this disc stayed at 82 mm --
+    # so the bowl became wider than its own floor and the render showed a bright crescent
+    # of open sky through the gap. The id map named it in one run: those pixels were
+    # `<none>`, which is the tracer saying nothing was hit.
+    throat = OPEN_R * (1.0 - 0.24) * (1.0 - 0.10) + 14 * MM
+    prog = prog.place(obj=_disc(throat, 2 * MM, "well", RUBBER, 96),
                       at=(-15 * MM, -27 * MM, -55 * MM))
     prog = _latch(prog)
     prog = _cap(prog)
