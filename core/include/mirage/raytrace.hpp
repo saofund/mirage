@@ -88,6 +88,7 @@ struct RenderSettings {
     // ray distance would come out with a subtly domed world, and every plane fitted
     // to it would come out curved.
     bool want_depth = false;
+    bool want_normal = false;
 
     // Depth of field: a thin-lens camera. aperture = lens radius in world units (0 = a
     // pinhole, everything sharp); focus_dist = distance to the sharp plane (0 = auto, the
@@ -147,6 +148,12 @@ struct Image {
     // Metric depth per pixel from the CENTRE ray: distance along the view axis in world
     // units, 0 where nothing was hit. Empty unless RenderSettings::want_depth was set.
     std::vector<float> depth;
+    // World-space shading normal per pixel from the CENTRE ray, xyz interleaved, all zero
+    // where nothing was hit. Empty unless RenderSettings::want_normal was set. The G-buffer
+    // already computes this to steer the denoiser; writing it out costs nothing and is what
+    // lets a reverse-modelling loop ask "is this surface FACING the way the reference's is"
+    // rather than only "is it in the same place".
+    std::vector<float> normal;
 };
 
 // Path-trace the mesh. Deterministic for a given (mesh, camera, settings): each

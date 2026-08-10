@@ -809,7 +809,8 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     // id would dither along its own silhouette.
     const bool want_ids = !settings.id_tags.empty();
     const bool want_depth = settings.want_depth;
-    const bool want_gbuf = settings.denoise > 0 || want_ids || want_depth;
+    const bool want_normal = settings.want_normal;
+    const bool want_gbuf = settings.denoise > 0 || want_ids || want_depth || want_normal;
     const bool want_guide = settings.denoise > 0;
     std::vector<V3> gAlb(want_guide ? NP : 0, V3{1, 1, 1});
     std::vector<V3> gNrm(want_guide ? NP : 0, V3{0, 0, 1});
@@ -817,6 +818,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     std::vector<char> gMask(want_guide ? NP : 0, 0);
     if (want_ids) img.ids.assign(NP, 0);
     if (want_depth) img.depth.assign(NP, 0.0f);
+    if (want_normal) img.normal.assign(NP * 3, 0.0f);
 
     unsigned nthreads = settings.threads ? settings.threads : std::thread::hardware_concurrency();
     if (nthreads == 0) nthreads = 4;
@@ -851,6 +853,11 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                     // direction and gd is a unit ray, so dot(gd, fwd) is the cosine that
                     // turns "how far along this ray" into "how far in front of the camera".
                     if (want_depth && gh.t < 1e29) img.depth[p] = float(gh.t * dot(gd, fwd));
+                    if (want_normal && gh.t < 1e29) {
+                        img.normal[p * 3 + 0] = float(gh.ns.x);
+                        img.normal[p * 3 + 1] = float(gh.ns.y);
+                        img.normal[p * 3 + 2] = float(gh.ns.z);
+                    }
                     if (want_guide && gh.t < 1e29) {
                         // Guide the denoiser with the SHADING normal: the flat normal breaks at every
                         // facet, which makes the edge-avoiding weight reject taps across a smooth

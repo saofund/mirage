@@ -3,7 +3,7 @@
 //   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N] [--threads N]
 //                 [--cam-eye X Y Z] [--cam-target X Y Z] [--cam-up X Y Z] [--cam-fov RAD]
 //                 [--denoise [N]] [--smooth-angle DEG | --flat] [--sky-tint R G B]
-//                 [--ids IDS.pgm --id-tags a,b,c] [--depth DEPTH.pfm]
+//                 [--ids IDS.pgm --id-tags a,b,c] [--depth DEPTH.pfm] [--normal N.pfm]
 //
 // --depth writes a metric float depth map (PFM) from the centre ray: distance along the
 // view axis, in the op-log's world units, 0 where nothing was hit. With --ids and a K
@@ -55,7 +55,7 @@ static std::string read_file(const std::string& path) {
 }
 
 int main(int argc, char** argv) {
-    std::string oplog, out = "render.ppm", ids_out, depth_out;
+    std::string oplog, out = "render.ppm", ids_out, depth_out, normal_out;
     RenderSettings s;
     Camera cam;  // default 3/4 exterior view; any field overridable via --cam-* below
     for (int i = 1; i < argc; ++i) {
@@ -105,6 +105,7 @@ int main(int argc, char** argv) {
         else if (a == "--flat") s.smooth_angle = 0.0;                           // faceted (geometric normals)
         else if (a == "--ids" && i + 1 < argc) ids_out = argv[++i];        // object-id AOV (PGM)
         else if (a == "--depth" && i + 1 < argc) { depth_out = argv[++i]; s.want_depth = true; }
+        else if (a == "--normal" && i + 1 < argc) { normal_out = argv[++i]; s.want_normal = true; }
         else if (a == "--id-tags" && i + 1 < argc) {   // comma-separated face tags, IN ORDER
             std::string t = argv[++i], cur;
             for (char ch : t) { if (ch == ',') { if (!cur.empty()) s.id_tags.push_back(cur); cur.clear(); }
@@ -166,6 +167,18 @@ int main(int argc, char** argv) {
             f.write(reinterpret_cast<const char*>(img.depth.data() + std::size_t(y) * img.w),
                     std::streamsize(sizeof(float) * img.w));
         std::printf("wrote %s (depth, metric float)\n", depth_out.c_str());
+    }
+    if (!normal_out.empty()) {
+        // Three-channel float PFM ("PF"). World space, unit length, all-zero where the ray
+        // missed. Float and not an 8-bit encode for the same reason depth is: the AOV
+        // exists to be COMPARED against a reference, and 1/255 of a normal is about 0.4
+        // degrees of surface angle, which is smaller than nothing worth finding.
+        std::ofstream f(normal_out, std::ios::binary);
+        f << "PF\n" << img.w << " " << img.h << "\n-1.0\n";
+        for (int y = img.h - 1; y >= 0; --y)
+            f.write(reinterpret_cast<const char*>(img.normal.data() + std::size_t(y) * img.w * 3),
+                    std::streamsize(sizeof(float) * img.w * 3));
+        std::printf("wrote %s (world normal, float3)\n", normal_out.c_str());
     }
     return 0;
 }
