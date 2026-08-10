@@ -380,8 +380,16 @@ std::vector<Edge*> resolve_edges_inner(const Mesh& mesh, const json& sel, const 
         return out;
     }
     if (by == "sharp") {
+        // `interior` drops boundary and non-manifold edges. dihedral_deg reports 180 for
+        // them by design -- `crease` wants a rim held hard through subdivide -- but for
+        // "the hard creases in this moulding" they are noise, and edge_bevel prunes every
+        // one of them and then does nothing.
         const double ang = sel.value("angle", 30.0);
-        for (const auto& e : mesh.edges()) if (dihedral_deg(mesh, e.get()) >= ang) out.push_back(e.get());
+        const bool interior = sel.value("interior", false);
+        for (const auto& e : mesh.edges())
+            if (dihedral_deg(mesh, e.get()) >= ang
+                && (!interior || mesh.edge_faces(e.get()).size() == 2))
+                out.push_back(e.get());
         return out;
     }
     if (by == "axis") {

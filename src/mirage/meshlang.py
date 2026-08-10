@@ -311,8 +311,16 @@ def _resolve_edges(mesh, sel, last_tag):
     if by == "all":
         return list(mesh.edges)
     if by == "sharp":
+        # `interior` drops boundary and non-manifold edges. `_dihedral_deg` reports 180 for
+        # them by design — `crease` genuinely wants a mesh's rim held hard through subdivide
+        # — but for anything that means "the hard creases in this moulding" they are pure
+        # noise: on an open lofted bowl 192 of the 246 edges this selects are the two rims,
+        # and `edge_bevel` then prunes every one of them and does nothing at all.
         ang = sel.get("angle", 30.0)
-        return [e for e in mesh.edges if _dihedral_deg(mesh, e) >= ang]
+        interior = bool(sel.get("interior", False))
+        return [e for e in mesh.edges
+                if _dihedral_deg(mesh, e) >= ang
+                and (not interior or len(mesh.edge_faces(e)) == 2)]
     if by == "axis":
         ax = "xyz".index(sel.get("axis", "z"))
         tol = sel.get("tol", 0.1)

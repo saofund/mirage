@@ -157,7 +157,17 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
         for i in range(steps):
             k = (i + 1) % steps
             faces.append([a0 + i, a0 + k, b0 + k, b0 + i])
+    # RADIUS THE CREASES. Every edge on an injection moulding has a radius on it — the
+    # tool cannot make a zero-radius corner and the part could not leave it if it could —
+    # and a zero-radius corner is a large part of why a render reads as CAD. This loft's
+    # flange/bowl junction is a 96-edge ring, so `edge_bevel` can round it.
+    #
+    # `interior` matters: without it `sharp` also returns the loft's two open rims, which
+    # cannot be bevelled, and the prune cascades until nothing is left. The angle has to be
+    # low enough to catch the WHOLE ring — at 25 degrees only 54 of the 96 qualify, the
+    # ring is broken, and every one of them is pruned as a lone cut.
     return (MeshProgram().mesh(verts=verts, faces=faces, mark="well")
+            .edge_bevel({"by": "sharp", "angle": 6.0, "interior": True}, width=0.20)
             .material({"by": "tag", "name": "well"}, **LINER_WET))
 
 

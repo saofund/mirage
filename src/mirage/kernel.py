@@ -778,6 +778,7 @@ def edge_bevel(mesh: Mesh, edges, width: float = 0.15, mark: str | None = None) 
     safely no-ops on an open edge path or a single edge. Always watertight."""
     import numpy as np
     sel = set(id(e) for e in edges)
+    n_asked = len(sel)
     if not sel:
         return mesh.copy()
     t = min(max(float(width), 1e-3), 0.49)
@@ -804,6 +805,18 @@ def edge_bevel(mesh: Mesh, edges, width: float = 0.15, mark: str | None = None) 
             break
         sel = new_sel
     if not sel:
+        # Nothing survivable was asked for. Returning a copy is the right GEOMETRY -- a
+        # lone cut or an open path cannot separate its faces -- but doing it in silence is
+        # what makes this expensive: the op runs, the counts do not move, and the only way
+        # to find out why is to read this function. Say so.
+        import warnings
+        warnings.warn(
+            f"edge_bevel: all {n_asked} selected edges were pruned and nothing was "
+            "bevelled. An edge is only bevelled where both endpoints carry >=2 selected "
+            "edges and lie on a fully manifold star, so an incomplete crease ring or a "
+            "selection full of boundary edges cascades to empty. Try a lower `angle`, or "
+            '{"by": "sharp", "interior": true} to drop the rims.',
+            RuntimeWarning, stacklevel=2)
         return mesh.copy()
 
     bevel_vert = {e.v1.id for e in mesh.edges if id(e) in sel} | {e.v2.id for e in mesh.edges if id(e) in sel}
