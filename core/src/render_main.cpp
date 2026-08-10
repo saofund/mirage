@@ -1,6 +1,6 @@
 // mirage_render — the offline path-traced renderer (CLI).
 //
-//   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N] [--threads N]
+//   mirage_render [--oplog FILE] [--out IMG.ppm] [--spp N] [--w N --h N] [--crop X Y W H] [--threads N]
 //                 [--cam-eye X Y Z] [--cam-target X Y Z] [--cam-up X Y Z] [--cam-fov RAD]
 //                 [--denoise [N]] [--smooth-angle DEG | --flat] [--sky-tint R G B]
 //                 [--ids IDS.pgm --id-tags a,b,c] [--depth DEPTH.pfm] [--normal N.pfm]
@@ -70,6 +70,10 @@ int main(int argc, char** argv) {
         else if (a == "--spp") s.spp = int(next(s.spp));
         else if (a == "--w") s.width = int(next(s.width));
         else if (a == "--h") s.height = int(next(s.height));
+        else if (a == "--crop" && i + 4 < argc) {   // x y w h, in FULL-frame pixels
+            s.crop_x = std::atoi(argv[++i]); s.crop_y = std::atoi(argv[++i]);
+            s.crop_w = std::atoi(argv[++i]); s.crop_h = std::atoi(argv[++i]);
+        }
         else if (a == "--bounce") s.max_bounce = int(next(s.max_bounce));
         else if (a == "--metallic") s.metallic = next(s.metallic);
         else if (a == "--rough") s.roughness = next(s.roughness);

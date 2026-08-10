@@ -788,15 +788,20 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     const V3 up2 = cross(right, fwd);
     const V3 eye{cam.eye[0], cam.eye[1], cam.eye[2]};
     const double th = std::tan(cam.fov_y * 0.5);
-    const double aspect = double(settings.width) / double(settings.height);
+    const double aspect = double(full_w) / double(full_h);
     // thin-lens focus distance: explicit, or auto = eye->target distance
     const double focus_dist = settings.focus_dist > 0.0
         ? settings.focus_dist
         : len(V3{cam.target[0], cam.target[1], cam.target[2]} - eye);
 
+    // The FULL frame drives the ray mapping; the image is only the requested rectangle.
+    const int full_w = settings.width, full_h = settings.height;
+    const int cx0 = std::max(0, settings.crop_x), cy0 = std::max(0, settings.crop_y);
+    const int cw = settings.crop_w > 0 ? std::min(settings.crop_w, full_w - cx0) : full_w;
+    const int chh = settings.crop_h > 0 ? std::min(settings.crop_h, full_h - cy0) : full_h;
     Image img;
-    img.w = settings.width;
-    img.h = settings.height;
+    img.w = cw;
+    img.h = chh;
     img.rgb.assign(std::size_t(img.w) * img.h * 3, 0);
     const std::size_t NP = std::size_t(img.w) * img.h;
 
@@ -831,8 +836,10 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     const double lk1 = settings.lens_k1, lk2 = settings.lens_k2;
     const bool has_lens = (lk1 != 0.0 || lk2 != 0.0);
     auto primary = [&](double px, double py) {
-        double a = (2.0 * px / img.w - 1.0) * aspect;
-        double b = (1.0 - 2.0 * py / img.h);
+        // px, py are FULL-FRAME pixel coordinates, so a crop casts exactly the rays the
+        // whole frame would have cast for those pixels.
+        double a = (2.0 * px / full_w - 1.0) * aspect;
+        double b = (1.0 - 2.0 * py / full_h);
         if (has_lens) {
             const double r2 = a * a + b * b;
             const double s = 1.0 + lk1 * r2 + lk2 * r2 * r2;
@@ -846,7 +853,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
             for (int x = 0; x < img.w; ++x) {
                 const std::size_t p = std::size_t(y) * img.w + x;
                 if (want_gbuf) {  // centre-ray primary hit: albedo/normal/depth (noise-free)
-                    const V3 gd = primary(x + 0.5, y + 0.5);
+                    const V3 gd = primary(cx0 + x + 0.5, cy0 + y + 0.5);
                     const Hit gh = intersect(sc, eye, gd);
                     if (want_ids && gh.t < 1e29) img.ids[p] = gh.oid;
                     // Project the ray distance onto the view axis: fwd is the unit view
@@ -874,9 +881,13 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                 }
                 V3 acc{0, 0, 0};
                 for (int s = 0; s < settings.spp; ++s) {
-                    Rng rng(std::uint32_t((x * 1973u) ^ (y * 9277u) ^ (s * 26699u)) | 1u);
+                    // Seeded from the FULL-FRAME pixel, so a crop is not merely the same
+                    // geometry as that region of a full render but the same NOISE — which is
+                    // what lets a crop be diffed against a full frame.
+                    Rng rng(std::uint32_t(((cx0 + x) * 1973u) ^ ((cy0 + y) * 9277u)
+                                          ^ (s * 26699u)) | 1u);
                     const double jx = rng.next(), jy = rng.next();
-                    V3 ro = eye, rd = primary(x + jx, y + jy);
+                    V3 ro = eye, rd = primary(cx0 + x + jx, cy0 + y + jy);
                     if (settings.aperture > 0.0) {   // thin lens: sample the aperture, aim at the focal plane
                         const V3 focal = eye + rd * (focus_dist / std::max(dot(rd, fwd), 1e-6));
                         const double lr = settings.aperture * std::sqrt(rng.next()), la = 2 * PI * rng.next();

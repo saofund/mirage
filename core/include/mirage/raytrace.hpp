@@ -90,6 +90,15 @@ struct RenderSettings {
     bool want_depth = false;
     bool want_normal = false;
 
+    // CROP: render only this sub-rectangle of the frame, at the same camera. Not a zoom --
+    // the rays are the rays the full frame would have cast, so a crop is a true sub-image
+    // and can be compared against the same region of a full render pixel for pixel.
+    //
+    // This exists for iteration cost. Reverse-modelling a part means rendering the same
+    // frame a hundred times to look at one corner of it, and paying for the sky each time
+    // is most of the wall clock. crop_w = 0 means the whole frame.
+    int crop_x = 0, crop_y = 0, crop_w = 0, crop_h = 0;
+
     // Depth of field: a thin-lens camera. aperture = lens radius in world units (0 = a
     // pinhole, everything sharp); focus_dist = distance to the sharp plane (0 = auto, the
     // distance from the eye to the camera target). Larger aperture -> shallower focus, more
