@@ -178,12 +178,13 @@ def build(paint=None, cap_material=None, printing=True):
     plan = _plan(steps)
 
     # 1. the body panel, its aperture cut to the measured outline
-    # Big enough to fill the frame at this obliquity, and crowned like a car's flank rather
-    # than flat. `crown` is the sag at the panel's own EDGE, so it scales with the square of
-    # the panel size for a fixed curvature — a value carried over from a smaller panel is a
-    # different car.
+    # CROWN, measured. `profile.py` against 140 real captures says the body sits +5 to
+    # +12 mm above the cap's plane from r = 66 out to r = 126 and then comes back down --
+    # a nearly flat flank over this whole span. At crown = 53 mm on a 750 mm panel the
+    # model reached +37 mm by r = 120, which is 33 mm out and the largest single error in
+    # the part. The panel is big for framing; the curvature has to stay what the car has.
     prog = P.panel(size=0.75, thick=0.010, ring=steps, material=paint,
-                   crown=0.053, crown_ax=math.radians(78.0),
+                   crown=0.013, crown_ax=math.radians(78.0),
                    hole_plan=[OPENING_REF * k for k in plan])
     prog = exterior_details(prog, paint)
 
