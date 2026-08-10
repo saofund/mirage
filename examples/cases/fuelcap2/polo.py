@@ -374,10 +374,12 @@ def _latch(prog):
 
 def _cap(prog):
     cap_obj = P.cap(d=CAP_D, flange=7 * MM, rib_len=CAP_D * 0.92,
-                    rib_w=CAP_D * 0.34, rib_h=CAP_D * 0.050,
+                    rib_w=CAP_D * 0.40, rib_h=CAP_D * 0.068,
                     rib_draft=0.82, dome=-0.6 * MM, chamfer=2.1 * MM,
                     flutes=18, flute_depth=0.010, skirt=9 * MM,
                     neck_d=CAP_D * 0.72, bevel=0.040, spin=CAP_SPIN,
+                    # the turned groove, a few mm inside the rim
+                    groove_r=CAP_D * 0.40, groove_w=2.2 * MM, groove_d=1.3 * MM,
                     printing=False, grip="rib", waist=0.90, rib_dish=-0.04,
                     rib_shoulder=0.66, material=CAP,
                     rib_material=CAP_GRIP, steps=96)
@@ -393,12 +395,18 @@ def _cap(prog):
 
     # Opaque glossy beads are a better approximation than a flat decal in Mirage's current
     # material model: each one produces the tiny white specular point visible in the photo.
-    droplets = [(-31, 20, 0.8), (-20, 28, 1.1), (-9, 25, 0.7), (3, 31, 1.0),
-                (17, 24, 0.8), (27, 17, 1.2), (-35, 5, 0.7), (-24, -5, 1.0),
-                (-12, 7, 0.8), (8, 10, 1.3), (22, 2, 0.7), (31, -10, 1.0),
-                (-28, -22, 1.2), (-8, -26, 0.8), (15, -21, 1.0), (29, -27, 0.7),
-                (-34, 13, 0.7), (-18, 15, 0.8), (-2, 18, 0.6), (13, 17, 0.7),
-                (34, 8, 0.8), (-18, -14, 0.7), (1, -10, 0.9), (18, -8, 0.6)]
+    # BEADS, and there have to be a lot of them. The photograph's cap carries fifty-odd
+    # droplets of widely varying size; two dozen even ones read as dust. Scattered from a
+    # fixed seed so the scene stays reproducible, rejected outside the cap's radius.
+    import random as _r
+    _rng = _r.Random(2007)
+    droplets = []
+    while len(droplets) < 58:
+        x = _rng.uniform(-1.0, 1.0) * CAP_D * 0.47 * 1e3
+        y = _rng.uniform(-1.0, 1.0) * CAP_D * 0.47 * 1e3
+        if math.hypot(x, y) > CAP_D * 0.455 * 1e3:
+            continue
+        droplets.append((x, y, _rng.uniform(0.45, 1.45)))
     # Droplets are kept close to the face. The small positive z survives the cap tilt and
     # prevents coplanar flicker without making the beads float visibly.
     rx, ry = math.radians(CAP_TILT), math.radians(-5.0)

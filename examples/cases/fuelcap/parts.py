@@ -326,6 +326,7 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
         rib_slot=0.0, dome=0.0008, chamfer=0.0025, flutes=12, flute_depth=0.042,
         skirt=0.020, neck_d=0.048, bevel=0.055, spin=0.0, printing=True, grip="rib",
         lobes=0, lobe_depth=0.06, waist=0.71, rib_dish=0.20, rib_shoulder=0.80,
+        groove_r=None, groove_w=0.0016, groove_d=0.0,
         decal="fuelcap_face",
         material=None, rib_material=None, steps=64):
     """The inner fuel cap: a fluted cylinder with a waisted handle moulded across its face.
@@ -402,9 +403,22 @@ def cap(d=0.078, flange=0.013, rib_len=None, rib_w=None, rib_h=None, rib_draft=0
     # is very slightly DISHED inside a raised ring at `rf`, not crowned. Head-on that ring is
     # the bright line just inside the silhouette on every reference cap, and it is what makes
     # the face read as let into the moulding rather than as the top of a cylinder.
+    # THE GROOVE. Every cap in the reference set has a narrow turned groove a few
+    # millimetres inside its rim -- it is where the moulding's two halves meet, and it is
+    # the one feature that makes a cap read as a turned part rather than as a disc. It costs
+    # four points in the section and it is the difference between "a grey circle" and "a
+    # fuel cap" at the magnification anybody actually judges these at.
+    gr = groove_r if groove_r else rf * 0.86
+    gw = max(groove_w, 1e-4)
     section = [
         (0.0, dome),
         (rf * 0.55, dome * 0.80),
+    ] + ([
+        (gr - gw, dome * 0.35),
+        (gr - gw * 0.35, -groove_d),       # down into the groove
+        (gr + gw * 0.35, -groove_d),
+        (gr + gw, dome * 0.30),
+    ] if groove_d > 0 else []) + [
         (rf, 0.0),                         # the raised ring, and the plane the label means
         (r, -r * bevel * 0.55),            # the narrow rim bevel
         (r, -flange + c),                  # the fluted outer wall
