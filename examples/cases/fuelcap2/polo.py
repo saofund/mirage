@@ -19,8 +19,6 @@ from mirage.textures import ensure_textures
 from fuelcap import materials as FM
 from fuelcap import parts as P
 
-from .photo_maps import ensure_photo_maps
-
 MM = 1e-3
 TAU = 2.0 * math.pi
 
@@ -36,8 +34,8 @@ CAP_TILT = 12.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
-                       "fuelcap_polo_liner", "fuelcap_polo_cap"])
-PHOTO = ensure_photo_maps()
+                       "fuelcap_polo_liner", "fuelcap_polo_cap",
+                       "fuelcap_wet_liner", "fuelcap_wet_cap"])
 
 
 def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
@@ -74,22 +72,15 @@ DOOR_INNER = mat((0.105, 0.330, 0.500), 0.18, 0.28)
 HINGE_BLUE = mat((0.155, 0.405, 0.570), 0.14, 0.32)
 
 
-def _decal_material(base, path, w, h, z, centre=(0.0, 0.0)):
-    out = dict(base)
-    out["albedo_map"] = str(path)
-    out["decal_origin"] = [centre[0] - w / 2, centre[1] - h / 2, z]
-    out["decal_du"] = [w, 0.0, 0.0]
-    out["decal_dv"] = [0.0, h, 0.0]
-    return out
-
-
-CAP_PHOTO = _decal_material(CAP, PHOTO["cap"], CAP_D * 1.08, CAP_D * 1.08, 2 * MM)
-LINER_PHOTO = _decal_material(LINER, PHOTO["liner"], OPEN_RX * 2, OPEN_RY * 2,
-                               1.5 * MM)
-PANEL_PHOTO = dict(PAINT)
-PANEL_PHOTO.update(albedo_map=str(PHOTO["panel"]),
-                   decal_origin=[-0.6395, -0.4815, 2 * MM],
-                   decal_du=[1.210, 0.0, 0.0], decal_dv=[0.0, 0.906, 0.0])
+# The wet moulding and the wet cap. The Polo was photographed in the rain, and the beading
+# is most of that picture's surface character — a few hundred tiny near-mirrors on a matt
+# black shell, each returning a hard white point where the substrate around it returns
+# almost nothing. It is a ROUGHNESS and NORMAL effect, not an albedo one: painting light
+# dots into a colour map reads as dirt. `textures._beaded_water` does it properly.
+LINER_WET = mat((0.026, 0.027, 0.029), 0.0, 0.70,
+                maps=TEX["fuelcap_wet_liner"], uv_scale=0.075)
+CAP_WET = mat((0.062, 0.064, 0.068), 0.0, 0.58,
+              maps=TEX["fuelcap_wet_cap"], uv_scale=0.045)
 
 
 def _ellipse_plan(rx, ry, steps):
@@ -140,7 +131,7 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
             k = (i + 1) % steps
             faces.append([a0 + i, a0 + k, b0 + k, b0 + i])
     return (MeshProgram().mesh(verts=verts, faces=faces, mark="well")
-            .material({"by": "tag", "name": "well"}, **LINER_PHOTO))
+            .material({"by": "tag", "name": "well"}, **LINER_WET))
 
 
 def _disc(radius, height, mark, material, sides=72):
@@ -254,7 +245,7 @@ def _cap(prog):
     # to the fluted wall and drafted grip sides wraps unrelated image regions round every
     # edge and turns one cap into a collage.
     cap_obj = cap_obj.material({"by": "normal", "axis": "z", "sign": 1, "tol": 0.22},
-                               **CAP_PHOTO)
+                               **CAP_WET)
     # Unlike the old hero, this cap is not parallel to the body. Its face ellipse and the
     # visible lower skirt in the source require a separately tilted filler-neck axis.
     prog = prog.place(obj=cap_obj, at=(-15 * MM, -27 * MM, -18 * MM),
@@ -295,15 +286,10 @@ def _door(prog):
     door_w, door_h = 270 * MM, 243 * MM
     door_ref = max(door_w, door_h) / 2.0
     door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
-    door_photo = _decal_material(DOOR_INNER, PHOTO["door"], door_w, door_h,
-                                 -5.2 * MM)
-    # The source was shot with a compact-camera flash.  A small self-fill restores that
-    # near-camera contribution after the photographed albedo is shaded a second time.
-    door_photo["emission"] = [0.030, 0.080, 0.120]
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
                        rim=8 * MM, open_deg=101.0, az=0.0, hinge_r=82 * MM,
                        gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
-                       latch=False, plan=door_plan, inside_material=door_photo,
+                       latch=False, plan=door_plan, inside_material=DOOR_INNER,
                        inner_details=False)
     prog = prog.place(obj=door, at=(14 * MM, -48 * MM, 2.0 * MM))
 
@@ -323,7 +309,7 @@ def build():
     plan = [r / OPEN_R for r in radii]
     prog = P.panel(size=2.20, hole_d=OPEN_R * 2, thick=10 * MM, ring=steps,
                    crown=34 * MM, crown_ax=math.radians(6.0),
-                   hole_plan=radii, material=PANEL_PHOTO)
+                   hole_plan=radii, material=PAINT)
     prog = _panel_details(prog)
 
     # Rubber weather bead and the five-level circular liner. The shallow first flange and

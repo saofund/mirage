@@ -468,6 +468,66 @@ def _automotive_paint(res: int, seed: int, col, rough_base=0.16):
         _normal_from_height(height, strength=0.42)
 
 
+
+def _beaded_water(res: int, seed: int, col, rough_base=0.66, count=190, r_lo=0.004,
+                  r_hi=0.016, coverage=0.55):
+    """A matt surface with WATER BEADS standing on it.
+
+    The Polo reference was photographed in the rain, and the beads are not a detail of that
+    picture — they are most of its surface character: a black moulding covered in a few
+    hundred tiny near-mirrors, each one returning a hard white point where the substrate
+    around it returns almost nothing.
+
+    They cannot be painted into an albedo map. What a bead does is local *roughness* and
+    local *normal*: the substrate is 0.66 rough and the water is 0.06, so the bead catches
+    a specular highlight the moulding cannot, and its curvature aims that highlight
+    somewhere different from its neighbours. Albedo barely changes at all — which is why a
+    map that only paints light dots reads as dirt rather than as rain.
+
+    Beads are placed on a jittered grid rather than by rejection sampling, so coverage is
+    controllable and the result has no clumps: real beading on a vertical panel is fairly
+    even until it starts to run.
+    """
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:res, 0:res].astype(np.float32) / res
+    height = np.zeros((res, res), np.float32)
+    wet = np.zeros((res, res), np.float32)
+    n = int(count ** 0.5) + 1
+    for gy in range(n):
+        for gx in range(n):
+            if rng.random() > coverage:
+                continue
+            cx = (gx + 0.5 + rng.uniform(-0.42, 0.42)) / n
+            cy = (gy + 0.5 + rng.uniform(-0.42, 0.42)) / n
+            r = float(rng.uniform(r_lo, r_hi))
+            dx = np.abs(xx - cx)
+            dy = np.abs(yy - cy)
+            dx = np.minimum(dx, 1.0 - dx)          # wrap, so the map tiles
+            dy = np.minimum(dy, 1.0 - dy)
+            d2 = (dx * dx + dy * dy) / (r * r)
+            m = d2 < 1.0
+            if not m.any():
+                continue
+            # a spherical cap, not a gaussian: a bead has a definite edge and a flat
+            # contact circle, and the edge is where the ring highlight comes from
+            height[m] = np.maximum(height[m], np.sqrt(1.0 - d2[m]) * r * 0.62)
+            wet[m] = 1.0
+
+    grain = _fbm(res, 90, 3, seed + 5)
+    base = np.stack(col, -1)[None, None]
+    albedo = base * (0.95 + 0.09 * grain[..., None])
+    # Water darkens what it sits on very slightly and adds a trace of its own scatter.
+    albedo = albedo * (1.0 - 0.10 * wet[..., None]) + wet[..., None] * 0.004
+    rough = rough_base + 0.10 * (grain - 0.5)
+    rough = rough * (1.0 - wet) + 0.06 * wet
+    # `_normal_from_height` differentiates with a ONE-PIXEL roll, so its input has to be
+    # in pixel-comparable units. `height` here is in the same 0..1 units as the bead
+    # radii, so a 10 px bead 0.006 tall gives a per-pixel slope of 0.0006 and the map
+    # comes out perfectly flat -- which is exactly what it did. Multiplying by `res` puts
+    # the height in pixels, where a 10 px bead is 6 px tall and a dome is a dome.
+    return np.clip(albedo, 0, 1), np.clip(rough, 0.05, 0.95), \
+        _normal_from_height(height * res, strength=1.0)
+
 def _wall_tile(res: int, seed: int, col, grout, tiles=10, grout_w=0.055):
     """A tiled shop front: a real grout GRID, per-tile tone variation, and dirt in the
     joints. A tiled wall's signature is the grid — no amount of noise substitutes for it."""
@@ -546,6 +606,12 @@ _LIBRARY = {
     # by rain rather than cracked (see _painted_metal on why concrete was the wrong base).
     "clad_panel":         lambda: _painted_metal(RES, 137, (0.40, 0.405, 0.41), dirt=0.85, rough_base=0.36),
     "shop_tile":          lambda: _wall_tile(RES, 149, (0.72, 0.725, 0.71), (0.30, 0.30, 0.295), tiles=6),
+    "fuelcap_wet_liner":  lambda: _beaded_water(RES, 211, (0.024, 0.025, 0.027),
+                                                rough_base=0.70, count=260,
+                                                r_lo=0.0035, r_hi=0.013, coverage=0.42),
+    "fuelcap_wet_cap":    lambda: _beaded_water(RES, 223, (0.060, 0.062, 0.066),
+                                                rough_base=0.58, count=150,
+                                                r_lo=0.005, r_hi=0.020, coverage=0.50),
     "fuelcap_plastic":    lambda: _moulded_plastic(RES, 181, (0.0165, 0.0165, 0.018), rough_base=0.68, wear=0.18),
     "fuelcap_white_paint": lambda: _automotive_paint(RES, 191, (0.76, 0.765, 0.76), rough_base=0.15),
     "fuelcap_polo_blue_paint": lambda: _automotive_paint(
