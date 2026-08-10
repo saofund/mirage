@@ -18,6 +18,59 @@ REF = (HERE.parent / "fuelcap" / "_ref" / "bycar" / "Polo" /
        "粗筛done2_Polo_2007款劲情14自动风尚版_38.png")
 
 
+def _render_view(oplog, out_ppm, pose, size, spp, extra=()):
+    """One frame at a given pose, with this case's lighting held fixed.
+
+    Held fixed on purpose: a validation view that also changes the light is not a
+    validation of anything.
+    """
+    width, height = size, round(size * 0.75)
+    args = [str(_render_bin()), "--oplog", str(oplog), "--out", str(out_ppm),
+            "--w", str(width), "--h", str(height), "--spp", str(spp), "--denoise", "4",
+            "--threads", os.environ.get("MIRAGE_THREADS", "0"),
+            "--cam-eye", *[f"{v:.7f}" for v in pose["eye"]],
+            "--cam-target", *[f"{v:.7f}" for v in pose["target"]],
+            "--cam-up", *[f"{v:.7f}" for v in pose["up"]],
+            "--cam-fov", f"{pose.get('fov', polo.pose()['fov']):.7f}",
+            "--env", "0.70", "--sun", "0.28",
+            "--sun-dir", "0.18", "-0.12", "0.976",
+            "--sky-tint", "1.02", "1.08", "1.12", "--sky-flat", "0.72",
+            "--exposure", "0.96", "--smooth-angle", "34", "--bounce", "7", "--no-ground",
+            *extra]
+    subprocess.run(args, check=True)
+    return _read_ppm(out_ppm)
+
+
+def verify(size=420, spp=64, degrees=(-5.0, 5.0)):
+    """Render the matched view and a few degrees either side, and measure the parallax.
+
+    This is the check that would have caught this case's projected albedo maps in one
+    render: artwork projected from the reference camera is perfect from that camera and
+    smears from every other, and flat geometry painted to look modelled does not move at
+    all. A LOW parallax after a real camera move is the warning, not a pass.
+
+    Small and cheap on purpose — 420 px at 64 spp — because its job is to be run often.
+    """
+    from mirage import validate as V
+    OUT.mkdir(parents=True, exist_ok=True)
+    oplog = OUT / "polo.json"
+    oplog.write_text(polo.build().to_json(), encoding="utf-8")
+    base = polo.pose()
+    ref = _render_view(oplog, OUT / "verify_base.ppm", base, size, spp)
+    rows = []
+    for v in V.orbit(base["eye"], base["target"], base["up"], degrees=degrees):
+        pose = dict(v)
+        pose["fov"] = base["fov"]
+        img = _render_view(oplog, OUT / f"verify_{v['label']}.ppm", pose, size, spp)
+        rows.append((v["label"], V.parallax(ref, img)))
+    print(f"{'view':12s} {'mean|d|':>8s} {'p95':>7s} {'moved':>7s}")
+    for lab, p in rows:
+        print(f"{lab:12s} {p['mean_abs']:8.2f} {p['p95']:7.1f} {p['moved_frac']:7.2%}")
+    w = V.flatness_warning(rows, threshold=2.0)
+    print("suspect views:", w["suspect"] or "none", "|", w["note"])
+    return rows
+
+
 def render(size=1000, spp=160):
     OUT.mkdir(parents=True, exist_ok=True)
     oplog = OUT / "polo.json"
@@ -105,11 +158,14 @@ def compose_closeup(size=900):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=("render", "compose", "closeup", "all"),
+    ap.add_argument("what", choices=("render", "compose", "closeup", "all", "verify"),
                     default="all", nargs="?")
     ap.add_argument("--size", type=int, default=1000)
     ap.add_argument("--spp", type=int, default=160)
     a = ap.parse_args(argv)
+    if a.what == "verify":
+        verify(a.size if a.size < 700 else 420, min(a.spp, 80))
+        return
     if a.what in ("render", "all"):
         render(a.size, a.spp)
     if a.what in ("compose", "all"):
