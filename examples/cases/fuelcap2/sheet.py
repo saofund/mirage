@@ -32,10 +32,15 @@ def _render_view(oplog, out_ppm, pose, size, spp, extra=()):
             "--cam-target", *[f"{v:.7f}" for v in pose["target"]],
             "--cam-up", *[f"{v:.7f}" for v in pose["up"]],
             "--cam-fov", f"{pose.get('fov', polo.pose()['fov']):.7f}",
-            "--env", "0.70", "--sun", "0.28",
+            # MEASURED, not chosen. `tools/look.py` said the render was 20-62 luma below
+            # the photograph in every region -- the largest fault in the whole
+            # reproduction and invisible on a 900 px compare sheet. Sweeping env/sun/
+            # exposure over a --crop of the pocket (a twelfth of a frame, so five
+            # renders cost less than one) lands the pocket mean on the photograph's 83.
+            "--env", "1.40", "--sun", "0.58",
             "--sun-dir", "0.18", "-0.12", "0.976",
             "--sky-tint", "1.02", "1.08", "1.12", "--sky-flat", "0.72",
-            "--exposure", "0.96", "--smooth-angle", "34", "--bounce", "7", "--no-ground",
+            "--exposure", "1.13", "--smooth-angle", "34", "--bounce", "7", "--no-ground",
             *extra]
     subprocess.run(args, check=True)
     return _read_ppm(out_ppm)
@@ -85,10 +90,10 @@ def render(size=1000, spp=160):
             "--cam-eye", *[f"{v:.7f}" for v in p["eye"]],
             "--cam-target", *[f"{v:.7f}" for v in p["target"]],
             "--cam-up", *[f"{v:.7f}" for v in p["up"]],
-            "--cam-fov", f"{p['fov']:.7f}", "--env", "0.70", "--sun", "0.28",
+            "--cam-fov", f"{p['fov']:.7f}", "--env", "1.40", "--sun", "0.58",
             "--sun-dir", "0.18", "-0.12", "0.976",
             "--sky-tint", "1.02", "1.08", "1.12", "--sky-flat", "0.72",
-            "--exposure", "0.96", "--smooth-angle", "34", "--bounce", "7", "--no-ground"]
+            "--exposure", "1.13", "--smooth-angle", "34", "--bounce", "7", "--no-ground"]
     subprocess.run(args, check=True)
     import cv2
     rgb = _read_ppm(ppm).astype(np.float32)
