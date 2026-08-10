@@ -1169,7 +1169,7 @@ def fuel_door(w=0.186, h=0.166, sq=4.2, flange=0.014, face=0.007, rim=0.013,
               open_deg=150.0, az=180.0, hinge_r=0.098, gap=0.004, steps=64,
               skin=None, liner=None, strap=True, arm_w=0.020, arm_t=0.0025,
               latch=True, plan=None, inside_material=None, inner_details=False,
-              mark="door"):
+              inner_parts=None, mark="door"):
     """The fuel door: a shallow ROUNDED-RECTANGLE pressing, hinged at one side.
 
     The old part was a flat slab whose plan was a plain rectangle, hinged below the pocket
@@ -1231,6 +1231,13 @@ def fuel_door(w=0.186, h=0.166, sq=4.2, flange=0.014, face=0.007, rim=0.013,
             d = d.place(obj=prism([(-sx, -sy), (sx, -sy), (sx, sy), (-sx, sy)],
                                   z0, z0 - dz, mark=mark),
                         at=(cx, cy, 0.0), material=detail_mat)
+    if inner_parts is not None:
+        # Geometry mounted on the inner face, in the door's OWN frame, before any of the
+        # swing is applied. A caller cannot do this from outside: `fuel_door` composes a
+        # translation to the hinge line, a rotation by `open_deg` and a further rotation by
+        # `az`, and reproducing that by hand puts the parts somewhere else entirely — a set
+        # of stamped ribs meant for the door's face ended up as a star inside the pocket.
+        d = d.place(obj=inner_parts, at=(0.0, 0.0, -face))
     if latch:
         # the striker on the free edge, opposite the hinge
         d = d.place(obj=prism([(-0.008, -0.005), (0.008, -0.005), (0.008, 0.005),

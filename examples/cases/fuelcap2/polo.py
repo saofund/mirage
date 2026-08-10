@@ -389,11 +389,6 @@ def _door(prog):
     door_w, door_h = 270 * MM, 243 * MM
     door_ref = max(door_w, door_h) / 2.0
     door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
-    door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=101.0, az=0.0, hinge_r=82 * MM,
-                       gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
-                       latch=False, plan=door_plan, inside_material=DOOR_INNER,
-                       inner_details=False)
     # The stamped RIBS on the inner face. A fuel door is a pressing, and the reference's
     # inner face is crossed by a raised outer ring and three radial webs — which is most of
     # what tells you it is sheet steel and not a disc. Placed on the door before it swings,
@@ -409,10 +404,12 @@ def _door(prog):
             .material({"by": "tag", "name": "door"}, **HINGE_BLUE))
     inner = ribs.place(obj=ring)
 
+    door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
+                       rim=8 * MM, open_deg=101.0, az=0.0, hinge_r=82 * MM,
+                       gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
+                       latch=False, plan=door_plan, inside_material=DOOR_INNER,
+                       inner_details=False, inner_parts=inner)
     prog = prog.place(obj=door, at=(14 * MM, -48 * MM, 2.0 * MM))
-    # the ribs, swung with the door: same open angle, same hinge radius
-    prog = prog.place(obj=inner, at=(14 * MM - 82 * MM, -48 * MM, 2.0 * MM),
-                      rotate=(0.0, -101.0, 0.0))
 
 
     # A few beads on the inner door face; sparse enough to remain details, not a pattern.
