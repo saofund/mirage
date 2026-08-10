@@ -40,6 +40,11 @@ OPEN_R = max(OPEN_RX, OPEN_RY)
 CAP_D = 116.0 * MM
 POCKET_DEPTH = 48.0 * MM
 CAP_TILT = 12.0
+# The door's open angle, as a module constant so the depth-residual loop can sweep it.
+# It was two literals in two places -- the door and the ribs that ride on it -- which is
+# why a sweep had to rewrite the source to move it, and why the two could silently
+# disagree. A parameter the loop is meant to estimate has to be reachable.
+DOOR_OPEN_DEG = 134.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
@@ -410,7 +415,7 @@ def _door(prog):
     # 265 mm p95 in that region against 26 mm inside the pocket, and the map is a single
     # bright blob exactly the door's shape. The reference door is nearly edge-on.
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=134.0, az=0.0, hinge_r=82 * MM,
+                       rim=8 * MM, open_deg=DOOR_OPEN_DEG, az=0.0, hinge_r=82 * MM,
                        gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=DOOR_INNER,
                        inner_details=False, inner_parts=inner)
@@ -423,7 +428,7 @@ def _door(prog):
                 .scale({"by": "all"}, [1.0, 1.0, 0.45])
                 .material({"by": "tag", "name": "water"}, **WATER))
         prog = prog.place(obj=bead, at=(214 * MM, (y - 48) * MM, (65 + z) * MM),
-                          rotate=(0.0, -134.0, 0.0))
+                          rotate=(0.0, -DOOR_OPEN_DEG, 0.0))
     return prog
 
 
