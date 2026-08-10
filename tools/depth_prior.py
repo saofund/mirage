@@ -85,7 +85,7 @@ def _read_pfm(path: Path):
 
 
 def residual(prior_path: Path, render_depth_path: Path, mask_path: Path | None = None,
-             out: Path | None = None):
+             out: Path | None = None, crop=None):
     """Fit scale+shift from the prior onto the render's depth, then report what is left.
 
     The fit is the whole point. A monocular prior is defined up to an affine transform of
@@ -106,6 +106,17 @@ def residual(prior_path: Path, render_depth_path: Path, mask_path: Path | None =
         prior = prior[yi][:, xi]
 
     valid = dep > 1e-6
+    if crop:
+        # RESTRICT THE FIT. A single affine over the whole frame is dominated by whatever
+        # covers the most pixels, and in a filler-region frame that is a near-flat body
+        # panel at almost constant depth. The fit then has almost no gradient to lock onto:
+        # it went degenerate here and returned a NEGATIVE scale, which is the prior and the
+        # render correlating the wrong way round -- a metric failure that would have been
+        # read as a model failure. Fit on the region being modelled.
+        x0, y0, x1, y1 = crop
+        box = np.zeros_like(valid)
+        box[y0:y1, x0:x1] = True
+        valid &= box
     if mask_path is not None:
         m = _read_pgm(Path(mask_path))
         if m.shape == dep.shape:
@@ -117,6 +128,11 @@ def residual(prior_path: Path, render_depth_path: Path, mask_path: Path | None =
     p = prior[valid]
     A = np.stack([p, np.ones_like(p)], 1)
     (a, b), *_ = np.linalg.lstsq(A, inv_render, rcond=None)
+    if a <= 0:
+        print("WARNING: fitted scale is not positive. The prior and the render disagree in "
+              "SIGN, which means the fit had no gradient to lock onto -- almost always too "
+              "much flat background in the region. Narrow --crop before reading anything "
+              "below as a statement about the model.")
     fitted = np.full(dep.shape, np.nan)
     fitted[valid] = 1.0 / np.maximum(a * prior[valid] + b, 1e-9)
     res = np.full(dep.shape, np.nan)
@@ -168,11 +184,15 @@ def main(argv=None):
     r.add_argument("render_depth")
     r.add_argument("--mask", default=None)
     r.add_argument("--out", default=None)
+    r.add_argument("--crop", nargs=4, type=int, default=None,
+                   metavar=("X0", "Y0", "X1", "Y1"),
+                   help="fit and report inside this box only")
     a = ap.parse_args(argv)
     if a.cmd == "predict":
         predict(Path(a.image), Path(a.out), a.model)
     else:
-        residual(Path(a.prior), Path(a.render_depth), a.mask, Path(a.out) if a.out else None)
+        residual(Path(a.prior), Path(a.render_depth), a.mask,
+                 Path(a.out) if a.out else None, tuple(a.crop) if a.crop else None)
 
 
 if __name__ == "__main__":
