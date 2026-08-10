@@ -184,17 +184,30 @@ def _liner_features(prog):
     Boxes are in the liner's own frame; the loft runs from the flange at z = -3 mm out at
     r = 97..143, down the wall, to a throat ring at z = -55 spanning x -57..57, y -86..36.
     """
+    # Boxes taken FROM the surface, not guessed at it. The loft is 27 rings of 96; walking
+    # a ring band over an angular span and taking its bounds gives a box that is guaranteed
+    # to select faces. Guessed boxes miss — the first three did, and `resolve` says so with
+    # a face count and a bbox, which is how they got fixed.
+    #
     # the drain shelf across the bottom of the bowl, sunk
-    prog = P.emboss(prog, (0.0, -0.072, -0.040), (0.036, 0.020, 0.014), -0.0045, inset=0.30)
+    prog = P.emboss(prog, (0.0, -0.0934, -0.0330), (0.0302, 0.0076, 0.0081),
+                    -0.0035, inset=0.30)
     # the broad shallow rib up the hood, raised — it is what breaks the hood's single
     # smooth gradient into the two tones the photograph has
-    prog = P.emboss(prog, (0.004, 0.058, -0.026), (0.040, 0.026, 0.016), 0.0025, inset=0.42)
+    prog = P.emboss(prog, (0.0, 0.0720, -0.0270), (0.0400, 0.0210, 0.0099),
+                    0.0022, inset=0.42)
     # the land the latch bracket bolts to, on the left wall
-    prog = P.emboss(prog, (-0.082, -0.006, -0.026), (0.026, 0.030, 0.016), 0.0030, inset=0.28)
+    prog = P.emboss(prog, (-0.0818, -0.0079, -0.0232), (0.0119, 0.0300, 0.0095),
+                    0.0028, inset=0.28)
     # two moulding pads on the flange, upper right and upper left
-    prog = P.emboss(prog, (0.066, 0.088, -0.005), (0.015, 0.014, 0.006), 0.0018, inset=0.34)
-    prog = P.emboss(prog, (-0.058, 0.092, -0.005), (0.013, 0.012, 0.006), 0.0015, inset=0.34)
-    return prog
+    prog = P.emboss(prog, (0.066, 0.088, -0.005), (0.013, 0.012, 0.005), 0.0018, inset=0.34)
+    prog = P.emboss(prog, (-0.058, 0.092, -0.005), (0.011, 0.010, 0.005), 0.0015, inset=0.34)
+    # PAINT LAST. `inset` and `extrude` create faces, and a created face carries the
+    # renderer's default albedo, not the material the surface it grew out of was given.
+    # Embossing after the material call turned the whole liner from black plastic into a
+    # white plate -- the same class of mistake as selecting only +z and -z on the door and
+    # leaving its turned edge default, which this kit has already made once.
+    return prog.material({"by": "all"}, **LINER_WET)
 
 
 def _disc(radius, height, mark, material, sides=72):
