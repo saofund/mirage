@@ -44,12 +44,20 @@ CAP_TILT = 12.0
 # It was two literals in two places -- the door and the ribs that ride on it -- which is
 # why a sweep had to rewrite the source to move it, and why the two could silently
 # disagree. A parameter the loop is meant to estimate has to be reachable.
-# 70, ESTIMATED not guessed. Sweeping this against the depth residual in the door
-# region gives 6.6 mm at 70 and 7.3 at 85, against 70.5 at 100, 78.6 at 115 and 55.5
-# at 130 -- an order of magnitude, and the minimum is at or below 70. Both of my own
-# guesses (101, then 134) were on the wrong side of it, and the second was made after
-# reading the residual map by eye, which is the mistake this loop exists to stop.
-DOOR_OPEN_DEG = 70.0
+# 101, and the story of this number is the most useful thing in this file.
+#
+# Sweeping it against the depth residual in the door's image region gave a clean minimum:
+# 6.6 mm at 70 against 70.5 at 100 and 78.6 at 115, an order of magnitude. It is also
+# completely wrong -- at 70 the door lies ACROSS the pocket and hides it. The metric was
+# measuring a crop whose CONTENT changes with the parameter, so a door swung over the
+# opening puts a flat surface at body depth across the whole region, which matches the
+# prior's smooth body far better than an open pocket does. The residual rewarded occlusion.
+#
+# A depth residual alone cannot estimate a parameter that changes what is visible. It needs
+# a silhouette term -- the photographed door covers a particular area with a particular
+# outline, and 70 gets both wrong -- which `mirage.compare.silhouette` provides and this
+# loop does not yet use. Until it does, this stays where the picture puts it.
+DOOR_OPEN_DEG = 101.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
