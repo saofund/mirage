@@ -782,6 +782,11 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     if (!sc.tris.empty()) { sc.nodes.reserve(sc.tris.size() * 2); build_bvh(sc, 0, int(sc.tris.size())); }
 
     // Camera basis.
+    // The FULL frame drives the ray mapping; the image is only the requested rectangle.
+    const int full_w = settings.width, full_h = settings.height;
+    const int cx0 = std::max(0, settings.crop_x), cy0 = std::max(0, settings.crop_y);
+    const int cw = settings.crop_w > 0 ? std::min(settings.crop_w, full_w - cx0) : full_w;
+    const int chh = settings.crop_h > 0 ? std::min(settings.crop_h, full_h - cy0) : full_h;
     const V3 fwd = norm(V3{cam.target[0], cam.target[1], cam.target[2]} -
                         V3{cam.eye[0], cam.eye[1], cam.eye[2]});
     const V3 right = norm(cross(fwd, cam.up));
@@ -794,11 +799,6 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         ? settings.focus_dist
         : len(V3{cam.target[0], cam.target[1], cam.target[2]} - eye);
 
-    // The FULL frame drives the ray mapping; the image is only the requested rectangle.
-    const int full_w = settings.width, full_h = settings.height;
-    const int cx0 = std::max(0, settings.crop_x), cy0 = std::max(0, settings.crop_y);
-    const int cw = settings.crop_w > 0 ? std::min(settings.crop_w, full_w - cx0) : full_w;
-    const int chh = settings.crop_h > 0 ? std::min(settings.crop_h, full_h - cy0) : full_h;
     Image img;
     img.w = cw;
     img.h = chh;
