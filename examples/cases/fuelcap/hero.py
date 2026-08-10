@@ -228,12 +228,26 @@ def build(paint=None, cap_material=None, printing=True):
                       at=(CAP_D * 0.46 * math.cos(lug_a),
                           CAP_D * 0.46 * math.sin(lug_a), -RECESS - 5.5 * MM))
 
-    # 6. the door bumper, on the wall opposite the hinge
+    # 6. the hinge bracket, bolted into the pocket's +x corner.
+    #
+    # The id map of this render showed one continuous `well` surface over sixty per cent of
+    # the aperture with nothing on it, and that is the whole reason the interior read as a
+    # smooth bowl rather than as a photographed pocket: the shell's section had been
+    # measured carefully and the pocket was still empty. In the photograph the largest thing
+    # inside the opening after the cap is this — a stamped plate in the top corner with the
+    # door's arm running off it.
+    prog = prog.place(obj=P.hinge_bracket(w=58.0 * MM, h=44.0 * MM, t=2.8 * MM,
+                                          lip=11.0 * MM, lip_deg=66.0, bolts=2,
+                                          material=M.mat((0.020, 0.020, 0.022), 0.0, 0.58)),
+                      at=(OPENING_REF * 0.55, 40.0 * MM, -13.0 * MM),
+                      rotate=(-24.0, 0.0, -8.0))
+
+    # 7. the door bumper, on the wall opposite the hinge
     prog = prog.place(obj=P.bump_stop(r=6.5 * MM, h=12.0 * MM),
                       at=(-OPENING_REF * 0.80, -2.0 * MM, -14.0 * MM),
                       rotate=(0.0, 74.0, 0.0))
 
-    # 7. the moulding pips round the flange
+    # 8. the moulding pips round the flange
     for a in (24.0, 96.0, 152.0, 208.0, 262.0, 318.0):
         k = P.rrect_plan(OPEN_W, OPEN_H, OPEN_N, 360, OPENING_REF)[int(a) % 360]
         r = OPENING_REF * k - 5.5 * MM
@@ -241,7 +255,7 @@ def build(paint=None, cap_material=None, printing=True):
                           at=(r * math.cos(math.radians(a)), r * math.sin(math.radians(a)),
                               -2.0 * MM))
 
-    # 8. the door, swung open on the +x side, and the strap that carries it
+    # 9. the door, swung open on the +x side, and the strap that carries it
     prog = door(prog, plan, liner_mat, paint)
     return prog
 

@@ -1598,3 +1598,47 @@ def door_strap(length=0.078, w=0.021, t=0.0032, bend_at=0.42, bend_deg=34.0,
     return (MeshProgram().profile(prof, plane="xy", closed=True).sweep(path, mark=mark)
             .material({"by": "tag", "name": mark},
                       **(material or mat((0.018, 0.018, 0.020), 0.0, 0.62))))
+
+
+def hinge_bracket(w=0.056, h=0.042, t=0.0028, lip=0.010, lip_deg=68.0, bolts=2,
+                  bolt_r=0.0042, material=None, mark="well"):
+    """The stamped plate the door's hinge is bolted to, standing on the pocket wall.
+
+    The reason this exists: an id map of the finished pocket showed one continuous `well`
+    surface covering sixty per cent of the aperture, with nothing on it. A photographed
+    filler pocket is not a moulded shell — it is a shell with an assembly bolted into one
+    corner of it, and that assembly is the largest thing inside the opening after the cap.
+    Modelled as a shell alone the pocket renders as a smooth dark bowl however carefully the
+    shell's own section is measured, because a bowl is what it is.
+
+    A plate, a folded lip along its far edge, and the bolt heads. Built lying in its own
+    xy plane with +z its outward normal, so the caller places it against a wall with the
+    same `rotate` it would use for any other wall furniture.
+    """
+    material = material or mat((0.021, 0.021, 0.023), 0.0, 0.58)
+    hw, hh = w / 2.0, h / 2.0
+    r = min(hw, hh) * 0.22
+    plate = [(-hw + r, -hh), (hw - r, -hh), (hw, -hh + r), (hw, hh - r),
+             (hw - r, hh), (-hw + r, hh), (-hw, hh - r), (-hw, -hh + r)]
+    p = prism(plate, 0.0, t, mark=mark).material({"by": "all"}, **material)
+
+    # The folded lip. A stamping is stiffened by a return along its free edge, and that
+    # return is what catches the one hard highlight the bracket shows in the photograph —
+    # a flat plate has nowhere for that line to come from.
+    if lip > 0.0:
+        # A prism turned about x, not a sweep. Sweeping a section authored in xy along a
+        # path in xz and then rotating the result puts the transported frame somewhere
+        # nobody predicted — the first version reached 23 mm through the wall behind it.
+        # A lip is a flat tab; build it flat.
+        a = math.radians(lip_deg)
+        tab = [(-hw * 0.86, 0.0), (hw * 0.86, 0.0), (hw * 0.86, lip), (-hw * 0.86, lip)]
+        p = p.place(obj=prism(tab, 0.0, t, mark=mark),
+                    at=(0.0, hh - t * 0.5, t * 0.5), rotate=(-(90.0 - lip_deg + 90.0), 0.0, 0.0),
+                    material=material)
+    for k in range(bolts):
+        x = (k + 0.5) / max(bolts, 1) * w - hw
+        p = p.place(obj=lathe([(0.0, bolt_r * 0.62), (bolt_r * 0.70, bolt_r * 0.62),
+                               (bolt_r, bolt_r * 0.18), (bolt_r, 0.0), (0.0, 0.0)],
+                              steps=16, mark=mark),
+                    at=(x, -hh * 0.42, t), material=SCREW_STEEL)
+    return p
