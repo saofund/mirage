@@ -1647,3 +1647,22 @@ def hinge_bracket(w=0.056, h=0.042, t=0.0028, lip=0.010, lip_deg=68.0, bolts=2,
                     # are dark fasteners in a pocket that fills with road dirt.
                     material=bolt_material or mat((0.055, 0.055, 0.058), 0.55, 0.62))
     return p
+
+
+def emboss(prog, centre, half, depth, inset=0.35, mark=None):
+    """Raise or sink a patch of an EXISTING surface, in place.
+
+    This is the operator a moulding actually needs and the one this case kept not using.
+    A loft can only be given features by rewriting the loft; `inset` + `extrude` puts a boss
+    or a recess on a surface that is already there, wherever a selector can reach — which is
+    how every boss, pad, drain shelf and screw land in a real pocket is made.
+
+    `centre`/`half` are a world-space box that picks the faces; `depth` is positive out of
+    the surface and negative into it. `inset` is how much of the patch becomes the drafted
+    flank rather than the flat top — 0 gives a straight-sided step, which no tool can make.
+    """
+    lo = [centre[k] - half[k] for k in range(3)]
+    hi = [centre[k] + half[k] for k in range(3)]
+    p = prog.inset({"by": "box", "min": lo, "max": hi}, thickness=inset)
+    p = p.extrude({"by": "last_created"}, distance=depth)
+    return p.tag({"by": "last_created"}, mark) if mark else p

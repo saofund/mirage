@@ -171,6 +171,32 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
             .material({"by": "tag", "name": "well"}, **LINER_WET))
 
 
+
+def _liner_features(prog):
+    """Moulded features pressed INTO the liner surface, not placed on top of it.
+
+    Everything this case had inside the aperture was a separate solid dropped in front of a
+    smooth loft, and a loft can only be given features by rewriting the loft. `inset` +
+    `extrude` puts a boss or a recess on a surface that already exists, which is how every
+    pad, shelf and land in a real pocket is made — and it is the operator these fuelcap
+    cases had never once used.
+
+    Boxes are in the liner's own frame; the loft runs from the flange at z = -3 mm out at
+    r = 97..143, down the wall, to a throat ring at z = -55 spanning x -57..57, y -86..36.
+    """
+    # the drain shelf across the bottom of the bowl, sunk
+    prog = P.emboss(prog, (0.0, -0.072, -0.040), (0.036, 0.020, 0.014), -0.0045, inset=0.30)
+    # the broad shallow rib up the hood, raised — it is what breaks the hood's single
+    # smooth gradient into the two tones the photograph has
+    prog = P.emboss(prog, (0.004, 0.058, -0.026), (0.040, 0.026, 0.016), 0.0025, inset=0.42)
+    # the land the latch bracket bolts to, on the left wall
+    prog = P.emboss(prog, (-0.082, -0.006, -0.026), (0.026, 0.030, 0.016), 0.0030, inset=0.28)
+    # two moulding pads on the flange, upper right and upper left
+    prog = P.emboss(prog, (0.066, 0.088, -0.005), (0.015, 0.014, 0.006), 0.0018, inset=0.34)
+    prog = P.emboss(prog, (-0.058, 0.092, -0.005), (0.013, 0.012, 0.006), 0.0015, inset=0.34)
+    return prog
+
+
 def _disc(radius, height, mark, material, sides=72):
     return (MeshProgram().cylinder(sides=sides, radius=radius, height=height, mark=mark)
             .material({"by": "tag", "name": mark}, **material))
@@ -357,7 +383,7 @@ def build():
                                       1.6 * MM, -2.5 * MM, material=PAINT, plan=plan))
     prog = prog.place(obj=_ring_solid(OPEN_R + 0.2 * MM, OPEN_R - 4.0 * MM,
                                       0.5 * MM, -5 * MM, material=RUBBER, plan=plan))
-    prog = prog.place(obj=_smooth_liner(plan, OPEN_R, steps=steps))
+    prog = prog.place(obj=_liner_features(_smooth_liner(plan, OPEN_R, steps=steps)))
     # Fasteners and moulding pips break the perfect radial symmetry of a generated bowl.
     for x, y, r in ((63, 86, 3.0), (-57, 84, 2.2), (67, -76, 2.0), (-62, -74, 1.8)):
         prog = prog.place(obj=P.screw(r=r * MM, head_h=0.9 * MM,
