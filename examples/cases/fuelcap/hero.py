@@ -122,12 +122,22 @@ ROLL_DEG = 19.90
 # settles which side of the tilt axis the camera is on — the number the ellipse alone could
 # not supply.
 RECESS = 15.8 * MM
-# Paint to pocket floor. 45 mm leaves a floor that sees a large solid angle of sky and
-# renders as a lit grey ramp under the cap, where the photograph has no readable floor
-# at all — just the cap standing in black. A pocket is dark because it is DEEP and
-# steep-sided, not because its walls are painted dark; the albedo in here is already
-# 0.017 and there is nothing left to take away.
-DEPTH = 64.0 * MM
+# Paint to pocket floor, MEASURED rather than argued about, and the argument is worth
+# recording because it produced a wrong number twice.
+#
+# Walk a line out of the cap's centre along the direction of steepest foreshortening (the
+# cap ellipse's minor axis, 124.2 degrees in the photograph) and read the luma: paint at
+# 226, a step down to the flange at 14-24, a fold, then 61 px of flat 8 — the wall, in
+# total darkness — then a slow climb as the floor picks up light. A near-vertical wall of
+# depth d projects to d*sin(tilt), and there are 3.002 px/mm along the tilt axis, so 61 px
+# is 61 / (3.002 * sin 32.6) = 38 mm.
+#
+# It was 45, then "a pocket is dark because it is DEEP" pushed it to 64 to stop the floor
+# rendering as a lit grey ramp. That was fixing a lighting fault with geometry: the floor
+# was bright because the scene was lit by a sun and a blue sky, and the photograph is
+# overcast. Once the lighting was corrected the 64 mm remained, and it forces the cap to
+# stand on a 36 mm cone — which is the "bowl" the pocket now reads as.
+DEPTH = 38.0 * MM
 
 # The cap, read off the rectified close-up. The bar is the number that matters: it is HALF
 # the cap's width, where the kit's default is a third, and a bar that width changes the
@@ -178,7 +188,7 @@ def build(paint=None, cap_material=None, printing=True):
     prog = exterior_details(prog, paint)
 
     # 2. the liner: flange, fold, wall, ledge, floor
-    prog = prog.place(obj=P.liner(plan, OPENING_REF, depth=DEPTH, flange_w=11.0 * MM,
+    prog = prog.place(obj=P.liner(plan, OPENING_REF, depth=DEPTH, flange_w=17.0 * MM,
                                   # STEEP. At wall_k 0.745 over a 66% floor the pocket is a
                                   # funnel, and a funnel is not a light trap: its walls face
                                   # the sky enough to render as a bright gradient where the
@@ -191,8 +201,12 @@ def build(paint=None, cap_material=None, printing=True):
 
     # 3. the neck the cap stands on, from the floor up to just under the cap's skirt
     flange = 13.0 * MM
+    # A COLLAR, not a pedestal. With the floor at 64 mm this part was a 36 mm cone 68 mm
+    # across standing in the middle of the pocket, and it is most of what made the interior
+    # read as a smooth bowl instead of a tray. In the photograph the cap stands on a short
+    # circular step barely wider than itself.
     prog = prog.place(obj=P.neck_stack(CAP_D * 0.46, -DEPTH, -RECESS - flange + 1.0 * MM,
-                                       flare=1.30, material=liner_mat),
+                                       flare=1.12, material=liner_mat),
                       at=(0.0, 0.0, 0.0))
 
     # 4. the cap
