@@ -718,7 +718,8 @@ Mesh Program::build(std::string* last_tag_out) const {
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "inset") {
                 auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);
-                mesh = mirage::inset(mesh, seln, cmd.value("thickness", 0.3), out_tag);  // free op, not Program::inset
+                mesh = mirage::inset(mesh, seln, cmd.value("thickness", 0.3), out_tag,
+                                     cmd.value("region", false));  // free op, not Program::inset
                 outs = faces_with_tag(mesh, out_tag);
             } else if (op == "bevel") {
                 auto seln = resolve(mesh, cmd.value("on", sel::all()), last_tag);

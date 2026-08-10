@@ -665,7 +665,14 @@ class MeshProgram:
     def bridge(self, on, mark=None): return self.add(**_cmd("bridge", on=on, mark=mark))
     def fill(self, mark=None): return self.add(**_cmd("fill", mark=mark))
     def extrude(self, on, distance=0.5, mark=None): return self.add(**_cmd("extrude", on=on, mark=mark, distance=distance))
-    def inset(self, on, thickness=0.3, mark=None): return self.add(**_cmd("inset", on=on, mark=mark, thickness=thickness))
+    def inset(self, on, thickness=0.3, mark=None, region=False):
+        """Inset faces. `region=True` insets the SELECTION'S OUTLINE rather than every
+        face in it — the operator you want for embossing a pad, where the per-face
+        default turns one pad into a few hundred islands."""
+        c = _cmd("inset", on=on, mark=mark, thickness=thickness)
+        if region:
+            c["region"] = True
+        return self.add(**c)
     def bevel(self, on, width=0.2, depth=0.1, mark=None): return self.add(**_cmd("bevel", on=on, mark=mark, width=width, depth=depth))
     def loop_cut(self, on, axis="z", mark=None): return self.add(**_cmd("loop_cut", on=on, mark=mark, axis=axis))
     def edge_bevel(self, on, width=0.15, mark=None): return self.add(**_cmd("edge_bevel", on=on, mark=mark, width=width))
@@ -890,7 +897,8 @@ class MeshProgram:
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "inset":
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
-                    mesh = inset_faces(mesh, sel, cmd.get("thickness", 0.3), mark=out_tag)
+                    mesh = inset_faces(mesh, sel, cmd.get("thickness", 0.3), mark=out_tag,
+                                       region=bool(cmd.get("region", False)))
                     outs = [f for f in mesh.faces if out_tag in _tags(f)]
                 elif op == "bevel":
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)

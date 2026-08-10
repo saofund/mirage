@@ -220,8 +220,10 @@ Mesh catmull_clark(const Mesh& mesh, int levels);
 // inner faces get `mark`.
 Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region, double distance = 0.5,
              const std::string& mark = "");
+// `as_region` insets the SELECTION'S OUTLINE rather than every face in it — the operator
+// for embossing a pad, where the per-face default turns one pad into a field of islands.
 Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region, double thickness = 0.3,
-           const std::string& mark = "");
+           const std::string& mark = "", bool as_region = false);
 // bevel: an inset ring of `width` whose inner face is offset `depth` along the
 // face normal — the border quads slant into a chamfer (the face-region analogue
 // of an edge bevel; Blender's Inset Faces = Thickness + Depth). depth=0 is a

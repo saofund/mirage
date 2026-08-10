@@ -88,3 +88,23 @@ def test_edge_bevel_rounds_a_complete_interior_crease_ring():
         {"by": "sharp", "angle": 20.0, "interior": True}, width=0.15).build()
     assert len(out.verts) > len(before.verts)
     assert len(out.faces) > len(before.faces)
+
+
+def test_region_inset_makes_one_pad_where_per_face_makes_islands():
+    """The difference the emboss operator turns on.
+
+    A patch of a lofted surface is many quads. Insetting each one separately gives every
+    quad its own border ring — geometrically fine, and it renders as stipple. The region
+    form insets the patch's outline once, so an extrude after it lifts a single pad.
+    """
+    box = {"by": "box", "min": [-0.45, -0.45, -0.01], "max": [0.45, 0.45, 0.01]}
+    grid = MeshProgram().grid(size_x=2.0, size_y=2.0, x_div=10, y_div=10, mark="plate")
+    each = grid.inset(box, thickness=0.3).build()
+    once = (MeshProgram().grid(size_x=2.0, size_y=2.0, x_div=10, y_div=10, mark="plate")
+            .inset(box, thickness=0.3, region=True).build())
+    plain = MeshProgram().grid(size_x=2.0, size_y=2.0, x_div=10, y_div=10, mark="plate").build()
+    # per-face adds a ring per selected quad; region adds one ring for the whole patch
+    assert len(each.faces) - len(plain.faces) > 3 * (len(once.faces) - len(plain.faces))
+    assert len(once.faces) > len(plain.faces)
+    # and only the patch's boundary vertices moved
+    assert len(once.verts) - len(plain.verts) < len(each.verts) - len(plain.verts)

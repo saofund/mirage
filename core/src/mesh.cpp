@@ -650,10 +650,93 @@ Mesh extrude(const Mesh& mesh, const std::vector<const Face*>& region_v, double 
     return build_compact(new_pos, new_faces, new_tags);
 }
 
+
+// Inset a face region as ONE outline -- the twin of kernel._inset_region. The per-face
+// default is right for "bevel each panel of this grille" and wrong for "emboss a pad
+// here": on a patch of a lofted surface it turns one pad into a few hundred islands.
+// Only boundary vertices move, toward the region centroid with the step projected onto
+// the vertex normal's tangent plane so the pad stays on a curved surface.
+static Mesh inset_region(const Mesh& mesh, const std::set<const Face*>& region,
+                         double thickness, const std::string& mark) {
+    thickness = std::min(std::max(thickness, 1e-3), 0.999);
+    std::set<int> rids;
+    for (const Face* f : region) rids.insert(f->id);
+
+    std::vector<const Edge*> bnd;
+    for (const auto& e : mesh.edges()) {
+        int inside = 0;
+        for (const Face* f : mesh.edge_faces(e.get())) if (rids.count(f->id)) ++inside;
+        if (inside == 1) bnd.push_back(e.get());
+    }
+    std::set<int> bnd_v;
+    for (const Edge* e : bnd) { bnd_v.insert(e->v1->id); bnd_v.insert(e->v2->id); }
+    if (bnd_v.empty()) return mesh.copy();
+
+    std::vector<A3> pos;
+    for (const auto& v : mesh.verts()) pos.push_back(v->co);
+    std::set<int> rv;
+    for (const Face* f : region) for (Loop* lp : mesh.face_loops(f)) rv.insert(lp->vert->id);
+    A3 c{0, 0, 0};
+    for (int i : rv) c = a3add(c, pos[i]);
+    c = a3scale(c, 1.0 / static_cast<double>(rv.size()));
+    std::map<int, A3> nrm;
+    for (int i : rv) nrm[i] = A3{0, 0, 0};
+    for (const Face* f : region_in_id_order(region)) {
+        const A3 n = face_normal(mesh, f);
+        for (Loop* lp : mesh.face_loops(f)) nrm[lp->vert->id] = a3add(nrm[lp->vert->id], n);
+    }
+    std::map<int, int> dup;
+    for (int i : bnd_v) {
+        const A3 p = pos[i];
+        A3 d{c[0] - p[0], c[1] - p[1], c[2] - p[2]};
+        A3 n = nrm[i];
+        const double ln = std::sqrt(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]);
+        if (ln > 1e-12) {
+            n = a3scale(n, 1.0 / ln);
+            const double dn = d[0]*n[0] + d[1]*n[1] + d[2]*n[2];
+            d = A3{d[0] - n[0]*dn, d[1] - n[1]*dn, d[2] - n[2]*dn};
+        }
+        dup[i] = static_cast<int>(pos.size());
+        pos.push_back({p[0] + d[0]*thickness, p[1] + d[1]*thickness, p[2] + d[2]*thickness});
+    }
+
+    std::vector<std::vector<int>> nf;
+    std::vector<Tags> nt;
+    for (const auto& f : mesh.faces()) {
+        std::vector<int> vids;
+        for (Loop* lp : mesh.face_loops(f.get())) vids.push_back(lp->vert->id);
+        if (rids.count(f->id)) {
+            std::vector<int> mapped;
+            for (int i : vids) mapped.push_back(dup.count(i) ? dup[i] : i);
+            nf.push_back(mapped);
+            nt.push_back(copy_tags(f.get(), mark));
+        } else {
+            nf.push_back(vids);
+            nt.push_back(copy_tags(f.get()));
+        }
+    }
+    for (const Edge* e : bnd) {
+        const Face* f = nullptr;
+        for (const Face* g : mesh.edge_faces(e)) if (rids.count(g->id)) { f = g; break; }
+        std::vector<int> vids;
+        for (Loop* lp : mesh.face_loops(f)) vids.push_back(lp->vert->id);
+        int a = e->v1->id, b = e->v2->id;
+        const int n = static_cast<int>(vids.size());
+        for (int k = 0; k < n; ++k) {
+            if (vids[k] == a && vids[(k + 1) % n] == b) break;
+            if (vids[k] == b && vids[(k + 1) % n] == a) { std::swap(a, b); break; }
+        }
+        nf.push_back({a, b, dup[b], dup[a]});
+        nt.push_back(copy_tags(f));
+    }
+    return Mesh::from_pydata(pos, nf, nt);
+}
+
 Mesh inset(const Mesh& mesh, const std::vector<const Face*>& region_v, double thickness,
-           const std::string& mark) {
+           const std::string& mark, bool as_region) {
     std::set<const Face*> region(region_v.begin(), region_v.end());
     if (region.empty()) return mesh.copy();
+    if (as_region) return inset_region(mesh, region, thickness, mark);
     thickness = std::min(std::max(thickness, 1e-3), 0.999);  // avoid degenerate / bowtie
 
     std::vector<A3> new_pos;

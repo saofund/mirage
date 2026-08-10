@@ -1663,6 +1663,9 @@ def emboss(prog, centre, half, depth, inset=0.35, mark=None):
     """
     lo = [centre[k] - half[k] for k in range(3)]
     hi = [centre[k] + half[k] for k in range(3)]
-    p = prog.inset({"by": "box", "min": lo, "max": hi}, thickness=inset)
+    # region=True. The per-face default insets every quad in the patch separately, so
+    # a pad on a few hundred lofted quads becomes a few hundred islands and renders as
+    # a field of stipple. That is what the first pass of this did.
+    p = prog.inset({"by": "box", "min": lo, "max": hi}, thickness=inset, region=True)
     p = p.extrude({"by": "last_created"}, distance=depth)
     return p.tag({"by": "last_created"}, mark) if mark else p

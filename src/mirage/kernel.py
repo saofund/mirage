@@ -425,6 +425,67 @@ def _compact(positions, faces):
     return [positions[i] for i in used], [[remap[i] for i in f] for f in faces]
 
 
+
+def _inset_region(mesh: Mesh, region, thickness: float, mark: str | None):
+    """Inset a face region as ONE outline. See `inset_faces(region=True)`."""
+    import numpy as np
+    thickness = min(max(float(thickness), 1e-3), 0.999)
+    rids = {f.id for f in region}
+    # boundary = edges with exactly one adjacent face inside the region
+    bnd_edges = []
+    for e in mesh.edges:
+        inside = [f for f in mesh.edge_faces(e) if f.id in rids]
+        if len(inside) == 1:
+            bnd_edges.append(e)
+    bnd_v = {v.id for e in bnd_edges for v in (e.v1, e.v2)}
+    if not bnd_v:
+        return mesh.copy()
+
+    pos = [list(v.co) for v in mesh.verts]
+    # region centroid and per-vertex normal, both from the region's own faces only
+    rv = sorted({lp.vert.id for f in region for lp in mesh.face_loops(f)})
+    centroid = np.mean([pos[i] for i in rv], axis=0)
+    nrm = {i: np.zeros(3) for i in rv}
+    for f in region:
+        n = np.array(face_normal(mesh, f), float)
+        for lp in mesh.face_loops(f):
+            nrm[lp.vert.id] += n
+    dup = {}
+    for i in sorted(bnd_v):
+        p = np.array(pos[i], float)
+        d = centroid - p
+        n = nrm[i]
+        ln = float(np.linalg.norm(n))
+        if ln > 1e-12:                      # keep the step on the surface
+            n = n / ln
+            d = d - n * float(np.dot(d, n))
+        dup[i] = len(pos)
+        pos.append([float(x) for x in (p + d * thickness)])
+
+    new_faces, new_attrs = [], []
+    for f in mesh.faces:
+        vids = [lp.vert.id for lp in mesh.face_loops(f)]
+        if f.id in rids:
+            new_faces.append([dup.get(i, i) for i in vids])
+            new_attrs.append(_copy_attrs(f.attrs, add_tag=mark))
+        else:
+            new_faces.append(vids)
+            new_attrs.append(_copy_attrs(f.attrs))
+    # the border band, one quad per boundary edge, wound to match its region face
+    for e in bnd_edges:
+        f = [g for g in mesh.edge_faces(e) if g.id in rids][0]
+        vids = [lp.vert.id for lp in mesh.face_loops(f)]
+        a, b = e.v1.id, e.v2.id
+        for k in range(len(vids)):           # orient the pair as the face walks it
+            if vids[k] == a and vids[(k + 1) % len(vids)] == b:
+                break
+            if vids[k] == b and vids[(k + 1) % len(vids)] == a:
+                a, b = b, a
+                break
+        new_faces.append([a, b, dup[b], dup[a]])
+        new_attrs.append(_copy_attrs(f.attrs))
+    return Mesh.from_pydata(pos, new_faces, new_attrs)
+
 def extrude_faces(mesh: Mesh, faces, distance: float = 0.5, mark: str | None = None) -> Mesh:
     """Extrude a region of faces. Each region vertex moves along the average of its
     incident region-face normals (so opposite/symmetric selections don't cancel),
@@ -466,15 +527,31 @@ def extrude_faces(mesh: Mesh, faces, distance: float = 0.5, mark: str | None = N
     return Mesh.from_pydata(new_pos, new_faces, new_attrs)
 
 
-def inset_faces(mesh: Mesh, faces, thickness: float = 0.3, mark: str | None = None) -> Mesh:
+def inset_faces(mesh: Mesh, faces, thickness: float = 0.3, mark: str | None = None,
+                region: bool = False) -> Mesh:
     """Inset each face: a smaller copy inside, ringed by border quads. ``thickness``
     is a centroid-proportional inset, clamped to the open interval (0, 1) to avoid
     the degenerate (t<=0/t>=1) and self-intersecting (bowtie) cases. The inner face
-    of the last inset face is mesh.faces[-1] (handy for inset-then-extrude)."""
+    of the last inset face is mesh.faces[-1] (handy for inset-then-extrude).
+
+    ``region=True`` insets the SELECTION'S OUTLINE instead of every face in it. The
+    per-face default is the right operator for "bevel each panel of this grille"; it is the
+    wrong one for "emboss a pad here", which is what inset-then-extrude is usually for. On a
+    patch of a lofted surface — a few hundred quads — insetting each face separately turns
+    one pad into a few hundred islands, and the render is a field of stipple. That is
+    exactly what it did on this repo's fuel-filler bowl.
+
+    Only the region's boundary vertices move, and they move toward the region's centroid
+    with the step projected onto the vertex's own tangent plane, so the pad stays on a
+    curved surface instead of being pulled off it. Interior vertices are untouched, which
+    is what keeps the pad one surface."""
     import numpy as np
-    region = set(faces)
-    if not region:
+    region_set = set(faces)
+    if not region_set:
         return mesh.copy()
+    if region:
+        return _inset_region(mesh, region_set, thickness, mark)
+    region = region_set
     thickness = min(max(float(thickness), 1e-3), 0.999)
     new_pos = [list(v.co) for v in mesh.verts]
     new_faces, new_attrs = [], []
