@@ -25,12 +25,17 @@ TAU = 2.0 * math.pi
 # The stamped aperture is almost circular in the photograph.  The old 91 x 128 mm
 # ellipse tried to encode camera perspective in the part itself and produced the tall
 # black oval that dominated every comparison.
-# Measured off the photograph the same way case 27's was: the aperture spans 560 px
-# along the direction of steepest foreshortening against a cap whose ellipse is 257 px
-# on its major axis, so the opening is 2.46 cap diameters. It was drawn at 2.0-2.2,
-# which is the same error case 27 had and the one a viewer reads first.
-OPEN_RX = 139.0 * MM
-OPEN_RY = 146.0 * MM
+# Measured off the photograph the same way case 27's was: the aperture spans 560 px along
+# the direction of steepest foreshortening against a cap whose ellipse is 257 px on its
+# major axis, so that axis of the opening is 2.46 cap diameters. It was drawn at 2.2, which
+# is the same error case 27 had and the one a viewer reads first.
+#
+# The ASPECT is left where the earlier measurement put it. The probe above reads one
+# direction, so it says how big the opening is and nothing about how oval; scaling both axes
+# by 1.115 keeps the 0.906 that was measured separately. Changing the aspect on this
+# evidence would have been inventing a number, and the case's own test said so.
+OPEN_RX = 129.3 * MM
+OPEN_RY = 142.7 * MM
 OPEN_R = max(OPEN_RX, OPEN_RY)
 CAP_D = 116.0 * MM
 POCKET_DEPTH = 48.0 * MM
