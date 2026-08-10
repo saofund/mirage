@@ -44,7 +44,12 @@ CAP_TILT = 12.0
 # It was two literals in two places -- the door and the ribs that ride on it -- which is
 # why a sweep had to rewrite the source to move it, and why the two could silently
 # disagree. A parameter the loop is meant to estimate has to be reachable.
-DOOR_OPEN_DEG = 134.0
+# 70, ESTIMATED not guessed. Sweeping this against the depth residual in the door
+# region gives 6.6 mm at 70 and 7.3 at 85, against 70.5 at 100, 78.6 at 115 and 55.5
+# at 130 -- an order of magnitude, and the minimum is at or below 70. Both of my own
+# guesses (101, then 134) were on the wrong side of it, and the second was made after
+# reading the residual map by eye, which is the mistake this loop exists to stop.
+DOOR_OPEN_DEG = 70.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
