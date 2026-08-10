@@ -81,7 +81,7 @@ PAINT = mat((0.065, 0.245, 0.405), 0.32, 0.16,
 PAINT.pop("roughness_map", None)
 PAINT["roughness"] = 0.29
 PAINT["metallic"] = 0.18
-LINER = mat((0.038, 0.040, 0.043), 0.0, 0.70,
+LINER = mat((0.026, 0.027, 0.030), 0.0, 0.74,
             maps=TEX["fuelcap_polo_liner"], uv_scale=0.014)
 CAP = mat((0.072, 0.074, 0.077), 0.0, 0.50,
           maps=TEX["fuelcap_polo_cap"], uv_scale=0.010)
@@ -89,7 +89,10 @@ CAP.pop("roughness_map", None)
 CAP["roughness"] = 0.64
 CAP_GRIP = mat((0.043, 0.045, 0.048), 0.0, 0.58)
 RUBBER = mat((0.008, 0.008, 0.009), 0.0, 0.84)
-STEEL = mat((0.060, 0.063, 0.068), 0.52, 0.50)
+# The latch is the darkest metal in the pocket, not a catalogue steel. At 0.060 it
+# rendered 36 luma ABOVE the photograph once the lighting was corrected -- the dark
+# scene had been hiding it.
+STEEL = mat((0.026, 0.027, 0.030), 0.48, 0.58)
 WATER = mat((0.34, 0.38, 0.42), 0.0, 0.055)
 LAMP_RED = mat((0.31, 0.006, 0.008), 0.18, 0.090)
 LAMP_DARK = mat((0.045, 0.002, 0.003), 0.10, 0.18)
@@ -158,7 +161,11 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
         else:                               # the bowl
             v = (u - 0.30) / 0.70
             ease = v * v * (3.0 - 2.0 * v)
-            radial = (1.0 - flange) * (1.0 - 0.46 * ease)
+            # NEARLY STRAIGHT-SIDED. At a 0.46 shrink the throat closes to the cap's own
+            # diameter and the cap fills the bowl with no black annulus round it; the
+            # photograph has the cap at about 55% of the bowl's width all the way down,
+            # which is a deep cylinder with a little draft, not a funnel.
+            radial = (1.0 - flange) * (1.0 - 0.10 * ease)
             z = -8.0 * MM - depth * ease
             centre_y = -25.0 * MM * ease
             hood_k = ease
@@ -190,41 +197,53 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
 
 
 
+def _ring_box(mesh, j0, j1, a0, a1, steps=96, pad=0.002):
+    """A world box covering rings j0..j1 of the loft over the angular span a0..a1 degrees.
+
+    Derived from the mesh, not written down. The first version of the feature pass had its
+    five boxes as literals read off one build, and the moment the bowl's throat changed
+    shape three of them selected nothing and the case stopped building. A box that has to be
+    re-measured by hand every time the surface moves is not a way to put a feature on a
+    surface; the loft emits rings of `steps`, so a band of rings over a span of angles is a
+    description that survives the surface changing under it.
+    """
+    import numpy as np
+    co = np.array([v.co for v in mesh.verts], float)
+    idx = []
+    for j in range(j0, j1 + 1):
+        for i in range(steps):
+            a = 360.0 * i / steps
+            if a0 <= a <= a1 and j * steps + i < len(co):
+                idx.append(j * steps + i)
+    if not idx:
+        return None
+    p = co[idx]
+    c = p.mean(0)
+    h = (p.max(0) - p.min(0)) / 2.0 + pad
+    return tuple(c), tuple(h)
+
+
 def _liner_features(prog):
     """Moulded features pressed INTO the liner surface, not placed on top of it.
 
-    Everything this case had inside the aperture was a separate solid dropped in front of a
-    smooth loft, and a loft can only be given features by rewriting the loft. `inset` +
-    `extrude` puts a boss or a recess on a surface that already exists, which is how every
-    pad, shelf and land in a real pocket is made — and it is the operator these fuelcap
-    cases had never once used.
-
-    Boxes are in the liner's own frame; the loft runs from the flange at z = -3 mm out at
-    r = 97..143, down the wall, to a throat ring at z = -55 spanning x -57..57, y -86..36.
+    `inset(region=True)` + `extrude` puts a boss or a recess on a surface that already
+    exists, which is how every pad, shelf and land in a real pocket is made -- and a loft
+    can only be given features by rewriting the loft.
     """
-    # Boxes taken FROM the surface, not guessed at it. The loft is 27 rings of 96; walking
-    # a ring band over an angular span and taking its bounds gives a box that is guaranteed
-    # to select faces. Guessed boxes miss — the first three did, and `resolve` says so with
-    # a face count and a bbox, which is how they got fixed.
-    #
-    # the drain shelf across the bottom of the bowl, sunk
-    prog = P.emboss(prog, (0.0, -0.0934, -0.0330), (0.0302, 0.0076, 0.0081),
-                    -0.0035, inset=0.30)
-    # the broad shallow rib up the hood, raised — it is what breaks the hood's single
-    # smooth gradient into the two tones the photograph has
-    prog = P.emboss(prog, (0.0, 0.0720, -0.0270), (0.0400, 0.0210, 0.0099),
-                    0.0022, inset=0.42)
-    # the land the latch bracket bolts to, on the left wall
-    prog = P.emboss(prog, (-0.0818, -0.0079, -0.0232), (0.0119, 0.0300, 0.0095),
-                    0.0028, inset=0.28)
-    # two moulding pads on the flange, upper right and upper left
-    prog = P.emboss(prog, (0.066, 0.088, -0.005), (0.013, 0.012, 0.005), 0.0018, inset=0.34)
-    prog = P.emboss(prog, (-0.058, 0.092, -0.005), (0.011, 0.010, 0.005), 0.0015, inset=0.34)
-    # PAINT LAST. `inset` and `extrude` create faces, and a created face carries the
-    # renderer's default albedo, not the material the surface it grew out of was given.
-    # Embossing after the material call turned the whole liner from black plastic into a
-    # white plate -- the same class of mistake as selecting only +z and -z on the door and
-    # leaving its turned edge default, which this kit has already made once.
+    mesh = prog.build()
+    for name, (j0, j1, a0, a1), depth, ins in (
+            ("drain shelf",  (14, 17, 250, 290), -0.0035, 0.30),
+            ("hood rib",     (12, 16,  60, 120),  0.0022, 0.42),
+            ("latch land",   (11, 15, 155, 205),  0.0028, 0.28),
+            ("flange pad R", ( 1,  3,  40,  70),  0.0018, 0.34),
+            ("flange pad L", ( 1,  3, 110, 140),  0.0015, 0.34)):
+        box = _ring_box(mesh, j0, j1, a0, a1)
+        if box is None:
+            print(f"  liner feature '{name}': no rings in that band, skipped")
+            continue
+        prog = P.emboss(prog, box[0], box[1], depth, inset=ins)
+    # PAINT LAST. `inset` and `extrude` CREATE faces, and a created face carries the
+    # renderer's default albedo, not the material of the surface it grew out of.
     return prog.material({"by": "all"}, **LINER_WET)
 
 
@@ -355,7 +374,7 @@ def _latch(prog):
 
 def _cap(prog):
     cap_obj = P.cap(d=CAP_D, flange=7 * MM, rib_len=CAP_D * 0.92,
-                    rib_w=CAP_D * 0.42, rib_h=CAP_D * 0.095,
+                    rib_w=CAP_D * 0.34, rib_h=CAP_D * 0.050,
                     rib_draft=0.82, dome=-0.6 * MM, chamfer=2.1 * MM,
                     flutes=18, flute_depth=0.010, skirt=9 * MM,
                     neck_d=CAP_D * 0.72, bevel=0.040, spin=CAP_SPIN,
