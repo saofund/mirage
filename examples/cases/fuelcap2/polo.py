@@ -25,8 +25,12 @@ TAU = 2.0 * math.pi
 # The stamped aperture is almost circular in the photograph.  The old 91 x 128 mm
 # ellipse tried to encode camera perspective in the part itself and produced the tall
 # black oval that dominated every comparison.
-OPEN_RX = 116.0 * MM
-OPEN_RY = 128.0 * MM
+# Measured off the photograph the same way case 27's was: the aperture spans 560 px
+# along the direction of steepest foreshortening against a cap whose ellipse is 257 px
+# on its major axis, so the opening is 2.46 cap diameters. It was drawn at 2.0-2.2,
+# which is the same error case 27 had and the one a viewer reads first.
+OPEN_RX = 139.0 * MM
+OPEN_RY = 146.0 * MM
 OPEN_R = max(OPEN_RX, OPEN_RY)
 CAP_D = 116.0 * MM
 POCKET_DEPTH = 48.0 * MM
@@ -109,19 +113,37 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
     cap and a short drain shelf below it.  Interpolated rings preserve that measured
     silhouette while giving the renderer enough strips to shade it as one surface.
     """
-    rings = 20
+    # THE FLANGE, which this part did not have. Between the paint's rolled edge and the
+    # bowl's mouth the photograph has a wide, nearly flat black annulus — about a quarter of
+    # the aperture radius, carrying the two moulding bosses and catching the one soft
+    # highlight in the whole pocket. Without it the liner runs straight from the paint into
+    # the bowl, and the entire aperture renders as one flat dark disc with a cap in it,
+    # which is what it did.
+    #
+    # `flange` is that annulus as a fraction of the radius; the bowl proper starts inside it.
+    flange = 0.24
+    rings = 26
     verts = []
     for j in range(rings):
         u = j / (rings - 1)
-        ease = u * u * (3.0 - 2.0 * u)
-        centre_y = -25.0 * MM * ease
-        radial = 1.0 - 0.500 * ease
-        z = -3.0 * MM - depth * ease
+        if u <= 0.30:                       # the flange: barely dropping, barely narrowing
+            t = u / 0.30
+            radial = 1.0 - flange * t
+            z = -3.0 * MM - 5.0 * MM * t * t
+            centre_y = 0.0
+            hood_k = 0.0
+        else:                               # the bowl
+            v = (u - 0.30) / 0.70
+            ease = v * v * (3.0 - 2.0 * v)
+            radial = (1.0 - flange) * (1.0 - 0.46 * ease)
+            z = -8.0 * MM - depth * ease
+            centre_y = -25.0 * MM * ease
+            hood_k = ease
         for i in range(steps):
             a = TAU * i / steps
             directional_r = ref * plan[i]
             # The upper hood rolls farther inward than the drain shelf at the bottom.
-            hood = max(math.sin(a), 0.0) * 4.0 * MM * ease
+            hood = max(math.sin(a), 0.0) * 4.0 * MM * hood_k
             r = directional_r * radial - hood
             verts.append((r * math.cos(a), centre_y + r * math.sin(a), z))
     faces = []
