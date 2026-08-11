@@ -73,9 +73,14 @@ CAP_TILT = 12.0
 # The replacement is not another sweep. It is two measurements of the door itself, taken
 # off the photograph and checked by projecting the built part through the renderer's own
 # camera (`tools/project.py`): the outer edge sits at 1.40 aperture radii and the
-# silhouette is 1.97 radii tall. At 90 degrees the model gives 1.38 and 1.97 together;
-# no other angle gets both, and 105 gives 2.23 and 2.44.
-DOOR_OPEN_DEG = 90.0
+# silhouette is 1.97 radii tall, and its NEAR edge -- the one the hinge band disappears
+# behind -- is at 1.19. Co-fitting the angle with the hinge stand-off against all three
+# lands at 88 degrees and 1.12 aperture radii: 1.18, 1.38 and 1.96 against 1.19, 1.40 and
+# 1.97, every one inside 3 mm on an aperture 272 mm across. 105 degrees gives 2.23 and
+# 2.44, and the stand-off matters because at 1.06 the door's near edge creeps 10 mm left
+# and eats the part of the band the photograph shows clear of it.
+DOOR_OPEN_DEG = 88.0
+DOOR_HINGE_R = 1.12
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
@@ -522,9 +527,14 @@ def _hinge_assembly(prog):
     # station so the band leaves the pocket floor flat and turns as it goes.
     rise, length, z0 = 37 * MM, 44 * MM, -14 * MM
     path = [(length * t, z0 + rise * t * t) for t in (0.0, 0.28, 0.55, 0.80, 1.0)]
+    # Three beads spaced across the width, running along the first 45 per cent of the
+    # length. In the photograph they sit in the band's upper half and stop well short of
+    # the door; ribs the other way round -- across the band, spaced along it -- read as a
+    # corrugation, which is what the first version of this part rendered.
     band = P.stamped_strap(path, width=100 * MM, thick=2.6 * MM, flange=5.0 * MM,
-                           beads=(0.10, 0.26, 0.42), bead_r=3.4 * MM,
-                           bosses=((0.20, 24 * MM), (0.34, -6 * MM)),
+                           beads=(-0.30, -0.12, 0.06), bead_r=3.4 * MM, bead_h=3.4 * MM,
+                           bead_span=(0.0, 0.45),
+                           bosses=((0.55, 24 * MM), (0.70, -6 * MM)),
                            boss_r=7 * MM, boss_h=1.2 * MM, material=HINGE_BLUE)
     prog = prog.place(obj=band, at=(134 * MM, -24 * MM, 0.0), rotate=(0.0, 0.0, -8.5))
     plate = P.slotted_bracket(w=56 * MM, h=50 * MM, t=2.6 * MM,
@@ -560,7 +570,8 @@ def _door(prog):
             .material({"by": "tag", "name": "door"}, **HINGE_BLUE))
 
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=DOOR_OPEN_DEG, az=0.0, hinge_r=OPEN_R * 1.06,
+                       rim=8 * MM, open_deg=DOOR_OPEN_DEG, az=0.0,
+                       hinge_r=OPEN_R * DOOR_HINGE_R,
                        gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=DOOR_INNER,
                        inner_details=False, inner_parts=ring)

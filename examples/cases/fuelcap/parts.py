@@ -1693,6 +1693,7 @@ def emboss(prog, centre, half, depth, inset=0.35, mark=None):
 
 
 def stamped_strap(path, width, thick=0.0026, flange=0.0, beads=(), bead_r=0.0030,
+                  bead_h=0.0022, bead_span=(0.0, 0.42),
                   bosses=(), boss_r=0.006, boss_h=0.0011, steps=14,
                   material=None, mark="door"):
     """A wide sheet-metal band that cranks along a path, with turned edges and beads.
@@ -1715,8 +1716,9 @@ def stamped_strap(path, width, thick=0.0026, flange=0.0, beads=(), bead_r=0.0030
     same path.  That lip is what puts the bright line along the top and bottom edges; with
     the band alone the part reads as a strip of paper.
 
-    `beads` are fractions along the path where a half-round rib runs across the full width.
-    `bosses` are (fraction, y) positions for the small raised moulding marks.
+    `beads` are positions ACROSS the width, as fractions of it, where a rib runs ALONG the
+    band; `bead_span` bounds how much of the length they cover.  `bosses` are
+    (fraction-along, y) positions for the small raised moulding marks.
     """
     material = material or {"color": [0.16, 0.40, 0.56], "metallic": 0.32,
                             "roughness": 0.14}
@@ -1755,15 +1757,23 @@ def stamped_strap(path, width, thick=0.0026, flange=0.0, beads=(), bead_r=0.0030
         for s in (-1.0, 1.0):
             e = s * width / 2.0
             p = p.place(obj=prism(wall, e - s * thick, e, mark=mark))
-    for f in beads:
-        i = min(len(pts) - 1, max(0, int(round(f * (len(pts) - 1)))))
-        (x, z), (nx, nz) = pts[i], nrm[i]
-        # Half-round rib across the band. A cylinder laid along the width, sunk to its
-        # own axis in the face, is what a pressed bead looks like from any angle.
-        rib = (MeshProgram().cylinder(radius=bead_r, height=width * 0.995, sides=steps,
-                                      mark=mark)
-               .material({"by": "tag", "name": mark}, **material))
-        p = p.place(obj=rib, at=(x + nx * thick * 0.6, z + nz * thick * 0.6, 0.0))
+    # Beads run ALONG the band, spaced across its width -- which is the way round the
+    # reference has them, and the opposite of the first attempt. Getting this backwards is
+    # not a detail: ribs across a band read as a corrugation or a hinge knuckle, ribs along
+    # it read as what they are, a stiffener stopping the band folding about its long axis.
+    # In the photograph they occupy only the first 40 per cent of the length, dying out
+    # before the band reaches the door, so `bead_span` bounds them.
+    if beads:
+        i0 = max(0, int(round(bead_span[0] * (len(pts) - 1))))
+        i1 = min(len(pts) - 1, int(round(bead_span[1] * (len(pts) - 1))))
+        if i1 <= i0:
+            i1 = min(len(pts) - 1, i0 + 1)
+        run = list(zip(front[i0:i1 + 1], nrm[i0:i1 + 1]))
+        crest = [(x + nx * bead_h, z + nz * bead_h) for (x, z), (nx, nz) in run]
+        rib = [(x, z) for x, z in (q for q, _ in run)] + [(x, z) for x, z in reversed(crest)]
+        for f in beads:
+            c = float(f) * width
+            p = p.place(obj=prism(rib, c - bead_r, c + bead_r, mark=mark))
     for f, y in bosses:
         i = min(len(pts) - 1, max(0, int(round(f * (len(pts) - 1)))))
         (x, z), (nx, nz) = front[i], nrm[i]

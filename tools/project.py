@@ -126,3 +126,27 @@ def off_edge_on(points, pose):
     v = eye - c
     v /= np.linalg.norm(v)
     return 90.0 - math.degrees(math.acos(min(1.0, abs(float(n @ v)))))
+
+
+def to_pixels(points, pose, w, h):
+    """Projected points as (px, py) for a `mirage_render` frame of that size.
+
+    Matching `core/src/raytrace.cpp`: `th = tan(fov_y / 2)`, `aspect = w / h`, image y
+    downward.  Keeping this next to the tangent-space projection means an overlay drawn on
+    a render lands where the tracer put the geometry, so "did this part end up where I
+    think" stops being a question answered by staring at the picture.
+    """
+    q = project(points, pose)
+    th = math.tan(pose["fov"] * 0.5)
+    aspect = float(w) / float(h)
+    px = (q[:, 0] / (th * aspect) + 1.0) * 0.5 * w
+    py = (q[:, 1] / th + 1.0) * 0.5 * h
+    return np.stack([px, py], axis=1)
+
+
+def outline(points, pose, w, h):
+    """Convex hull of a part's projected footprint, as an integer pixel polygon."""
+    import cv2
+
+    p = to_pixels(points, pose, w, h).astype(np.float32)
+    return cv2.convexHull(p.reshape(-1, 1, 2)).astype(int)
