@@ -610,9 +610,14 @@ _LIBRARY = {
     # casting grain, plus beading. Photographed caps are visibly GRANULAR at the
     # magnification these are judged at, and a perfectly smooth disc is the single
     # thing that most makes one read as a render.
-    "fuelcap_cast_cap":   lambda: _beaded_water(RES, 241, (0.058, 0.059, 0.062),
-                                                rough_base=0.46, count=120,
-                                                r_lo=0.004, r_hi=0.017, coverage=0.34),
+    # NO BEADS in the cap's own surface map. The beads on this part are real geometry --
+    # 1-2 mm spheres that refract -- and a second set painted into the map at 0.1-0.5 mm
+    # is sub-pixel at any magnification anybody looks at, so it reads as dither and
+    # competes with the ones that are modelled. One bead system, at the size beads are.
+    # What the cap's map should carry is the CASTING GRAIN: fine directional texture
+    # under a coarse mottle, no droplets.
+    "fuelcap_cast_cap":   lambda: _moulded_plastic(RES, 241, (0.058, 0.059, 0.062),
+                                                   rough_base=0.44, wear=0.22),
     "fuelcap_wet_liner":  lambda: _beaded_water(RES, 211, (0.024, 0.025, 0.027),
                                                 rough_base=0.70, count=260,
                                                 r_lo=0.0035, r_hi=0.013, coverage=0.42),
