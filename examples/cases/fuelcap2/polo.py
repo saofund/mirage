@@ -98,6 +98,27 @@ CAP_TILT = 12.0
 # was), and both were wrong in the same way -- reasoning about a mechanism instead of
 # measuring which one the picture responds to. The next attempt should sweep the
 # environment's own structure against this column of five numbers, not the geometry.
+# The pocket's two angular depth terms: how far the hood comes FORWARD over the top (so
+# that it overhangs and faces down) and how far the drain shelf at the bottom sits ABOVE
+# the throat. Both scale with the same ease that drives the bowl, so the flange stays flat.
+# Where the CAP's axis is, in the panel's frame. It was three copies of (-15, -27) in
+# three places -- the cap, the beads that ride on it, and the disc backing the throat --
+# so the pocket's throat and the thing sitting in it could disagree, and did.
+#
+# Solved, not guessed: an ellipse fit to the cap in the photograph puts its centre at
+# +0.115 / +0.081 aperture radii, and inverting the renderer's own projection for a point
+# 18 mm down the pocket gives +17 / -11 mm, which lands at +0.117 / +0.080. The old pair
+# projected to -0.102 / +0.190 -- 34 mm out, down and to the LEFT where the reference has
+# it up and to the RIGHT, which is also why the drain shelf never responded to anything:
+# the cap was parked on top of it.
+CAP_AT = (17 * MM, -11 * MM, -18 * MM)
+# NEGATIVE: the top of the bowl goes DEEPER, not shallower. My first reading of the
+# reference called the dark band at twelve o'clock an overhanging hood and brought that
+# ring forward -- which only turns the wall to FACE the sky, and swept it from 70 to 93
+# where the photograph reads 31. It is dark because it is steep: nearly parallel to the
+# view, so almost nothing reaches it. Sweeping the sign the other way takes it to 52.
+POCKET_HOOD = -26 * MM
+POCKET_SHELF = 18 * MM
 PANEL_CROSS = 240 * MM
 PANEL_APEX = 0.30
 DOOR_OPEN_DEG = 88.0
@@ -238,6 +259,7 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
             t = u / 0.30
             radial = 1.0 - flange * t
             z = -3.0 * MM - 5.0 * MM * t * t
+            centre_x = 0.0
             centre_y = 0.0
             hood_k = 0.0
         else:                               # the bowl
@@ -249,7 +271,8 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
             # which is a deep cylinder with a little draft, not a funnel.
             radial = (1.0 - flange) * (1.0 - 0.10 * ease)
             z = -8.0 * MM - depth * ease
-            centre_y = -25.0 * MM * ease
+            centre_x = CAP_AT[0] * ease
+            centre_y = CAP_AT[1] * ease
             hood_k = ease
         for i in range(steps):
             a = TAU * i / steps
@@ -257,7 +280,24 @@ def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
             # The upper hood rolls farther inward than the drain shelf at the bottom.
             hood = max(math.sin(a), 0.0) * 4.0 * MM * hood_k
             r = directional_r * radial - hood
-            verts.append((r * math.cos(a), centre_y + r * math.sin(a), z))
+            # ...and Z VARIES WITH ANGLE, which is the whole point. Every ring here used
+            # to be planar -- z was a function of the ring index alone -- and a stack of
+            # planar rings can only ever be a bowl. It cannot have a canopy that comes
+            # forward over one side or a shelf that sits high on the other, because both
+            # of those are the same ring at two different depths.
+            #
+            # The reference is not a bowl. It is a moulded scoop: a hood over the top that
+            # faces DOWN, and a flat drain shelf at the bottom-left that faces UP. The
+            # signature is unmistakable once measured -- inside the opening the photograph
+            # reads 31 at twelve o'clock and 40 on the floor, and the planar-ring version
+            # read 70 and 22. Not merely wrong: INVERTED. A surface whose deepest and most
+            # occluded point is always at the bottom has no choice about that.
+            over = max(math.sin(a), 0.0) ** 1.4          # toward the top
+            lift = max(-math.sin(a), 0.0) ** 1.2         # toward the bottom
+            za = (z + POCKET_HOOD * over * hood_k
+                    + POCKET_SHELF * lift * hood_k)
+            verts.append((centre_x + r * math.cos(a),
+                          centre_y + r * math.sin(a), za))
     faces = []
     for j in range(rings - 1):
         a0, b0 = j * steps, (j + 1) * steps
@@ -472,7 +512,7 @@ def _cap(prog):
                                **CAP_WET)
     # Unlike the old hero, this cap is not parallel to the body. Its face ellipse and the
     # visible lower skirt in the source require a separately tilted filler-neck axis.
-    prog = prog.place(obj=cap_obj, at=(-15 * MM, -27 * MM, -18 * MM),
+    prog = prog.place(obj=cap_obj, at=CAP_AT,
                       rotate=(CAP_TILT, -5.0, 0.0))
 
     # Opaque glossy beads are a better approximation than a flat decal in Mirage's current
@@ -500,7 +540,7 @@ def _cap(prog):
         qx = cy * x + sy * (sx * y + cx * z)
         qy = cx * y - sx * z
         qz = -sy * x + cy * (sx * y + cx * z)
-        return (-15 * MM + qx, -27 * MM + qy, -18 * MM + qz)
+        return (CAP_AT[0] + qx, CAP_AT[1] + qy, CAP_AT[2] + qz)
 
     for x, y, r in droplets:
         bead = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r * MM * 1.45,
@@ -702,7 +742,7 @@ def build():
     # `<none>`, which is the tracer saying nothing was hit.
     throat = OPEN_R * (1.0 - 0.24) * (1.0 - 0.10) + 14 * MM
     prog = prog.place(obj=_disc(throat, 2 * MM, "well", RUBBER, 96),
-                      at=(-15 * MM, -27 * MM, -55 * MM))
+                      at=(CAP_AT[0], CAP_AT[1], -55 * MM))
     prog = _latch(prog)
     prog = _cap(prog)
     return _door(prog)
