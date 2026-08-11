@@ -44,21 +44,17 @@ CAP_TILT = 12.0
 # It was two literals in two places -- the door and the ribs that ride on it -- which is
 # why a sweep had to rewrite the source to move it, and why the two could silently
 # disagree. A parameter the loop is meant to estimate has to be reachable.
-# 80, SOLVED rather than swept. The door is the largest single error in this render -- a
-# quarter of the frame at a mean local difference of 85, a third of the total -- because it
-# presents its FACE to the camera where the photograph shows its edge.
+# The door's angle was never the problem: it was hinged on the WRONG SIDE and has been
+# sweeping ACROSS the aperture from the left instead of opening away from it on the right.
+# `fuel_door` applies `az + 180`, so az=0 puts the hinge at -x, and every angle I tried --
+# 70, 80, 101, 134, 145 -- was a different amount of door lying over the pocket. Three
+# separate sweeps (depth residual, silhouette, and finally solving n.d against the camera)
+# all measured that wrong family carefully and returned confident, useless answers, because
+# none of them could express "the hinge is on the other side".
 #
-# `fuel_door` composes: place at the hinge, rotate(0, -open, 0), translate out, then
-# rotate(0, 0, az+180). That last half turn flips x, so the door's normal ends up
-# n = (-sin(open), 0, cos(open)). Edge-on means n is perpendicular to the view direction,
-# and the camera looks along (-0.175, -0.012, -0.984), so n.d = 0 gives open = 79.9.
-#
-# At 101 that dot product is 0.344 -- the face, nearly square-on. Two sweeps had already
-# pointed here and I read neither correctly: the silhouette sweep found 85 the best of its
-# candidates (area ratio 2.6 against 9-10 elsewhere) and the depth sweep found 70, which
-# straddle it. Three lines of arithmetic against the camera would have been quicker than
-# either.
-DOOR_OPEN_DEG = 80.0
+# A parameter search cannot find a fault outside its parameter. Looking at the picture found
+# it in one glance, which is the whole lesson of this case.
+DOOR_OPEN_DEG = 100.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
@@ -479,7 +475,7 @@ def _door(prog):
     # 265 mm p95 in that region against 26 mm inside the pocket, and the map is a single
     # bright blob exactly the door's shape. The reference door is nearly edge-on.
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=DOOR_OPEN_DEG, az=0.0, hinge_r=82 * MM,
+                       rim=8 * MM, open_deg=DOOR_OPEN_DEG, az=180.0, hinge_r=82 * MM,
                        gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=DOOR_INNER,
                        inner_details=False, inner_parts=inner)
