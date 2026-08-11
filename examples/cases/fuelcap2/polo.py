@@ -53,7 +53,10 @@ CAP_TILT = 12.0
 # A parameter search cannot find a fault outside its parameter. Each sweep returned a
 # confident number; none of them could express "the hinge is in the wrong place". Looking at
 # the picture found it.
-DOOR_OPEN_DEG = 100.0
+# With the hinge finally outside the aperture, the angle means what it should, and
+# the arithmetic from before applies: n = (-sin, 0, cos) against a view direction of
+# (-0.175, -0.012, -0.984) is edge-on at 79.9 degrees.
+DOOR_OPEN_DEG = 80.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
@@ -459,10 +462,10 @@ def _door(prog):
     # so they ride with it.
     ribs = MeshProgram()
     for a in (0.0, 118.0, 242.0):
-        ribs = ribs.place(obj=_box((0.088, 0.016, 0.004), "door", HINGE_BLUE),
+        ribs = ribs.place(obj=_box((0.088, 0.010, 0.0018), "door", HINGE_BLUE),
                           at=(0.0, 0.0, 0.0), rotate=(0.0, 0.0, a))
     ring = (MeshProgram()
-            .profile([(0.086, 0.0), (0.098, 0.0), (0.098, 0.005), (0.086, 0.005)],
+            .profile([(0.086, 0.0), (0.098, 0.0), (0.098, 0.0022), (0.086, 0.0022)],
                      plane="xz", closed=True)
             .spin(axis="z", steps=64, mark="door")
             .material({"by": "tag", "name": "door"}, **HINGE_BLUE))
