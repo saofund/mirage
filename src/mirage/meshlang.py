@@ -422,6 +422,170 @@ def _transform(mesh, faces, op, by):
             v.co = tuple(c[k] + (v.co[k] - c[k]) * by[k] for k in range(3))
 
 
+_FALLOFF = ("smooth", "linear", "sharp", "constant")
+
+
+def _weight(d, radius, kind):
+    """Brush weight at distance `d`. 1 at the centre, 0 at the rim, never negative."""
+    if radius <= 0.0:
+        return 0.0
+    t = 1.0 - d / radius
+    if t <= 0.0:
+        return 0.0
+    if kind == "constant":
+        return 1.0
+    if kind == "linear":
+        return t
+    if kind == "sharp":
+        return t * t
+    return t * t * (3.0 - 2.0 * t)          # smoothstep
+
+
+def _vert_normals(mesh):
+    """Area-weighted vertex normals, accumulated in FACE-ID order.
+
+    The order is the point. Summing face normals in whatever order a set happens to
+    iterate gives a different last bit on different runs, and this repo has already been
+    bitten by exactly that in `extrude_faces`. Both engines walk faces by id here.
+    """
+    acc = {v.id: [0.0, 0.0, 0.0] for v in mesh.verts}
+    for f in sorted(mesh.faces, key=lambda g: g.id):
+        vs = mesh.face_verts(f)
+        if len(vs) < 3:
+            continue
+        a, b, c = vs[0].co, vs[1].co, vs[2].co
+        u = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+        w = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+        n = (u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0])
+        for v in vs:
+            t = acc[v.id]
+            for k in range(3):
+                t[k] += n[k]
+    out = {}
+    for vid, n in acc.items():
+        L = math.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2])
+        out[vid] = (n[0] / L, n[1] / L, n[2] / L) if L > 1e-15 else (0.0, 0.0, 0.0)
+    return out
+
+
+def _neighbours(mesh):
+    """Vertex adjacency from the edge list, each list sorted by id."""
+    adj = {v.id: set() for v in mesh.verts}
+    for e in mesh.edges:
+        a, b = e.v1.id, e.v2.id
+        adj[a].add(b)
+        adj[b].add(a)
+    return {k: sorted(v) for k, v in adj.items()}
+
+
+def _deform(mesh, cmd, faces=None):
+    """Free-form sculpt strokes: grab / smooth / flatten / inflate / pinch.
+
+    Why this is an op and not a formula in a case
+    ---------------------------------------------
+    Until now the only way to give a surface a shape that is not a surface of revolution
+    was to write the vertex positions as a formula -- radius and depth as functions of ring
+    index and angle, with correction terms bolted on for every asymmetry. That family is
+    closed under "bowl": in the one case that needed a canopy, the radius and the depth
+    both fell monotonically at every angle, so the contour could never reverse and no part
+    of the surface could face down and inward, while the docstring claimed a scoop. Four
+    rounds of correction terms went into that gap, and the round after that gave up and
+    embossed a crescent on the outside to stand in for the shape.
+
+    That failure is not about one part. It is what happens when the modeller can see the
+    problem and has no verb for it. The verbs are these:
+
+      grab      push a region, with falloff -- the basic stroke
+      smooth    move each vert toward its neighbours' average; takes creases out
+      flatten   project onto a plane; makes a drain shelf or a machined land
+      inflate   move along the vertex normal; swells or sinks a whole area
+      pinch     contract toward the brush axis; tightens a rim or sharpens a fold
+
+    Every one is a single op in the log, replayed identically in both engines, so a
+    sculpted surface stays exactly as reproducible as a lathed one.
+
+    Determinism
+    -----------
+    Weights and neighbour averages are computed against a SNAPSHOT of the positions, so a
+    stroke does not depend on the order its verts are visited, and normals accumulate in
+    face-id order. Both engines do it this way; `test_cpp_program` checks they agree.
+    """
+    mode = cmd.get("mode", "grab")
+    at = [float(x) for x in cmd.get("at", (0.0, 0.0, 0.0))]
+    radius = float(cmd.get("radius", 0.0))
+    strength = float(cmd.get("strength", 1.0))
+    kind = cmd.get("falloff", "smooth")
+    if kind not in _FALLOFF:
+        raise MeshLangError(f"deform: unknown falloff {kind!r}, expected one of {_FALLOFF}")
+    delta = [float(x) for x in cmd.get("delta", (0.0, 0.0, 0.0))]
+    sym = cmd.get("symmetry")
+    if sym not in (None, "x", "y", "z"):
+        raise MeshLangError(f"deform: symmetry must be x, y, z or absent, got {sym!r}")
+
+    centres = [at]
+    if sym:
+        k = "xyz".index(sym)
+        mirrored = list(at)
+        mirrored[k] = -mirrored[k]
+        centres.append(mirrored)
+
+    verts = sorted(mesh.verts, key=lambda v: v.id)
+    if faces is not None:
+        allowed = {v.id for f in faces for v in mesh.face_verts(f)}
+        verts = [v for v in verts if v.id in allowed]
+    if not verts or radius <= 0.0:
+        return
+
+    snap = {v.id: tuple(v.co) for v in mesh.verts}
+    nrm = _vert_normals(mesh) if mode in ("inflate",) else None
+    adj = _neighbours(mesh) if mode == "smooth" else None
+
+    for c in centres:
+        for v in verts:
+            p = snap[v.id]
+            d = math.sqrt(sum((p[k] - c[k]) ** 2 for k in range(3)))
+            w = _weight(d, radius, kind) * strength
+            if w <= 0.0:
+                continue
+            if mode == "grab":
+                mv = [delta[k] * w for k in range(3)]
+            elif mode == "inflate":
+                n = nrm[v.id]
+                mv = [n[k] * w for k in range(3)]
+            elif mode == "smooth":
+                nb = adj[v.id]
+                if not nb:
+                    continue
+                avg = [sum(snap[j][k] for j in nb) / len(nb) for k in range(3)]
+                mv = [(avg[k] - p[k]) * w for k in range(3)]
+            elif mode == "flatten":
+                # Plane through `at` with normal `delta` (normalised); w scales how far
+                # each vert is carried onto it, so the rim of the brush stays put.
+                L = math.sqrt(sum(x * x for x in delta))
+                if L <= 1e-15:
+                    raise MeshLangError("deform flatten: `delta` is the plane normal and "
+                                        "must be non-zero")
+                n = [x / L for x in delta]
+                off = sum((p[k] - c[k]) * n[k] for k in range(3))
+                mv = [-n[k] * off * w for k in range(3)]
+            elif mode == "pinch":
+                # Toward the brush axis: the line through `at` along `delta` (or straight
+                # at the centre when no axis is given).
+                L = math.sqrt(sum(x * x for x in delta))
+                if L <= 1e-15:
+                    rad = [p[k] - c[k] for k in range(3)]
+                else:
+                    n = [x / L for x in delta]
+                    t = sum((p[k] - c[k]) * n[k] for k in range(3))
+                    rad = [p[k] - c[k] - n[k] * t for k in range(3)]
+                mv = [-rad[k] * w for k in range(3)]
+            else:
+                raise MeshLangError(
+                    f"deform: unknown mode {mode!r}; expected grab, smooth, flatten, "
+                    "inflate or pinch")
+            v.co = (v.co[0] + mv[0], v.co[1] + mv[1], v.co[2] + mv[2])
+
+
 def _check_assert(mesh, cmd):
     if cmd.get("closed_manifold") and not mesh.is_closed_manifold():
         raise MeshLangError("assert closed_manifold failed")
@@ -748,6 +912,26 @@ class MeshProgram:
             c[k] = v
         return self.add(**c)
     def translate(self, on, by): return self.add(**_cmd("translate", on=on, by=list(by)))
+
+    def deform(self, mode="grab", at=(0.0, 0.0, 0.0), radius=0.0, delta=(0.0, 0.0, 0.0),
+               strength=1.0, falloff="smooth", symmetry=None, on=None, mark=None):
+        """One sculpt stroke: grab / smooth / flatten / inflate / pinch.
+
+        The verb this language did not have. Everything else here builds a surface from a
+        description -- a profile, a plan, a section -- and a described surface can only be
+        as asymmetric as the description is. `deform` edits the surface that is already
+        there, at a place, with a radius and a falloff, which is how anybody actually makes
+        a canopy overhang or presses a drain shelf into a moulding.
+
+        It stays a single line in the op-log and replays identically in both engines, so
+        nothing is traded away for it.
+        """
+        c = {"mode": mode, "at": [float(x) for x in at], "radius": float(radius),
+             "delta": [float(x) for x in delta], "strength": float(strength),
+             "falloff": falloff}
+        if symmetry is not None:
+            c["symmetry"] = symmetry
+        return self.add(**_cmd("deform", on=on, mark=mark, **c))
     def scale(self, on, by): return self.add(**_cmd("scale", on=on, by=list(by)))
 
     def place(self, obj=None, at=(0.0, 0.0, 0.0), rotate=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0),
@@ -992,6 +1176,14 @@ class MeshProgram:
                     sel = resolve(mesh, cmd.get("on", Sel.all()), last_tag)
                     _transform(mesh, sel, op, cmd.get("by", [1, 1, 1] if op == "scale" else [0, 0, 0]))
                     outs = sel
+                elif op == "deform":
+                    # `on` is OPTIONAL here, unlike every other selector op: a sculpt
+                    # stroke is bounded by its own radius, and demanding a face selection
+                    # as well would put the modeller straight back into writing box
+                    # selectors -- which is the thing this op exists to stop.
+                    sel = (resolve(mesh, cmd["on"], last_tag) if "on" in cmd else None)
+                    _deform(mesh, cmd, sel)
+                    outs = sel if sel is not None else []
                 elif op == "assert":
                     _check_assert(mesh, cmd); outs = []
                 else:

@@ -190,6 +190,38 @@ OPLOGS = {
         # only the 4 top edges (a closed loop) -> rounded top rim, sharp sides
         {"op": "edge_bevel", "on": {"by": "on_face", "face": {"by": "normal", "axis": "z", "sign": 1.0}}, "width": 0.2},
     ],
+    # deform: every sculpt verb, byte-identical in both engines. The overhang case is the
+    # point of the op -- a cylinder wall grabbed outward at the bottom, so its contour
+    # reverses, which is the one shape no profile-and-plan generator in this kit can make.
+    "deform_grab_overhang": [
+        {"op": "cylinder", "sides": 24, "radius": 0.5, "height": 0.6},
+        {"op": "deform", "mode": "grab", "at": [0.5, 0.0, -0.25], "radius": 0.3,
+         "delta": [0.22, 0.0, 0.0], "falloff": "smooth"},
+    ],
+    "deform_inflate_sym": [
+        {"op": "uv_sphere", "segments": 16, "rings": 10, "radius": 0.5},
+        {"op": "deform", "mode": "inflate", "at": [0.4, 0.0, 0.2], "radius": 0.35,
+         "strength": 0.12, "falloff": "sharp", "symmetry": "x"},
+    ],
+    "deform_flatten_shelf": [
+        {"op": "uv_sphere", "segments": 14, "rings": 9, "radius": 0.5},
+        {"op": "deform", "mode": "flatten", "at": [0.0, 0.0, -0.4], "radius": 0.4,
+         "delta": [0.0, 0.0, 1.0], "falloff": "linear"},
+    ],
+    "deform_smooth_and_pinch": [
+        {"op": "cube", "size": 1.0},
+        {"op": "subdivide", "levels": 2},
+        {"op": "deform", "mode": "pinch", "at": [0.5, 0.0, 0.0], "radius": 0.45,
+         "delta": [1.0, 0.0, 0.0], "strength": 0.6, "falloff": "constant"},
+        {"op": "deform", "mode": "smooth", "at": [0.5, 0.0, 0.0], "radius": 0.5,
+         "strength": 0.8},
+    ],
+    "deform_on_selection": [
+        {"op": "cube", "size": 1.0},
+        {"op": "subdivide", "levels": 2},
+        {"op": "deform", "on": {"by": "normal", "axis": "z", "sign": 1.0}, "mode": "grab",
+         "at": [0.0, 0.0, 0.5], "radius": 0.6, "delta": [0.0, 0.0, 0.15]},
+    ],
     "edge_bevel_cyl_rim_mixed": [
         {"op": "cylinder", "sides": 10, "radius": 0.5, "height": 1.2},
         {"op": "edge_bevel", "on": {"by": "on_face", "face": {"by": "normal", "axis": "z", "sign": 1.0}}, "width": 0.08},

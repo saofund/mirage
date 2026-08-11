@@ -46,6 +46,158 @@ void transform_region(const Mesh& m, const std::vector<const Face*>& faces, cons
     }
 }
 
+// deform: free-form sculpt strokes. Mirrors Python `_deform` exactly, including the
+// snapshot-then-apply order and the face-id accumulation of vertex normals -- both engines
+// have to land on the same last bit, and this repo has already been bitten once by summing
+// face normals in a container's own iteration order.
+namespace {
+
+double brush_weight(double d, double radius, const std::string& kind) {
+    if (radius <= 0.0) return 0.0;
+    const double t = 1.0 - d / radius;
+    if (t <= 0.0) return 0.0;
+    if (kind == "constant") return 1.0;
+    if (kind == "linear") return t;
+    if (kind == "sharp") return t * t;
+    return t * t * (3.0 - 2.0 * t);
+}
+
+}  // namespace
+
+void deform_region(const Mesh& m, const json& cmd, const std::vector<const Face*>* faces) {
+    const std::string mode = cmd.value("mode", std::string("grab"));
+    const std::string kind = cmd.value("falloff", std::string("smooth"));
+    if (kind != "smooth" && kind != "linear" && kind != "sharp" && kind != "constant")
+        throw MeshLangError("deform: unknown falloff '" + kind + "'");
+    std::array<double, 3> at{0, 0, 0}, delta{0, 0, 0};
+    if (cmd.contains("at"))
+        for (int k = 0; k < 3; ++k) at[std::size_t(k)] = cmd.at("at")[k].get<double>();
+    if (cmd.contains("delta"))
+        for (int k = 0; k < 3; ++k) delta[std::size_t(k)] = cmd.at("delta")[k].get<double>();
+    const double radius = cmd.value("radius", 0.0);
+    const double strength = cmd.value("strength", 1.0);
+
+    std::vector<std::array<double, 3>> centres{at};
+    if (cmd.contains("symmetry") && !cmd.at("symmetry").is_null()) {
+        const std::string sym = cmd.at("symmetry").get<std::string>();
+        const int k = sym == "x" ? 0 : sym == "y" ? 1 : sym == "z" ? 2 : -1;
+        if (k < 0) throw MeshLangError("deform: symmetry must be x, y or z");
+        auto mirrored = at;
+        mirrored[std::size_t(k)] = -mirrored[std::size_t(k)];
+        centres.push_back(mirrored);
+    }
+
+    std::map<int, Vert*> pool;  // deterministic: ordered by vert id
+    for (const auto& up : m.verts()) pool[up->id] = up.get();
+    std::set<int> allowed;
+    if (faces) {
+        for (const Face* f : *faces)
+            for (Vert* v : m.face_verts(f)) allowed.insert(v->id);
+    }
+    if (pool.empty() || radius <= 0.0) return;
+
+    std::map<int, std::array<double, 3>> snap;
+    for (auto& kv : pool) snap[kv.first] = kv.second->co;
+
+    std::map<int, std::array<double, 3>> nrm;
+    if (mode == "inflate") {
+        for (auto& kv : pool) nrm[kv.first] = {0, 0, 0};
+        std::vector<const Face*> fs;
+        for (const auto& up : m.faces()) fs.push_back(up.get());
+        std::sort(fs.begin(), fs.end(),
+                  [](const Face* a, const Face* b) { return a->id < b->id; });
+        for (const Face* f : fs) {
+            auto vs = m.face_verts(f);
+            if (vs.size() < 3) continue;
+            const auto& a = vs[0]->co;
+            const auto& b = vs[1]->co;
+            const auto& c = vs[2]->co;
+            const std::array<double, 3> u{b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+            const std::array<double, 3> w{c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+            const std::array<double, 3> n{u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2],
+                                          u[0] * w[1] - u[1] * w[0]};
+            for (Vert* v : vs)
+                for (int k = 0; k < 3; ++k) nrm[v->id][std::size_t(k)] += n[std::size_t(k)];
+        }
+        for (auto& kv : nrm) {
+            auto& n = kv.second;
+            const double L = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            if (L > 1e-15) {
+                for (double& x : n) x /= L;
+            } else {
+                n = {0, 0, 0};
+            }
+        }
+    }
+
+    std::map<int, std::vector<int>> adj;
+    if (mode == "smooth") {
+        for (const auto& up : m.edges()) {
+            adj[up->v1->id].push_back(up->v2->id);
+            adj[up->v2->id].push_back(up->v1->id);
+        }
+        for (auto& kv : adj) std::sort(kv.second.begin(), kv.second.end());
+    }
+
+    for (const auto& c : centres) {
+        for (auto& kv : pool) {
+            const int id = kv.first;
+            Vert* v = kv.second;
+            if (faces && !allowed.count(id)) continue;
+            const auto& p = snap.at(id);
+            double d2 = 0.0;
+            for (int k = 0; k < 3; ++k) {
+                const double e = p[std::size_t(k)] - c[std::size_t(k)];
+                d2 += e * e;
+            }
+            const double w = brush_weight(std::sqrt(d2), radius, kind) * strength;
+            if (w <= 0.0) continue;
+            std::array<double, 3> mv{0, 0, 0};
+            if (mode == "grab") {
+                for (int k = 0; k < 3; ++k) mv[std::size_t(k)] = delta[std::size_t(k)] * w;
+            } else if (mode == "inflate") {
+                const auto& n = nrm.at(id);
+                for (int k = 0; k < 3; ++k) mv[std::size_t(k)] = n[std::size_t(k)] * w;
+            } else if (mode == "smooth") {
+                auto it = adj.find(id);
+                if (it == adj.end() || it->second.empty()) continue;
+                std::array<double, 3> avg{0, 0, 0};
+                for (int j : it->second)
+                    for (int k = 0; k < 3; ++k)
+                        avg[std::size_t(k)] += snap.at(j)[std::size_t(k)];
+                const double n = double(it->second.size());
+                for (int k = 0; k < 3; ++k)
+                    mv[std::size_t(k)] = (avg[std::size_t(k)] / n - p[std::size_t(k)]) * w;
+            } else if (mode == "flatten") {
+                const double L = std::sqrt(delta[0] * delta[0] + delta[1] * delta[1] +
+                                           delta[2] * delta[2]);
+                if (L <= 1e-15)
+                    throw MeshLangError(
+                        "deform flatten: `delta` is the plane normal and must be non-zero");
+                const std::array<double, 3> n{delta[0] / L, delta[1] / L, delta[2] / L};
+                double off = 0.0;
+                for (int k = 0; k < 3; ++k)
+                    off += (p[std::size_t(k)] - c[std::size_t(k)]) * n[std::size_t(k)];
+                for (int k = 0; k < 3; ++k) mv[std::size_t(k)] = -n[std::size_t(k)] * off * w;
+            } else if (mode == "pinch") {
+                const double L = std::sqrt(delta[0] * delta[0] + delta[1] * delta[1] +
+                                           delta[2] * delta[2]);
+                std::array<double, 3> rad{p[0] - c[0], p[1] - c[1], p[2] - c[2]};
+                if (L > 1e-15) {
+                    const std::array<double, 3> n{delta[0] / L, delta[1] / L, delta[2] / L};
+                    double t = 0.0;
+                    for (int k = 0; k < 3; ++k) t += rad[std::size_t(k)] * n[std::size_t(k)];
+                    for (int k = 0; k < 3; ++k) rad[std::size_t(k)] -= n[std::size_t(k)] * t;
+                }
+                for (int k = 0; k < 3; ++k) mv[std::size_t(k)] = -rad[std::size_t(k)] * w;
+            } else {
+                throw MeshLangError("deform: unknown mode '" + mode + "'");
+            }
+            for (int k = 0; k < 3; ++k) v->co[std::size_t(k)] += mv[std::size_t(k)];
+        }
+    }
+}
+
 void check_assert(const Mesh& m, const json& cmd) {
     if (cmd.value("closed_manifold", false) && !m.is_closed_manifold())
         throw MeshLangError("assert closed_manifold failed");
@@ -290,7 +442,9 @@ const std::map<std::string, std::vector<std::string>>& num_fields() {
         {"spin", {"steps", "angle", "plan_from"}}, {"screw", {"steps", "turns", "height", "angle"}},
         {"subdivide", {"levels"}}, {"crease", {"weight"}},
         {"material", {"color", "metallic", "roughness"}},
-        {"translate", {"by"}}, {"scale", {"by"}}, {"place", {"translate", "rotate", "scale"}},
+        {"translate", {"by"}}, {"scale", {"by"}},
+        // only the NUMERIC params are expression-evaluable; mode/falloff/symmetry are names
+        {"deform", {"at", "radius", "delta", "strength"}}, {"place", {"translate", "rotate", "scale"}},
     };
     return m;
 }
@@ -847,6 +1001,18 @@ Mesh Program::build(std::string* last_tag_out) const {
                                                                   : std::array<double, 3>{0, 0, 0};
                 transform_region(mesh, seln, op, json_by(cmd, dflt));
                 outs = seln;
+            } else if (op == "deform") {
+                // `on` is optional, unlike every other selector op: a sculpt stroke is
+                // bounded by its own radius, and requiring a face selection too would put
+                // the modeller straight back into writing box selectors, which is the
+                // thing this op exists to stop.
+                if (cmd.contains("on")) {
+                    auto seln = resolve(mesh, cmd.at("on"), last_tag);
+                    deform_region(mesh, cmd, &seln);
+                    outs = seln;
+                } else {
+                    deform_region(mesh, cmd, nullptr);
+                }
             } else if (op == "assert") {
                 check_assert(mesh, cmd);
             } else {

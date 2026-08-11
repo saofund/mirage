@@ -717,9 +717,24 @@ def build():
     # so the bowl became wider than its own floor and the render showed a bright crescent
     # of open sky through the gap. The id map named it in one run: those pixels were
     # `<none>`, which is the tracer saying nothing was hit.
-    throat = OPEN_R * (1.0 - 0.24) * (1.0 - 0.10) + 14 * MM
-    prog = prog.place(obj=_disc(throat, 2 * MM, "well", RUBBER, 96),
-                      at=(CAP_AT[0], CAP_AT[1], -55 * MM))
+    # DERIVED FROM THE LOFT, and behind ALL of it. This disc was 223 mm wide at z = -55
+    # while the rebuilt canopy runs down to z = -76 and is only 194 mm across -- so the
+    # disc stood in front of the entire lower canopy and hid it completely. The signal was
+    # in the numbers and I did not read it: a change that rebuilt the whole pocket moved
+    # the region's |diff| from 46.7 to 46.3. A large geometric edit that barely moves any
+    # pixels has almost always been occluded, and that deserves to be a warning the tools
+    # raise, not something a person has to notice.
+    #
+    # Its radius also still quoted the 0.24 flange and 0.10 shrink of the generator that
+    # `loft_sections` replaced -- constants that no longer exist anywhere. Both faults are
+    # the same fault: a number copied out of a surface instead of taken from it.
+    liner_mesh = _smooth_liner(plan, OPEN_R, steps=steps).build()
+    import numpy as _np
+    _co = _np.array([v.co for v in liner_mesh.verts], float)
+    back_z = float(_co[:, 2].min()) - 6 * MM
+    back_r = float(_np.hypot(_co[:, 0] - CAP_AT[0], _co[:, 1] - CAP_AT[1]).max()) * 1.02
+    prog = prog.place(obj=_disc(back_r, 2 * MM, "well", RUBBER, 96),
+                      at=(CAP_AT[0], CAP_AT[1], back_z))
     prog = _latch(prog)
     prog = _cap(prog)
     return _door(prog)
