@@ -1768,12 +1768,34 @@ def stamped_strap(path, width, thick=0.0026, flange=0.0, beads=(), bead_r=0.0030
         i1 = min(len(pts) - 1, int(round(bead_span[1] * (len(pts) - 1))))
         if i1 <= i0:
             i1 = min(len(pts) - 1, i0 + 1)
-        run = list(zip(front[i0:i1 + 1], nrm[i0:i1 + 1]))
-        crest = [(x + nx * bead_h, z + nz * bead_h) for (x, z), (nx, nz) in run]
-        rib = [(x, z) for x, z in (q for q, _ in run)] + [(x, z) for x, z in reversed(crest)]
+        # HALF-ROUND, not a flat-topped slab. Rendered alone at part scale the prism
+        # version read as four rectangular plates laid on the band; a pressed bead is a
+        # tube half sunk in the sheet, and it is the round crest that carries the bright
+        # line down each one in the reference. A straight cylinder is a fair stand-in over
+        # a rib this short even though the path under it curves.
+        (ax, az), (bx, bz) = front[i0], front[i1]
+        ang = math.degrees(math.atan2(bz - az, bx - ax))
+        run_len = math.hypot(bx - ax, bz - az)
+        # Run the ribs a bead's width PAST the band's free end so they break its
+        # silhouette. That scalloped edge is not decoration -- it is the feature that gives
+        # up the count and the pitch when the band's face is too foreshortened to read, and
+        # it is how the four were counted in the first place.
+        # A bead's own height of overhang was far too much: a rib standing 4 mm proud and
+        # poking 6 mm past the edge projects as a pipe on the end of the band, not as a
+        # pressing. In the reference the break is barely two millimetres.
+        ux, uz = (bx - ax) / (run_len or 1.0), (bz - az) / (run_len or 1.0)
+        ax, az = ax - ux * bead_h * 0.45, az - uz * bead_h * 0.45
+        run_len += bead_h * 0.45
+        mx, mz = 0.5 * (ax + bx), 0.5 * (az + bz)
+        nx, nz = nrm[(i0 + i1) // 2]
         for f in beads:
-            c = float(f) * width
-            p = p.place(obj=prism(rib, c - bead_r, c + bead_r, mark=mark))
+            rib = (MeshProgram().cylinder(radius=bead_h, height=run_len, sides=steps,
+                                          mark=mark)
+                   .material({"by": "tag", "name": mark}, **material))
+            p = p.place(obj=rib,
+                        at=(mx - nx * bead_h * 0.60, mz - nz * bead_h * 0.60,
+                            float(f) * width),
+                        rotate=(0.0, 90.0, ang))
     for f, y in bosses:
         i = min(len(pts) - 1, max(0, int(round(f * (len(pts) - 1)))))
         (x, z), (nx, nz) = front[i], nrm[i]

@@ -144,7 +144,13 @@ LAMP_DARK = mat((0.045, 0.002, 0.003), 0.10, 0.18)
 LAMP_CLEAR = mat((0.65, 0.66, 0.62), 0.05, 0.08)
 LAMP_RIB = mat((0.14, 0.003, 0.004), 0.12, 0.14)
 DOOR_INNER = mat((0.105, 0.330, 0.500), 0.18, 0.28)
-HINGE_BLUE = mat((0.155, 0.405, 0.570), 0.14, 0.32)
+# The hinge band and its bracket are BODY-COLOURED pressings -- they are painted on the
+# line with the rest of the car, and in the photograph they read as the same blue as the
+# wing. They were 2.4x the paint's albedo, which is why the gap between pocket and door
+# came out 34 luma brighter than the photograph's. What makes them look lighter in the
+# reference is that they face more sky than the wing does, and that is the renderer's job,
+# not the albedo's.
+HINGE_BLUE = mat((0.075, 0.255, 0.415), 0.18, 0.12)
 
 
 # The wet moulding and the wet cap. The Polo was photographed in the rain, and the beading
@@ -518,30 +524,69 @@ def _hinge_assembly(prog):
     # built part through the renderer's camera and minimising the squared error against
     # them -- not chosen and hoped for. A part standing 20 mm out of the panel projects
     # wider than its own length, so its size cannot be read off the image directly.
-    #     band   u 0.86..1.35  v -0.14..0.64   against  0.84..1.33  -0.19..0.60
+    #     band   u 0.84..1.32  v -0.19..0.61   against  0.84..1.33  -0.19..0.60
     #     plate  u 0.82..1.29  v  0.56..1.00   against  0.84..1.30   0.56..0.98
-    # which is a mean deviation of 5 mm, at an aperture 272 mm across.
+    # which is a mean deviation of 2 mm, at an aperture 272 mm across.
     #
     # The crank, in the band's own frame: out of the pocket floor, up over the rim, and
     # away to meet the door. z is out of the panel, and the rise is quadratic in the
     # station so the band leaves the pocket floor flat and turns as it goes.
-    rise, length, z0 = 37 * MM, 44 * MM, -14 * MM
-    path = [(length * t, z0 + rise * t * t) for t in (0.0, 0.28, 0.55, 0.80, 1.0)]
+    # z0 is POSITIVE: the band's free end lies in FRONT of the pocket's flange, not down
+    # inside it. In the photograph the beads are visible curving over the rim, so the band
+    # passes across the opening rather than emerging from it, and at z0 = -14 mm the whole
+    # left third of the part was correctly placed in projection and completely hidden
+    # behind the rim. A silhouette fit cannot see that -- u and v were right either way;
+    # only the depth was wrong, and only the picture showed it.
+    rise, length, z0 = 34 * MM, 44 * MM, 6 * MM
+    path = [(length * t, z0 + rise * t * t) for t in
+            (0.0, 0.14, 0.28, 0.42, 0.55, 0.68, 0.80, 0.90, 1.0)]
     # Three beads spaced across the width, running along the first 45 per cent of the
     # length. In the photograph they sit in the band's upper half and stop well short of
     # the door; ribs the other way round -- across the band, spaced along it -- read as a
     # corrugation, which is what the first version of this part rendered.
+    # FOUR beads at 28 mm centres, not three at 12-18. Counted and measured on a five-times
+    # magnification of the band's left edge, where the silhouette is visibly scalloped --
+    # the undulation is what gives the count and the pitch, and it varies ALONG the edge,
+    # which is what says the ribs run lengthwise. They are 9 mm across and stand 4 mm proud;
+    # at 6.8 x 3.4 they disappeared into the surface at this scale.
     band = P.stamped_strap(path, width=100 * MM, thick=2.6 * MM, flange=5.0 * MM,
-                           beads=(-0.30, -0.12, 0.06), bead_r=3.4 * MM, bead_h=3.4 * MM,
-                           bead_span=(0.0, 0.45),
+                           beads=(-0.42, -0.14, 0.14, 0.42),
+                           bead_r=4.5 * MM, bead_h=3.0 * MM,
+                           bead_span=(0.0, 0.38),
                            bosses=((0.55, 24 * MM), (0.70, -6 * MM)),
-                           boss_r=7 * MM, boss_h=1.2 * MM, material=HINGE_BLUE)
-    prog = prog.place(obj=band, at=(134 * MM, -24 * MM, 0.0), rotate=(0.0, 0.0, -8.5))
+                           boss_r=3.5 * MM, boss_h=0.8 * MM, material=HINGE_BLUE)
+    prog = prog.place(obj=band, at=(128 * MM, -24 * MM, 0.0), rotate=(0.0, 0.0, -8.5))
     plate = P.slotted_bracket(w=56 * MM, h=50 * MM, t=2.6 * MM,
                               window=(0.44, 0.20, 0.96, 0.74), hook=14 * MM,
                               hook_t=3.0 * MM, material=HINGE_BLUE)
     prog = prog.place(obj=plate, at=(148 * MM, -106 * MM, 6 * MM),
                       rotate=(0.0, 0.0, -8.5))
+    # The band is as wet as the cap is -- the reference has three dozen beads over its
+    # face, and they are the only thing on it at the scale between the beads pressed into
+    # it and the paint. Seeded on the crank itself so they sit ON the surface rather than
+    # at some remembered height above a surface that has since moved.
+    import random as _r
+    rng = _r.Random(20071)
+    for _ in range(26):
+        t = rng.uniform(0.06, 0.96)
+        wy = rng.uniform(-0.44, 0.44) * 100 * MM
+        r = rng.uniform(0.5, 1.5) * MM
+        bx = length * t
+        bz = z0 + rise * t * t
+        # Outward normal of the crank at t, so a bead on the far end does not float.
+        slope = 2.0 * rise * t / max(1e-6, length)
+        n = math.hypot(1.0, slope)
+        nx, nz = -slope / n, 1.0 / n
+        drop = (MeshProgram().uv_sphere(segments=12, rings=7, radius=r, mark="water")
+                .scale({"by": "all"}, [1.0, 1.0, 0.46])
+                .material({"by": "tag", "name": "water"}, **WATER))
+        px = 128 * MM + bx + nx * (2.6 * MM + r * 0.35)
+        pz = bz + nz * (2.6 * MM + r * 0.35)
+        a = math.radians(-8.5)
+        prog = prog.place(obj=drop,
+                          at=(px * math.cos(a) - (wy - 24 * MM) * math.sin(a),
+                              px * math.sin(a) + (wy - 24 * MM) * math.cos(a), pz),
+                          rotate=(0.0, math.degrees(math.atan2(-nx, nz)), -8.5))
     return prog
 
 
