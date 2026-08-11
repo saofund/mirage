@@ -81,11 +81,20 @@ def mat(color, metallic=0.0, roughness=0.5, maps=None, uv_scale=1.0):
 
 PAINT = mat((0.065, 0.245, 0.405), 0.32, 0.16,
             maps=TEX["fuelcap_polo_blue_paint"], uv_scale=0.060)
-# The procedural roughness map was authored for generic metallic paint and creates a
-# concentrated white lobe on this strongly crowned panel.  The photographed older paint
-# has a broader clear-coat response, so keep its colour/normal variation but fix roughness.
+# Clearcoat roughness, swept with the environment map in place: frame |diff| 51.8 at 0.05
+# rising monotonically to 54.2 at 0.29. A car's clearcoat is 0.05-0.10, not 0.29.
+#
+# A correction to my own reasoning, kept because it was confidently wrong. I expected the
+# environment map plus a smooth clearcoat to give the body the photograph's tonal spread of
+# 53 grey levels, on the grounds that "paint is mostly the world reflected in it". It does
+# not: at NORMAL incidence a dielectric returns about 4% specular, so a panel facing the
+# camera shows mostly base coat, and the render's spread went the wrong way -- 38.6 at 0.29
+# down to 35.0 at 0.05. The mirror-like reading only appears at GRAZING angles, which is
+# why the photograph's bright sweep sits where the flank turns away. The environment map is
+# necessary and it is not sufficient; the missing spread is curvature carrying the surface
+# through grazing, not reflectivity.
 PAINT.pop("roughness_map", None)
-PAINT["roughness"] = 0.29
+PAINT["roughness"] = 0.05
 PAINT["metallic"] = 0.18
 LINER = mat((0.026, 0.027, 0.030), 0.0, 0.74,
             maps=TEX["fuelcap_polo_liner"], uv_scale=0.014)
