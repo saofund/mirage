@@ -62,7 +62,20 @@ CAP_TILT = 12.0
 # composition looked like on paper; the render says otherwise. Three derivations of this
 # angle have now been wrong and one sweep has been right. When a part owns a layered
 # transform, measure the result -- do not model the transform.
-DOOR_OPEN_DEG = 105.0
+#
+# ...and that sweep is now void, because of WHAT IT WAS COMPARING. It ran with no hinge
+# assembly in the scene at all, so the gap between pocket and door was bare bodywork. The
+# door at 105 degrees is a large lens lying across exactly that gap: it won the pixel
+# comparison by covering an absence. Add the band and the plate that really occupy the
+# gap and the same score stops preferring it. A whole-frame |diff| will happily buy one
+# part's error with another part's, which is what it did here for four rounds.
+#
+# The replacement is not another sweep. It is two measurements of the door itself, taken
+# off the photograph and checked by projecting the built part through the renderer's own
+# camera (`tools/project.py`): the outer edge sits at 1.40 aperture radii and the
+# silhouette is 1.97 radii tall. At 90 degrees the model gives 1.38 and 1.97 together;
+# no other angle gets both, and 105 gives 2.23 and 2.44.
+DOOR_OPEN_DEG = 90.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
@@ -467,36 +480,92 @@ def _cap(prog):
     return prog
 
 
+def _hinge_assembly(prog):
+    """The two stampings between the pocket and the open door.
+
+    What was here before: three thin bars, 88 x 10 mm, laid across the door's inner face
+    in a three-pointed star, plus nothing at all in the gap between pocket and door. In
+    the photograph that gap is not empty and it is not spanned by bars. It holds
+
+      * a BAND about as tall as the aperture's radius, cranking out of the pocket to the
+        door, with its long edges turned toward the camera, three half-round beads pressed
+        across its inner half, and two small raised moulding marks on its face;
+      * below it a second, separate plate with a rectangular hole right through it -- the
+        bodywork shows through that hole, which is why it is built as four rails and not
+        as a dark rectangle painted on a plate.
+
+    Both are placed on the BODY, not on the door: they emerge from inside the pocket, so
+    they stay put while the door swings.
+
+    Positions come from Hough segments fitted to the photograph, converted at the
+    aperture's own scale (2.010 px/mm, from an ellipse fit to the opening). Measured, in
+    millimetres from the aperture centre with +y downward in the image:
+
+        band top edge   (126, -26) -> (185, -13),  sloping 14.9 deg
+        band bottom     around y = +86
+        plate           x 120..186,  y 80..140,  right edge vertical, base at 9.3 deg
+
+    The image is rolled 8.5 degrees (the aperture fits as an ellipse at that angle), which
+    is most of the measured slope: in the panel's own frame the band is very nearly level,
+    and the roll is applied here rather than baked into the numbers.
+    """
+    # Sizes and placements are FITTED to those four numbers per part, by projecting the
+    # built part through the renderer's camera and minimising the squared error against
+    # them -- not chosen and hoped for. A part standing 20 mm out of the panel projects
+    # wider than its own length, so its size cannot be read off the image directly.
+    #     band   u 0.86..1.35  v -0.14..0.64   against  0.84..1.33  -0.19..0.60
+    #     plate  u 0.82..1.29  v  0.56..1.00   against  0.84..1.30   0.56..0.98
+    # which is a mean deviation of 5 mm, at an aperture 272 mm across.
+    #
+    # The crank, in the band's own frame: out of the pocket floor, up over the rim, and
+    # away to meet the door. z is out of the panel, and the rise is quadratic in the
+    # station so the band leaves the pocket floor flat and turns as it goes.
+    rise, length, z0 = 37 * MM, 44 * MM, -14 * MM
+    path = [(length * t, z0 + rise * t * t) for t in (0.0, 0.28, 0.55, 0.80, 1.0)]
+    band = P.stamped_strap(path, width=100 * MM, thick=2.6 * MM, flange=5.0 * MM,
+                           beads=(0.10, 0.26, 0.42), bead_r=3.4 * MM,
+                           bosses=((0.20, 24 * MM), (0.34, -6 * MM)),
+                           boss_r=7 * MM, boss_h=1.2 * MM, material=HINGE_BLUE)
+    prog = prog.place(obj=band, at=(134 * MM, -24 * MM, 0.0), rotate=(0.0, 0.0, -8.5))
+    plate = P.slotted_bracket(w=56 * MM, h=50 * MM, t=2.6 * MM,
+                              window=(0.44, 0.20, 0.96, 0.74), hook=14 * MM,
+                              hook_t=3.0 * MM, material=HINGE_BLUE)
+    prog = prog.place(obj=plate, at=(148 * MM, -106 * MM, 6 * MM),
+                      rotate=(0.0, 0.0, -8.5))
+    return prog
+
+
 def _door(prog):
-    door_w, door_h = 270 * MM, 243 * MM
+    # SIZE AND ANGLE, both read off the photograph and both checked by projecting the
+    # built part through the renderer's own camera (`tools/project.py`) rather than by
+    # reasoning about it.
+    #
+    # The reasoning is what kept going wrong. The door's centroid stands 135 mm clear of
+    # the panel, so the camera sees it along a direction whose x component has the
+    # OPPOSITE SIGN to the one it sees the panel along; computing the view vector at the
+    # panel made 105 degrees look 4.9 degrees off edge-on when in fact it was 23, and 23
+    # degrees turns a 5 mm bright line into a 106 mm blue lens sitting over the bodywork.
+    # Parallax is not a correction for a part this far out, it is the whole effect.
+    #
+    # Two independent measurements pin it down, and at 90 degrees both land at once:
+    #   the door's outer edge is a near-vertical line at 1.40 aperture radii  (model 1.38)
+    #   its silhouette is 1.97 aperture radii tall                            (model 1.97)
+    door_w, door_h = 232 * MM, 209 * MM
     door_ref = max(door_w, door_h) / 2.0
     door_plan = [r / door_ref for r in _ellipse_plan(door_w / 2, door_h / 2, 96)]
-    # The stamped RIBS on the inner face. A fuel door is a pressing, and the reference's
-    # inner face is crossed by a raised outer ring and three radial webs — which is most of
-    # what tells you it is sheet steel and not a disc. Placed on the door before it swings,
-    # so they ride with it.
-    ribs = MeshProgram()
-    for a in (0.0, 118.0, 242.0):
-        ribs = ribs.place(obj=_box((0.088, 0.010, 0.0018), "door", HINGE_BLUE),
-                          at=(0.0, 0.0, 0.0), rotate=(0.0, 0.0, a))
     ring = (MeshProgram()
-            .profile([(0.086, 0.0), (0.098, 0.0), (0.098, 0.0022), (0.086, 0.0022)],
+            .profile([(0.074, 0.0), (0.086, 0.0), (0.086, 0.0022), (0.074, 0.0022)],
                      plane="xz", closed=True)
             .spin(axis="z", steps=64, mark="door")
             .material({"by": "tag", "name": "door"}, **HINGE_BLUE))
-    inner = ribs.place(obj=ring)
 
-    # OPEN ANGLE, from the depth residual rather than by eye. At 101 degrees the door
-    # presents its face to the camera and renders as a large lens over what the photograph
-    # shows as flat bodywork: the residual against the monocular prior put 83 mm mean and
-    # 265 mm p95 in that region against 26 mm inside the pocket, and the map is a single
-    # bright blob exactly the door's shape. The reference door is nearly edge-on.
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
                        rim=8 * MM, open_deg=DOOR_OPEN_DEG, az=0.0, hinge_r=OPEN_R * 1.06,
                        gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=DOOR_INNER,
-                       inner_details=False, inner_parts=inner)
+                       inner_details=False, inner_parts=ring)
     prog = prog.place(obj=door, at=(14 * MM, -48 * MM, 2.0 * MM))
+    prog = _hinge_assembly(prog)
 
 
     # A few beads on the inner door face; sparse enough to remain details, not a pattern.

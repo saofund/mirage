@@ -1690,3 +1690,122 @@ def emboss(prog, centre, half, depth, inset=0.35, mark=None):
     p = prog.inset({"by": "box", "min": lo, "max": hi}, thickness=inset, region=True)
     p = p.extrude({"by": "last_created"}, distance=depth)
     return p.tag({"by": "last_created"}, mark) if mark else p
+
+
+def stamped_strap(path, width, thick=0.0026, flange=0.0, beads=(), bead_r=0.0030,
+                  bosses=(), boss_r=0.006, boss_h=0.0011, steps=14,
+                  material=None, mark="door"):
+    """A wide sheet-metal band that cranks along a path, with turned edges and beads.
+
+    The part this replaces was three thin bars floating in the air beside the pocket.  In
+    the reference the thing between the pocket and the open door is not a bar at all: it is
+    a **band**, about as tall as the aperture's radius and only a little longer than it is
+    tall, with its long edges turned toward the camera, three half-round stiffening beads
+    pressed across it, and a couple of raised moulding marks on its face.  Measured off the
+    photograph its top edge runs from 126 mm to 185 mm out from the aperture centre while
+    dropping 13 mm -- a band, tilted, not a stick.
+
+    Geometry.  `path` is the crank, given as (x, z) stations in the plane perpendicular to
+    the band's width; the band is that path swept along y.  Doing it this way means the
+    crank is a real crank -- a flat plate rotated into position cannot both meet the pocket
+    rim and meet the door, which is why the earlier arms either buried themselves in the
+    wall or floated clear of the door.
+
+    `flange` turns both long edges up out of the band's face by that height, following the
+    same path.  That lip is what puts the bright line along the top and bottom edges; with
+    the band alone the part reads as a strip of paper.
+
+    `beads` are fractions along the path where a half-round rib runs across the full width.
+    `bosses` are (fraction, y) positions for the small raised moulding marks.
+    """
+    material = material or {"color": [0.16, 0.40, 0.56], "metallic": 0.32,
+                            "roughness": 0.14}
+    pts = [(float(x), float(z)) for x, z in path]
+    if len(pts) < 2:
+        raise ValueError("stamped_strap needs at least two path stations")
+
+    def normals():
+        # Outward normal of the band at every station, from the neighbouring segments.
+        out = []
+        for i in range(len(pts)):
+            a = pts[max(0, i - 1)]
+            b = pts[min(len(pts) - 1, i + 1)]
+            dx, dz = b[0] - a[0], b[1] - a[1]
+            L = math.hypot(dx, dz) or 1.0
+            out.append((-dz / L, dx / L))
+        return out
+
+    nrm = normals()
+    front = [(x + nx * thick, z + nz * thick) for (x, z), (nx, nz) in zip(pts, nrm)]
+    # Everything below is assembled in a LOCAL frame, then turned into the panel's frame
+    # in one step at the end.  `prism` lays its polygon in xy and extrudes along z, so the
+    # local axes are (x, out-of-panel, width) and the final Rx(90) sends local y to the
+    # panel's +z and local z to its -y -- hence the negated boss coordinate, so a caller
+    # still gives boss positions in the panel's own +y.  Building in the panel frame and
+    # hoping
+    # each sub-part lands right is how the bead cylinders ended up running out of the
+    # panel instead of across the band.
+    poly = [(x, z) for x, z in pts] + [(x, z) for x, z in reversed(front)]
+    p = MeshProgram().place(obj=prism(poly, -width / 2.0, width / 2.0, mark=mark))
+    if flange > 0.0:
+        # A lip standing off the band's face along both long edges. Same path, so the lip
+        # follows the crank instead of cutting across it.
+        lip = [(x + nx * flange, z + nz * flange) for (x, z), (nx, nz) in zip(front, nrm)]
+        wall = [(x, z) for x, z in front] + [(x, z) for x, z in reversed(lip)]
+        for s in (-1.0, 1.0):
+            e = s * width / 2.0
+            p = p.place(obj=prism(wall, e - s * thick, e, mark=mark))
+    for f in beads:
+        i = min(len(pts) - 1, max(0, int(round(f * (len(pts) - 1)))))
+        (x, z), (nx, nz) = pts[i], nrm[i]
+        # Half-round rib across the band. A cylinder laid along the width, sunk to its
+        # own axis in the face, is what a pressed bead looks like from any angle.
+        rib = (MeshProgram().cylinder(radius=bead_r, height=width * 0.995, sides=steps,
+                                      mark=mark)
+               .material({"by": "tag", "name": mark}, **material))
+        p = p.place(obj=rib, at=(x + nx * thick * 0.6, z + nz * thick * 0.6, 0.0))
+    for f, y in bosses:
+        i = min(len(pts) - 1, max(0, int(round(f * (len(pts) - 1)))))
+        (x, z), (nx, nz) = front[i], nrm[i]
+        # `pip` stands on its own +z; Ry(90) lays that along local +x and Rz then swings
+        # it round to the band's normal, which is the composition `place` applies.
+        p = p.place(obj=pip(r=boss_r, h=boss_h, steps=10, material=material, mark=mark),
+                    at=(x + nx * boss_h, z + nz * boss_h, -float(y)),
+                    rotate=(0.0, 90.0, math.degrees(math.atan2(nz, nx))))
+    p = MeshProgram().place(obj=p, at=(0.0, 0.0, 0.0), rotate=(90.0, 0.0, 0.0))
+    return p.material({"by": "tag", "name": mark}, **material)
+
+
+def slotted_bracket(w=0.066, h=0.060, t=0.0026, window=(0.30, 0.18, 0.52, 0.60),
+                    hook=0.014, hook_t=0.0030, material=None, mark="door"):
+    """A stamped plate with a rectangular window cut through it and a hook along one edge.
+
+    Below the strap the reference has a second, separate pressing: a plate roughly 66 mm
+    wide and 60 mm tall with a big rectangular hole through it and a tab turned off its
+    lower edge.  It reads as a hole because it is a hole -- the body behind shows through
+    it -- so it is built as four rails round the opening rather than as a plate with a dark
+    rectangle painted on, which is what a texture would have given.
+
+    `window` is (x0, y0, x1, y1) as fractions of the plate, measured from its lower left.
+    """
+    material = material or {"color": [0.16, 0.40, 0.56], "metallic": 0.32,
+                            "roughness": 0.14}
+    x0, y0, x1, y1 = window
+    ax, bx = -w / 2 + x0 * w, -w / 2 + x1 * w
+    ay, by = -h / 2 + y0 * h, -h / 2 + y1 * h
+    rails = [
+        [(-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, ay), (-w / 2, ay)],       # below
+        [(-w / 2, by), (w / 2, by), (w / 2, h / 2), (-w / 2, h / 2)],         # above
+        [(-w / 2, ay), (ax, ay), (ax, by), (-w / 2, by)],                     # left
+        [(bx, ay), (w / 2, ay), (w / 2, by), (bx, by)],                       # right
+    ]
+    p = MeshProgram()
+    for r in rails:
+        p = p.place(obj=prism(r, 0.0, t, mark=mark))
+    if hook > 0.0:
+        # The tab turned off the bottom edge, standing proud toward the camera.
+        p = p.place(obj=prism([(-w * 0.22, 0.0), (w * 0.22, 0.0),
+                               (w * 0.22, hook_t), (-w * 0.22, hook_t)],
+                              0.0, hook, mark=mark),
+                    at=(0.0, -h / 2, 0.0))
+    return p.material({"by": "tag", "name": mark}, **material)
