@@ -44,20 +44,21 @@ CAP_TILT = 12.0
 # It was two literals in two places -- the door and the ribs that ride on it -- which is
 # why a sweep had to rewrite the source to move it, and why the two could silently
 # disagree. A parameter the loop is meant to estimate has to be reachable.
-# 101, and the story of this number is the most useful thing in this file.
+# 80, SOLVED rather than swept. The door is the largest single error in this render -- a
+# quarter of the frame at a mean local difference of 85, a third of the total -- because it
+# presents its FACE to the camera where the photograph shows its edge.
 #
-# Sweeping it against the depth residual in the door's image region gave a clean minimum:
-# 6.6 mm at 70 against 70.5 at 100 and 78.6 at 115, an order of magnitude. It is also
-# completely wrong -- at 70 the door lies ACROSS the pocket and hides it. The metric was
-# measuring a crop whose CONTENT changes with the parameter, so a door swung over the
-# opening puts a flat surface at body depth across the whole region, which matches the
-# prior's smooth body far better than an open pocket does. The residual rewarded occlusion.
+# `fuel_door` composes: place at the hinge, rotate(0, -open, 0), translate out, then
+# rotate(0, 0, az+180). That last half turn flips x, so the door's normal ends up
+# n = (-sin(open), 0, cos(open)). Edge-on means n is perpendicular to the view direction,
+# and the camera looks along (-0.175, -0.012, -0.984), so n.d = 0 gives open = 79.9.
 #
-# A depth residual alone cannot estimate a parameter that changes what is visible. It needs
-# a silhouette term -- the photographed door covers a particular area with a particular
-# outline, and 70 gets both wrong -- which `mirage.compare.silhouette` provides and this
-# loop does not yet use. Until it does, this stays where the picture puts it.
-DOOR_OPEN_DEG = 101.0
+# At 101 that dot product is 0.344 -- the face, nearly square-on. Two sweeps had already
+# pointed here and I read neither correctly: the silhouette sweep found 85 the best of its
+# candidates (area ratio 2.6 against 9-10 elsewhere) and the depth sweep found 70, which
+# straddle it. Three lines of arithmetic against the camera would have been quicker than
+# either.
+DOOR_OPEN_DEG = 80.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
