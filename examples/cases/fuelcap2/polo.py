@@ -79,6 +79,27 @@ CAP_TILT = 12.0
 # 1.97, every one inside 3 mm on an aperture 272 mm across. 105 degrees gives 2.23 and
 # 2.44, and the stand-off matters because at 1.06 the door's near edge creeps 10 mm left
 # and eats the part of the band the photograph shows clear of it.
+# The panel's second curvature, and where its apex sits. A rear quarter's vertical radius
+# is around 2.5 m, which over this panel's 1.1 m half-width is 240 mm of sag, and the
+# filler sits below the middle of the flank so the apex is offset.
+#
+# These are here because a car's flank is doubly curved and its filler is not in the middle
+# of it -- NOT because they improved anything. They did not, and the negative result is
+# worth more than the parameter. Over the bodywork the photograph falls 106 grey levels
+# from the top of the frame to the bottom. Sweeping the cross curvature 0 -> 1000 mm and
+# the apex offset 0 -> 0.80 of the half-width, the largest fall any combination produced
+# was 32, and most were slightly INVERTED. The geometry was changing the whole time -- the
+# panel's z range went from 0.35 m to 0.59 m -- so this is not a plumbing failure.
+#
+# Which means that gradient is not the panel's shape. It is a REFLECTION feature: the
+# bright sweep runs diagonally across the reference where the flank passes through the
+# angle that returns the sky, and the dark lower half is ground and clutter. Two hypotheses
+# about it have now been wrong (first that reflectivity was missing, then that curvature
+# was), and both were wrong in the same way -- reasoning about a mechanism instead of
+# measuring which one the picture responds to. The next attempt should sweep the
+# environment's own structure against this column of five numbers, not the geometry.
+PANEL_CROSS = 240 * MM
+PANEL_APEX = 0.30
 DOOR_OPEN_DEG = 88.0
 DOOR_HINGE_R = 1.12
 CAP_SPIN = 84.0
@@ -649,6 +670,7 @@ def build():
                    # a reason that stops being physical, so this stops at a curvature
                    # a Polo actually has and takes the 3/4 of the gain that is real.
                    crown=280 * MM, crown_ax=math.radians(6.0),
+                   crown_cross=PANEL_CROSS, crown_at=(0.0, PANEL_APEX),
                    hole_plan=radii, material=PAINT)
     prog = _panel_details(prog)
 

@@ -715,8 +715,8 @@ def _norm_superellipse(n, steps):
 
 
 def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48,
-          squareness=1.0, crown=0.0, crown_ax=0.0, hole_stretch=1.0, hole_ax=0.0,
-          hole_plan=None):
+          squareness=1.0, crown=0.0, crown_ax=0.0, crown_cross=0.0, crown_at=(0.0, 0.0),
+          hole_stretch=1.0, hole_ax=0.0, hole_plan=None):
     """The body panel around the pocket: an annular plate, not a plate with a hole in it.
 
     Same reasoning as `well` — the aperture is built, not subtracted. A ring of quads from
@@ -730,13 +730,41 @@ def panel(size=0.44, hole_d=0.135, thick=0.010, material=None, steps=48, ring=48
     # recess. `crown` is that sag at the panel edge, `crown_ax` the direction it bends
     # about. Zero gives the flat plate this kit started with, which reads in a depth map as
     # a machined surface plate with a car's fuel cap sitting in it.
+    # ...and a flank is not a cylinder either, which is what `crown` alone makes it. A
+    # cylinder is straight in one whole direction, so half of its surface directions have
+    # zero curvature and the normal never leaves a single great circle. Measured against
+    # the reference that is the largest single error left in this case: over the bodywork
+    # the photograph runs from 92 to 226 grey levels, a spread of 134, and a cylindrical
+    # panel gives 157 to 185 -- a spread of 28, one fifth as much, at any albedo, any
+    # roughness and any environment. It is not the shading. There is nothing there to
+    # shade.
+    #
+    # `crown_cross` is the sag about the PERPENDICULAR axis. A real rear quarter bends
+    # both ways at once -- around the car, and along it into the wheel arch -- and a
+    # doubly curved surface sweeps its normal across a patch instead of an arc, which is
+    # what carries part of the panel through the grazing angles where a clearcoat starts
+    # returning the sky.
+    # `crown_at` moves the crown's APEX off the aperture, and without it neither crown can
+    # produce what the reference shows. A parabola centred on the hole is symmetric: the
+    # panel above the filler and the panel below it curve away by exactly the same amount,
+    # so they take the same light and the body renders as one flat tone whatever the
+    # curvature is. Sweeping `crown_cross` from 0 to 300 mm moved the body's tonal spread
+    # from 72 to 73 -- the parameter was working, the shape was wrong.
+    #
+    # A car's filler is not in the middle of its flank. It sits low and aft, so the surface
+    # above it rolls toward the roof and the surface below it toward the sill, and the
+    # gradient that produces is the largest tonal feature on the bodywork: the photograph
+    # falls about 100 grey levels from the top of the frame to the bottom, where a
+    # symmetric panel falls 13.
     ca, sa = math.cos(crown_ax), math.sin(crown_ax)
+    t0, u0 = crown_at
 
     def z_of(x, y, z0):
-        if not crown:
+        if not crown and not crown_cross:
             return z0
-        t = (x * ca + y * sa) / max(s, 1e-9)
-        return z0 - crown * t * t
+        t = (x * ca + y * sa) / max(s, 1e-9) - t0
+        u = (-x * sa + y * ca) / max(s, 1e-9) - u0
+        return z0 - crown * t * t - crown_cross * u * u
 
     verts, faces = [], []
     for z in (0.0, -thick):
