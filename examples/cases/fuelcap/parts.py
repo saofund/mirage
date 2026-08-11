@@ -1869,3 +1869,86 @@ def slotted_bracket(w=0.066, h=0.060, t=0.0026, window=(0.30, 0.18, 0.52, 0.60),
                               0.0, hook, mark=mark),
                     at=(0.0, -h / 2, 0.0))
     return p.material({"by": "tag", "name": mark}, **material)
+
+
+def loft_sections(sections, angles, steps=96, plan=None, ref=1.0, mark=None,
+                  centre=None):
+    """Loft a closed shell from SECTIONS THAT DIFFER, interpolated around the axis.
+
+    Why this exists
+    ---------------
+    Everything else in this kit that makes a hollow -- `spin`, `spin(plan=)`, the
+    hand-written ring loft in case 28 -- builds one section and varies its RADIUS with
+    angle. That family is closed under "bowl". At every angle the radius falls and the
+    depth falls, both monotonically, so the contour never reverses and no part of the
+    surface can ever face down and inward. A moulded filler pocket is not in that family:
+    over the top it is a canopy whose underside faces the floor, and at the bottom it is a
+    flat shelf. Case 28 spent four rounds adding analytic correction terms to a circle,
+    and its own comment said "scoop" while its arithmetic said "bowl".
+
+    The failure has a signature worth naming, because it is not confined to this part:
+    when the generator cannot make the form, the modeller decorates the wrong form. The
+    canopy in the reference is one continuous volume; the model grew a separate embossed
+    crescent rib in roughly the right place, which reads as an eyebrow stuck on a bowl.
+
+    So: no formula. Hand in the sections. An overhang is a section whose radius INCREASES
+    with depth -- nothing more -- and the comment and the geometry cannot disagree because
+    there is no longer anything to disagree with.
+
+    Parameters
+    ----------
+    sections : list of polylines, each [(r, z), ...] with the SAME number of stations, so
+        station j of every section becomes ring j. `r` is a fraction of the local radius.
+    angles : the angle in radians each section is measured at, ascending; wrapped as a
+        closed periodic set so the shell has no seam.
+    plan : optional per-angle outer radius, exactly as the rest of the kit uses it, so a
+        measured aperture outline still drives the mouth.
+    centre : optional callable (u) -> (cx, cy) offsetting each ring, for a throat that
+        does not sit under the middle of the opening.
+
+    Interpolation between sections is cosine in angle -- C1 at the sections themselves,
+    which matters because a linear blend leaves a visible crease along every section line
+    and those creases catch light exactly where a moulding has none.
+    """
+    n = len(sections)
+    if n < 2:
+        raise ValueError("loft_sections needs at least two sections")
+    m = len(sections[0])
+    if any(len(s) != m for s in sections):
+        raise ValueError("every section needs the same number of stations")
+    ang = [float(a) % TAU for a in angles]
+
+    def blend(a):
+        # Locate `a` between two sections and blend them with a smoothstep in angle.
+        for k in range(n):
+            a0, a1 = ang[k], ang[(k + 1) % n]
+            span = (a1 - a0) % TAU
+            off = (a - a0) % TAU
+            if off <= span or span == 0.0:
+                t = 0.0 if span == 0.0 else off / span
+                w = t * t * (3.0 - 2.0 * t)
+                s0, s1 = sections[k], sections[(k + 1) % n]
+                return [(s0[j][0] * (1 - w) + s1[j][0] * w,
+                         s0[j][1] * (1 - w) + s1[j][1] * w) for j in range(m)]
+        return list(sections[0])
+
+    cols = []
+    for i in range(steps):
+        a = TAU * i / steps
+        cols.append(blend(a))
+
+    verts = []
+    for j in range(m):
+        for i in range(steps):
+            a = TAU * i / steps
+            r_frac, z = cols[i][j]
+            rr = (plan[i % len(plan)] if plan is not None else ref) * r_frac
+            cx, cy = centre(j / max(1, m - 1)) if centre else (0.0, 0.0)
+            verts.append((cx + rr * math.cos(a), cy + rr * math.sin(a), z))
+    faces = []
+    for j in range(m - 1):
+        a0, b0 = j * steps, (j + 1) * steps
+        for i in range(steps):
+            k = (i + 1) % steps
+            faces.append([a0 + i, a0 + k, b0 + k, b0 + i])
+    return MeshProgram().mesh(verts=verts, faces=faces, mark=mark)

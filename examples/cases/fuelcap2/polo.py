@@ -37,7 +37,13 @@ TAU = 2.0 * math.pi
 OPEN_RX = 129.3 * MM
 OPEN_RY = 142.7 * MM
 OPEN_R = max(OPEN_RX, OPEN_RY)
-CAP_D = 116.0 * MM
+# 560/257 is 2.179, not the 2.46 written above, and comparing the aperture's most
+# foreshortened direction with the cap's LONG axis is not comparing like with like anyway.
+# Fitting an ellipse to each and taking major against major -- which is the unforeshortened
+# diameter in both cases -- gives 553.3 / 255.2 = 2.168. The model was built at 2.460, so
+# the cap was 13 per cent too small inside an aperture that was right, and "the hole is too
+# big and the cap too small" is the first thing anyone says about the render.
+CAP_D = 131.6 * MM
 POCKET_DEPTH = 48.0 * MM
 CAP_TILT = 12.0
 # The door's open angle, as a module constant so the depth-residual loop can sweep it.
@@ -235,89 +241,51 @@ def _ring_solid(r_outer, r_inner, z_front, z_back, steps=96, mark="well", materi
 
 
 def _smooth_liner(plan, ref, depth=POCKET_DEPTH, steps=96):
-    """Continuous asymmetric pressing whose throat follows the lowered filler neck.
+    """The pocket, as FOUR TRACED SECTIONS lofted together -- not a circle plus terms.
 
-    A lathed profile necessarily draws concentric bands.  This Polo moulding does not:
-    its throat is about 25 mm below the aperture centre, leaving a tall hood above the
-    cap and a short drain shelf below it.  Interpolated rings preserve that measured
-    silhouette while giving the renderer enough strips to shade it as one surface.
+    What this replaces, and why it had to be replaced rather than tuned: the old generator
+    wrote radius and depth as functions of the ring index with analytic corrections for
+    angle. Every such surface is a bowl. Checked directly, its radius fell monotonically
+    and its depth fell monotonically at every angle, so the contour never reversed and no
+    part of it could face down and inward -- while its own comment described a scoop. Four
+    rounds of correction terms went into that gap, and the last of them added an embossed
+    crescent on the outside to stand in for the canopy, which read as an eyebrow.
+
+    A section is just a polyline. An overhang is a section whose radius INCREASES with
+    depth. There is no formula to get wrong and nothing for a comment to disagree with.
+
+    The four, in the panel's frame (+y up), with radii as fractions of the aperture's own
+    measured outline and depths in metres:
+
+      TOP      the canopy. Turns in hard, then rolls back OUT under itself -- 0.60 at
+               -60 mm opening to 0.68 at -76. That reversal is the whole point: it is the
+               only way the surface at twelve o'clock can face the floor, and the
+               photograph reads 31 there against a bowl's 70.
+      SIDES    the plain walls, steep and nearly straight, 0.9 to 0.62.
+      BOTTOM   the drain shelf. Drops fast to -26 mm and then runs in almost FLAT, which
+               is why it faces up and reads lighter than the wall above it.
+
+    Radial positions come from the reference: a per-angle radial luma profile inside the
+    aperture puts the wall's dark band between 0.5 and 0.9 of the radius at nearly every
+    angle, with the flange bright outside 0.9.
     """
-    # THE FLANGE, which this part did not have. Between the paint's rolled edge and the
-    # bowl's mouth the photograph has a wide, nearly flat black annulus — about a quarter of
-    # the aperture radius, carrying the two moulding bosses and catching the one soft
-    # highlight in the whole pocket. Without it the liner runs straight from the paint into
-    # the bowl, and the entire aperture renders as one flat dark disc with a cap in it,
-    # which is what it did.
-    #
-    # `flange` is that annulus as a fraction of the radius; the bowl proper starts inside it.
-    flange = 0.24
-    rings = 26
-    verts = []
-    for j in range(rings):
-        u = j / (rings - 1)
-        if u <= 0.30:                       # the flange: barely dropping, barely narrowing
-            t = u / 0.30
-            radial = 1.0 - flange * t
-            z = -3.0 * MM - 5.0 * MM * t * t
-            centre_x = 0.0
-            centre_y = 0.0
-            hood_k = 0.0
-        else:                               # the bowl
-            v = (u - 0.30) / 0.70
-            ease = v * v * (3.0 - 2.0 * v)
-            # NEARLY STRAIGHT-SIDED. At a 0.46 shrink the throat closes to the cap's own
-            # diameter and the cap fills the bowl with no black annulus round it; the
-            # photograph has the cap at about 55% of the bowl's width all the way down,
-            # which is a deep cylinder with a little draft, not a funnel.
-            radial = (1.0 - flange) * (1.0 - 0.10 * ease)
-            z = -8.0 * MM - depth * ease
-            centre_x = CAP_AT[0] * ease
-            centre_y = CAP_AT[1] * ease
-            hood_k = ease
-        for i in range(steps):
-            a = TAU * i / steps
-            directional_r = ref * plan[i]
-            # The upper hood rolls farther inward than the drain shelf at the bottom.
-            hood = max(math.sin(a), 0.0) * 4.0 * MM * hood_k
-            r = directional_r * radial - hood
-            # ...and Z VARIES WITH ANGLE, which is the whole point. Every ring here used
-            # to be planar -- z was a function of the ring index alone -- and a stack of
-            # planar rings can only ever be a bowl. It cannot have a canopy that comes
-            # forward over one side or a shelf that sits high on the other, because both
-            # of those are the same ring at two different depths.
-            #
-            # The reference is not a bowl. It is a moulded scoop: a hood over the top that
-            # faces DOWN, and a flat drain shelf at the bottom-left that faces UP. The
-            # signature is unmistakable once measured -- inside the opening the photograph
-            # reads 31 at twelve o'clock and 40 on the floor, and the planar-ring version
-            # read 70 and 22. Not merely wrong: INVERTED. A surface whose deepest and most
-            # occluded point is always at the bottom has no choice about that.
-            over = max(math.sin(a), 0.0) ** 1.4          # toward the top
-            lift = max(-math.sin(a), 0.0) ** 1.2         # toward the bottom
-            za = (z + POCKET_HOOD * over * hood_k
-                    + POCKET_SHELF * lift * hood_k)
-            verts.append((centre_x + r * math.cos(a),
-                          centre_y + r * math.sin(a), za))
-    faces = []
-    for j in range(rings - 1):
-        a0, b0 = j * steps, (j + 1) * steps
-        for i in range(steps):
-            k = (i + 1) % steps
-            faces.append([a0 + i, a0 + k, b0 + k, b0 + i])
-    # RADIUS THE CREASES. Every edge on an injection moulding has a radius on it — the
-    # tool cannot make a zero-radius corner and the part could not leave it if it could —
-    # and a zero-radius corner is a large part of why a render reads as CAD. This loft's
-    # flange/bowl junction is a 96-edge ring, so `edge_bevel` can round it.
-    #
-    # `interior` matters: without it `sharp` also returns the loft's two open rims, which
-    # cannot be bevelled, and the prune cascades until nothing is left. The angle has to be
-    # low enough to catch the WHOLE ring — at 25 degrees only 54 of the 96 qualify, the
-    # ring is broken, and every one of them is pruned as a lone cut.
-    return (MeshProgram().mesh(verts=verts, faces=faces, mark="well")
-            .edge_bevel({"by": "sharp", "angle": 6.0, "interior": True}, width=0.20)
-            .material({"by": "tag", "name": "well"}, **LINER_WET))
+    fl = 1.0 - 0.10                      # the flange's inner edge
+    top = [(1.00, -3 * MM), (fl, -8 * MM), (0.86, -22 * MM), (0.72, -42 * MM),
+           (0.60, -60 * MM), (0.64, -70 * MM), (0.68, -76 * MM)]
+    side = [(1.00, -3 * MM), (fl, -8 * MM), (0.88, -20 * MM), (0.78, -36 * MM),
+            (0.70, -50 * MM), (0.66, -60 * MM), (0.62, -66 * MM)]
+    bottom = [(1.00, -3 * MM), (fl, -8 * MM), (0.90, -18 * MM), (0.82, -26 * MM),
+              (0.74, -29 * MM), (0.66, -31 * MM), (0.58, -34 * MM)]
+    sections = [side, top, side, bottom]
+    angles = [0.0, math.pi / 2, math.pi, 3 * math.pi / 2]
 
+    # The throat slides toward the cap as it goes down, so the two cannot disagree.
+    def centre(u):
+        e = u * u * (3.0 - 2.0 * u)
+        return (CAP_AT[0] * e, CAP_AT[1] * e)
 
+    return P.loft_sections(sections, angles, steps=steps, plan=[ref * p for p in plan],
+                           mark="well", centre=centre)
 
 def _ring_box(mesh, j0, j1, a0, a1, steps=96, pad=0.002):
     """A world box covering rings j0..j1 of the loft over the angular span a0..a1 degrees.
@@ -354,11 +322,14 @@ def _liner_features(prog):
     """
     mesh = prog.build()
     for name, (j0, j1, a0, a1), depth, ins in (
-            ("drain shelf",  (14, 17, 250, 290), -0.0035, 0.30),
-            ("hood rib",     (12, 16,  60, 120),  0.0022, 0.42),
-            ("latch land",   (11, 15, 155, 205),  0.0028, 0.28),
-            ("flange pad R", ( 1,  3,  40,  70),  0.0018, 0.34),
-            ("flange pad L", ( 1,  3, 110, 140),  0.0015, 0.34)):
+            # Ring indices are into the LOFT, which now emits 7 stations, not 26.
+            ("drain shelf",  ( 3,  5, 250, 290), -0.0035, 0.30),
+            # (the "hood rib" that used to be here is gone -- see _smooth_liner. It was a
+            #  raised crescent embossed onto a bowl to stand in for a canopy the generator
+            #  could not make, and it read as an eyebrow stuck on.)
+            ("latch land",   ( 2,  4, 155, 205),  0.0028, 0.28),
+            ("flange pad R", ( 0,  1,  40,  70),  0.0018, 0.34),
+            ("flange pad L", ( 0,  1, 110, 140),  0.0015, 0.34)):
         box = _ring_box(mesh, j0, j1, a0, a1)
         if box is None:
             print(f"  liner feature '{name}': no rings in that band, skipped")
@@ -463,7 +434,13 @@ def _latch(prog):
     """
     # the housing, let into the wall and drafted
     plate = (_box((52 * MM, 60 * MM, 5 * MM), "well", LINER)
-             .inset({"by": "normal", "axis": "x", "sign": 1.0}, thickness=0.22, region=True)
+             # +Z, not +X. The housing is 52 x 60 mm and 5 mm THICK, so its large faces
+             # are the z pair; `axis="x"` selected a 60 x 5 mm sliver on its edge. The
+             # deep face recess this comment describes was never made -- the render had a
+             # plain bright rectangle where the reference has a dark, deeply let-in
+             # pressing. The comment was right and the selector was wrong, which is the
+             # hardest kind to notice: nothing errors, the shape is simply absent.
+             .inset({"by": "normal", "axis": "z", "sign": 1.0}, thickness=0.22, region=True)
              .extrude({"by": "last_created"}, distance=-3.2 * MM)
              .material({"by": "all"}, **LINER))
     prog = prog.place(obj=plate, at=(-88 * MM, -3 * MM, -22 * MM))
