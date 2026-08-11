@@ -78,7 +78,12 @@ def _place_xform(V, t, rot, s):
 
 
 _MAP_KEYS = ("albedo_map", "roughness_map", "normal_map", "uv_scale",
-             "decal_origin", "decal_du", "decal_dv")
+             "decal_origin", "decal_du", "decal_dv",
+             # A clear dielectric is an INTERFACE, not a scattering surface. Some objects
+             # ARE their refraction -- a water bead is a lens carrying a distorted image of
+             # whatever is under it, a lamp lens is a coloured one -- and no opaque material
+             # approximates them: they come out as white blobs or flat plastic.
+             "transmission", "ior", "emission")
 
 
 def _place_material(pm):

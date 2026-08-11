@@ -94,14 +94,20 @@ RUBBER = mat((0.008, 0.008, 0.009), 0.0, 0.84)
 # rendered 36 luma ABOVE the photograph once the lighting was corrected -- the dark
 # scene had been hiding it.
 STEEL = mat((0.026, 0.027, 0.030), 0.48, 0.58)
-# A water bead over near-black plastic is DARK. It is a transparent lens: it refracts what
-# is underneath, which here is a 0.06 cap, and it returns one pinpoint where the sky
-# reflects off its crown. At 0.34 albedo every bead rendered as a solid white blob -- fifty
-# specks of paint. The comment beside this line already said "each one produces the tiny
-# white specular point visible in the photo", and the point was right; the number was not.
-# Dark body, very low roughness, and the highlight comes from the specular lobe alone.
-WATER = mat((0.045, 0.050, 0.058), 0.0, 0.035)
-LAMP_RED = mat((0.31, 0.006, 0.008), 0.18, 0.090)
+# REAL WATER, now that the tracer has transmission. A bead is a lens: it refracts what is
+# under it and returns a specular pinpoint off its crown, which is why a photographed one
+# reads as a dark distorted disc with a bright speck. Two rounds were spent faking that with
+# an opaque material -- 0.34 albedo gave fifty white blobs, 0.045 gave fifty invisible
+# smudges -- because no opaque BSDF has the shape. `transmission` is what it needed.
+WATER = mat((0.86, 0.90, 0.93), 0.0, 0.030)
+WATER["transmission"] = 1.0
+WATER["ior"] = 1.33
+# The lamp lens is a COLOURED lens over a reflector, not red paint: its colour comes
+# from absorption on the way through. As an opaque material it read as a flat red
+# cartoon, which is what it has looked like in every render of this case.
+LAMP_RED = mat((0.52, 0.020, 0.026), 0.0, 0.055)
+LAMP_RED["transmission"] = 0.82
+LAMP_RED["ior"] = 1.55
 LAMP_DARK = mat((0.045, 0.002, 0.003), 0.10, 0.18)
 LAMP_CLEAR = mat((0.65, 0.66, 0.62), 0.05, 0.08)
 LAMP_RIB = mat((0.14, 0.003, 0.004), 0.12, 0.14)

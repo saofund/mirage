@@ -44,7 +44,8 @@ struct MapFrame {
     V3 o{0, 0, 0}, du{1, 0, 0}, dv{0, 0, 1};
 };
 
-struct Tri { V3 a, b, c, n; V3 na, nb, nc; V3 albedo; double metallic; double rough; V3 emission{0, 0, 0};
+struct Tri { V3 a, b, c, n; V3 na, nb, nc; V3 albedo; double metallic; double rough;
+             double transmission = 0.0, ior = 1.5; V3 emission{0, 0, 0};
              int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
              int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; MapFrame map;  // image-map indices + layout
              int oid = 0; };   // 1-based index into RenderSettings::id_tags, 0 = untagged
@@ -99,7 +100,7 @@ struct Hit {
     V3 n{0, 0, 1};    // geometric normal (ray offsets, ground, backface side)
     V3 ns{0, 0, 1};   // shading normal (interpolated; == n when flat-shaded)
     V3 albedo{0, 0, 0};
-    double metallic = 0.0, rough = 0.5;
+    double metallic = 0.0, rough = 0.5, transmission = 0.0, ior = 1.5;
     V3 emission{0, 0, 0};
     int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
     int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; MapFrame map;
@@ -331,6 +332,7 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
                     if (dot(nn, d) > 0) { nn = nn * -1.0; sn = sn * -1.0; }  // two-sided
                     h.n = nn; h.ns = sn;
                     h.albedo = t.albedo; h.metallic = t.metallic; h.rough = t.rough;
+                    h.transmission = t.transmission; h.ior = t.ior;
                     h.emission = t.emission; h.tex = t.tex; h.tex_scale = t.tex_scale; h.tex2 = t.tex2;
                     h.alb_tex = t.alb_tex; h.rgh_tex = t.rgh_tex; h.nrm_tex = t.nrm_tex; h.map = t.map;
                     h.oid = t.oid;
@@ -511,6 +513,42 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
                     add(mulv(mulv(beta, fr), ls.Le) * (G / ls.pdf_area), bounce);
                 }
             }
+        }
+
+        // TRANSMISSION, before the opaque lobes. A clear dielectric is not a surface that
+        // scatters -- it is an interface. The ray either reflects off it or bends through it,
+        // and which one happens is Fresnel's business, so sample that and follow one path.
+        // Refraction is why a water bead looks like a bead: it carries a distorted image of
+        // whatever is beneath it. No opaque BSDF can stand in for that.
+        if (h.transmission > 0.0 && rng.next() < h.transmission) {
+            const bool entering = dot(d, h.n) < 0.0;   // `d` is still the incoming direction here
+            const V3 Nf = entering ? N : N * -1.0;
+            const double eta = entering ? (1.0 / h.ior) : h.ior;
+            const double cosi = std::clamp(dot(V, Nf), -1.0, 1.0);
+            const double k = 1.0 - eta * eta * (1.0 - cosi * cosi);
+            // Schlick against the real index, so the grazing rim brightens the way glass does
+            const double r0d = (1.0 - h.ior) / (1.0 + h.ior);
+            const double R0 = r0d * r0d;
+            const double Fr = (k < 0.0) ? 1.0    // total internal reflection
+                                        : R0 + (1.0 - R0) * std::pow(1.0 - cosi, 5.0);
+            o = p;
+            if (rng.next() < Fr) {
+                d = reflectv(V, Nf);
+                o = p + Nf * 1e-4;
+            } else {
+                d = norm(V * -eta + Nf * (eta * cosi - std::sqrt(std::max(k, 0.0))));
+                o = p - Nf * 1e-4;
+                // Beer-ish tint on the way through: a coloured lens (a tail lamp) owes its
+                // colour to absorption in the medium, not to a painted surface.
+                beta = mulv(beta, alb);
+            }
+            spec_bounce = true;
+            if (bounce >= 3) {
+                double q = std::max({beta[0], beta[1], beta[2]});
+                if (rng.next() > q) break;
+                beta = beta * (1.0 / std::max(q, 1e-4));
+            }
+            continue;
         }
 
         // indirect: stochastically pick the diffuse or specular lobe
@@ -728,6 +766,8 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         const V3 alb = fm.set ? V3{fm.color[0], fm.color[1], fm.color[2]} : sc.albedo;
         const double met = fm.set ? fm.metallic : sc.metallic;
         const double rgh = fm.set ? fm.roughness : sc.roughness;
+        const double tr = fm.set ? fm.transmission : 0.0;
+        const double ior = fm.set ? fm.ior : 1.5;
         const V3 emis = fm.set ? V3{fm.emission[0], fm.emission[1], fm.emission[2]} : V3{0, 0, 0};
         const int tex = fm.set ? fm.tex : 0;
         const V3 tc2{fm.tex_color2[0], fm.tex_color2[1], fm.tex_color2[2]};
@@ -750,6 +790,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
             t.n = n;
             t.na = cn[0]; t.nb = cn[i]; t.nc = cn[i + 1];   // fan: corner 0 is shared by every tri
             t.albedo = alb; t.metallic = met; t.rough = rgh; t.emission = emis;
+            t.transmission = tr; t.ior = ior;
             t.tex = tex; t.tex_scale = fm.tex_scale; t.tex2 = tc2;
             t.alb_tex = at; t.rgh_tex = rt; t.nrm_tex = nt; t.map = mf;
             t.oid = oid;

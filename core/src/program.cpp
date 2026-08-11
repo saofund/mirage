@@ -98,6 +98,11 @@ void read_material_maps(const json& j, Material& m) {
     if (j.contains("roughness_map")) m.roughness_map = j.at("roughness_map").get<std::string>();
     if (j.contains("normal_map"))    m.normal_map    = j.at("normal_map").get<std::string>();
     m.uv_scale = j.value("uv_scale", 1.0);
+    // A clear dielectric is an interface, not a scattering surface: it reflects or it
+    // refracts, and some objects (a water bead, a lamp lens) ARE that refraction.
+    m.transmission = j.value("transmission", 0.0);
+    m.ior = j.value("ior", 1.5);
+    if (j.contains("emission")) m.emission = json_vec3(j, "emission", {0, 0, 0});
     if (j.contains("decal_origin")) {
         m.decal = true;
         m.decal_origin = json_vec3(j, "decal_origin", {0, 0, 0});

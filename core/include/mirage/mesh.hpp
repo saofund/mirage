@@ -59,6 +59,16 @@ struct Material {
     std::array<double, 3> color{0.8, 0.8, 0.8};
     double metallic = 0.0;
     double roughness = 0.5;
+    // TRANSMISSION. 0 = opaque (everything before this existed), 1 = a clear dielectric that
+    // refracts. `ior` is its refractive index -- 1.33 water, 1.5 glass, 1.55 acrylic.
+    //
+    // This is not a convenience. Some objects ARE their refraction and cannot be
+    // approximated by any opaque BSDF: a water bead on a panel is a lens showing a distorted
+    // image of what is under it plus one specular pinpoint, and a tail lamp is a coloured
+    // lens over a reflector. Faked with an opaque material they come out as white blobs or
+    // flat red plastic, which is exactly what this repo's fuel-cap work kept producing.
+    double transmission = 0.0;
+    double ior = 1.5;
     std::array<double, 3> emission{0.0, 0.0, 0.0};   // radiance emitted (0 = not a light)
     int tex = 0;                                     // procedural texture: 0 none, 1 wood, 2 fabric, 3 stone
     double tex_scale = 4.0;
