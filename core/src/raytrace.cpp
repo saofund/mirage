@@ -117,13 +117,28 @@ constexpr double SUN_SOFT = 0.025;  // angular jitter -> soft penumbra
 
 // Sky-only environment (the sun is added via NEE, never via the sky, so it can't
 // be double-counted or spawn fireflies). A cool horizon->zenith gradient fill.
-V3 sky(const V3& d, const V3& tint = V3{1, 1, 1}, double flat = 0.0) {
+V3 sky(const V3& d, const V3& tint = V3{1, 1, 1}, double flat = 0.0, double ground = 0.0) {
     const V3 horizon{0.52, 0.60, 0.76}, zenith{0.16, 0.28, 0.52};
     const double up = std::clamp(d[2] * 0.5 + 0.5, 0.0, 1.0);
     V3 c = (horizon * (1.0 - up) + zenith * up) * 0.75;
     if (flat > 0.0) {                       // blend toward a uniform dome: overcast
         const V3 mean = (horizon + zenith) * 0.5 * 0.75;
         c = c * (1.0 - flat) + mean * flat;
+    }
+    // THE LOWER HEMISPHERE. Outdoors, half of what a surface sees is the ground, and the
+    // ground is dark: that is why the lower half of every car body is darker than its upper
+    // half, by a factor of three on the reference photograph here. Without it a vertical
+    // panel is lit as strongly from below as from above and renders as one flat tone --
+    // which is exactly what a filler-region render was doing, at four times the
+    // photograph's brightness along the bottom.
+    //
+    // Deliberately separate from `--no-ground`, which removes the floor GEOMETRY. Dropping
+    // a floor plane out of a close-up is normal; making the world glow from underneath is
+    // not, and the two had been the same switch.
+    if (ground > 0.0 && d[2] < 0.0) {
+        const double t = std::clamp(-d[2] * 1.6, 0.0, 1.0) * ground;
+        const V3 earth{0.055, 0.050, 0.045};
+        c = c * (1.0 - t) + earth * t;
     }
     return {c[0] * tint[0], c[1] * tint[1], c[2] * tint[2]};
 }
@@ -261,7 +276,8 @@ struct Scene {
     double metallic = 0.0, roughness = 0.5;
     double env_intensity = 1.0;     // scales the sky image-based fill
     V3 sky_tint{1, 1, 1};           // per-channel multiplier on the sky gradient
-    double sky_flat = 0.0;          // 0 = clear gradient, 1 = uniform dome (overcast)
+    double sky_flat = 0.0;
+    double env_ground = 0.0;      // how dark the lower hemisphere is (the ground you cannot see)
     double haze_dist = 0.0;         // aerial perspective: 1/e distance (0 = off)
     double sun_intensity = 1.0;     // scales the NEE directional key
     V3 sun_dir{0.4, 0.5, 0.8};      // the sun's direction (normalized in path_trace)
@@ -458,7 +474,7 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
     for (int bounce = 0; bounce < max_bounce; ++bounce) {
         Hit h = intersect(sc, o, d);
         if (bounce == 0) first_t = h.t;
-        if (h.t > 1e29) { add(mulv(beta, sky(d, sc.sky_tint, sc.sky_flat) * sc.env_intensity), bounce); break; }  // sky fill
+        if (h.t > 1e29) { add(mulv(beta, sky(d, sc.sky_tint, sc.sky_flat, sc.env_ground) * sc.env_intensity), bounce); break; }  // sky fill
         if (luminance(h.emission) > 0.0 && (bounce == 0 || spec_bounce))
             add(mulv(beta, h.emission), bounce);                                          // a lamp seen directly
         const V3 wp = o + d * h.t;   // world hit position (texture lookups + offsets)
@@ -580,7 +596,7 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
     // an exponential mix toward the sky the camera would have seen through that surface.
     if (sc.haze_dist > 0.0 && first_t > 0.0 && first_t < 1e29) {
         const double f = 1.0 - std::exp(-first_t / sc.haze_dist);
-        const V3 air = sky(cam_d, sc.sky_tint, sc.sky_flat) * sc.env_intensity;
+        const V3 air = sky(cam_d, sc.sky_tint, sc.sky_flat, sc.env_ground) * sc.env_intensity;
         L = L * (1.0 - f) + air * f;
     }
     return L;
@@ -688,6 +704,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     sc.env_intensity = settings.env_intensity;
     sc.sky_tint = {settings.sky_tint[0], settings.sky_tint[1], settings.sky_tint[2]};
     sc.sky_flat = settings.sky_flat;
+    sc.env_ground = settings.env_ground;
     sc.haze_dist = settings.haze_dist;
     sc.sun_intensity = settings.sun_intensity;
     sc.sun_dir = norm({settings.sun_dir[0], settings.sun_dir[1], settings.sun_dir[2]});

@@ -51,6 +51,11 @@ struct RenderSettings {
     // under a sky no tint can fix, because a tint scales the gradient without flattening
     // it. 0 = the gradient as authored, 1 = a uniform sky of its average. ~0.75 = overcast.
     double sky_flat = 0.0;
+    // How dark the LOWER hemisphere of the environment is (0 = a sky all round, 1 = a
+    // ground below). Separate from `ground`, which is the floor GEOMETRY: dropping a
+    // floor plane out of a close-up is normal, making the world glow from underneath
+    // is not, and the two used to be the same switch.
+    double env_ground = 0.0;
     // AERIAL PERSPECTIVE. Air is not empty: over tens of metres it scatters sky light into
     // the view and washes distance out, which is why a photograph's far objects are lower
     // in contrast and LIFTED in the blacks while its far whites barely move. Without it a

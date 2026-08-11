@@ -40,6 +40,11 @@ def _render_view(oplog, out_ppm, pose, size, spp, extra=()):
             "--env", "1.40", "--sun", "0.58",
             "--sun-dir", "0.18", "-0.12", "0.976",
             "--sky-tint", "1.02", "1.08", "1.12", "--sky-flat", "0.72",
+            # Half of what a car body sees is the GROUND, and the ground is dark:
+            # that is why the lower half of a panel is three times darker than the
+            # upper half in the reference. Without it this render lit the bottom of
+            # the car as hard as the top and came out four times too bright there.
+            "--env-ground", "0.85",
             "--exposure", "1.13", "--smooth-angle", "34", "--bounce", "7", "--no-ground",
             *extra]
     subprocess.run(args, check=True)
@@ -93,6 +98,11 @@ def render(size=1000, spp=160):
             "--cam-fov", f"{p['fov']:.7f}", "--env", "1.40", "--sun", "0.58",
             "--sun-dir", "0.18", "-0.12", "0.976",
             "--sky-tint", "1.02", "1.08", "1.12", "--sky-flat", "0.72",
+            # Half of what a car body sees is the GROUND, and the ground is dark:
+            # that is why the lower half of a panel is three times darker than the
+            # upper half in the reference. Without it this render lit the bottom of
+            # the car as hard as the top and came out four times too bright there.
+            "--env-ground", "0.85",
             "--exposure", "1.13", "--smooth-angle", "34", "--bounce", "7", "--no-ground"]
     subprocess.run(args, check=True)
     import cv2
