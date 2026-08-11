@@ -134,7 +134,38 @@ The box rebuilds from source every trip, so remote runs are unaffected.
   shaping it. Decide deliberately whether yours peaks at 1 or averages 1 — changing the lobe
   count of a normalised plan silently changes the part's diameter.
 
-## 8. Debug parts alone and with the id AOV, never in the beauty render
+## 8. Verify at the scale of what you CHANGED, not at the scale of the picture
+
+The single most expensive habit in this work, stated as a rule because stating it as an
+intention did not work:
+
+> **After changing a part, render THAT PART alone, at a magnification where its smallest
+> feature is at least ~20 px, and look — before putting it back in the assembly.**
+
+A worked example of the cost. Fifty water beads were added to a cap. They rendered as solid
+white blobs — fifty specks of paint — because the water material was 0.34 albedo when a bead
+over near-black plastic is dark with one pinpoint highlight. That is a one-number error,
+visible instantly in a view where a 1 mm bead is 40 px. It survived several rounds because
+every check was made on a 900 px compare sheet where a 1 mm bead is THREE PIXELS, judged by
+a regional mean. No amount of care fixes that: the verification did not contain the
+information.
+
+The same round also produced two competing bead systems — one in the texture map, one as
+placed geometry — because neither was ever looked at alone.
+
+`sheet.py parts` already exists for this and its docstring already says why. It went unused
+for an entire day of part work. A tool nobody reaches for is a process gap, not a tooling
+gap; the rule above is the fix.
+
+Corollaries:
+
+* a change you cannot see in your verification view is a change you cannot evaluate — either
+  change the view or do not claim the change is an improvement;
+* when a metric moves and another does not, report the one that did NOT move. Regional mean
+  luma converged nicely here while the local-difference figure sat at 43-47 and never
+  budged, and it is the second one that tracks "does this look like the photograph".
+
+## 9. Debug parts alone and with the id AOV, never in the beauty render
 
 A composed render is the worst place to find a modelling error. If everything in your scene
 is dark plastic in a dark cavity, a part that is the wrong size, inside-out, or **entirely
@@ -146,7 +177,7 @@ missing** looks very much like a part that is right — the frame is dark either
   neck ring, a rib that never got placed, or a well you are seeing the outside of;
 * `--depth` writes a PFM, `--no-ground` removes the default floor.
 
-## 9. Measure the picture; do not argue with it
+## 10. Measure the picture; do not argue with it
 
 The habit that produced every real finding in this case:
 
@@ -164,7 +195,7 @@ The habit that produced every real finding in this case:
 * **frame both sides on the same feature.** Match on the wrong one and an object that is the
   wrong size relative to its surroundings looks right in every frame.
 
-## 10. Repo hygiene in this tree
+## 11. Repo hygiene in this tree
 
 * **Other agents commit here concurrently. Stage by explicit path — never `git add -A`.**
   It once swept hundreds of megabytes of a customer's RGB-D capture set into a commit that
@@ -182,7 +213,7 @@ The habit that produced every real finding in this case:
 * Renders are 99.998% identical across gcc and MSVC, not byte-identical — last-ULP float
   differences, worst delta 1/255. Fine for media; do not assert bit-exactness across the two.
 
-## 11. Windows-local snags
+## 12. Windows-local snags
 
 * The conda `python` on PATH has no pytest. Use `.venv/Scripts/python.exe -m pytest`.
 * Running a case module from `examples/cases` needs `PYTHONPATH` pointing at `src`.
