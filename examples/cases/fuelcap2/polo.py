@@ -121,14 +121,19 @@ HINGE_BLUE = mat((0.155, 0.405, 0.570), 0.14, 0.32)
 # almost nothing. It is a ROUGHNESS and NORMAL effect, not an albedo one: painting light
 # dots into a colour map reads as dirt. `textures._beaded_water` does it properly.
 LINER_WET = mat((0.026, 0.027, 0.029), 0.0, 0.70,
-                maps=TEX["fuelcap_wet_liner"], uv_scale=0.075)
+                maps=TEX["fuelcap_wet_liner"], uv_scale=0.190)
 CAP_WET = mat((0.062, 0.064, 0.068), 0.0, 0.58,
-              maps=TEX["fuelcap_wet_cap"], uv_scale=0.045)
+              maps=TEX["fuelcap_wet_cap"], uv_scale=0.160)
 # The cap's own surface, under the water. A photographed cap is granular at this
 # magnification; a perfectly smooth disc is the single thing that most makes one read as a
 # render, and no amount of correct silhouette fixes it.
+# uv_scale is WORLD UNITS PER TILE, and at 0.030 a 1024-texel map puts every feature
+# it has at 0.03 mm -- far below a pixel at any magnification this is judged at, so
+# the whole map renders as dither. The casting grain should read at about 2 mm, and
+# the generator's grain has a period of a seventysecond of a tile, so the tile has
+# to be ~150 mm.
 CAP_CAST = mat((0.058, 0.059, 0.062), 0.12, 0.50,
-               maps=TEX["fuelcap_cast_cap"], uv_scale=0.030)
+               maps=TEX["fuelcap_cast_cap"], uv_scale=0.150)
 
 
 def _ellipse_plan(rx, ry, steps):

@@ -666,12 +666,25 @@ def _recipe_id(name: str) -> str:
     parts = [name, str(RES)]
     # the thunk's captured constants (colours, seeds, plank counts...)
     parts += [repr(c) for c in (fn.__code__.co_consts or ()) if c is not None]
-    # and the generator it calls, so editing _leather() alone still invalidates
-    for gen in (_wood, _veneer, _fabric, _plaster, _leather, _marble, _concrete, _asphalt,
-                _painted_bay, _crack_net, _painted_metal, _wall_tile, _streaks,
-                _normal_from_height, _fbm):
-        parts.append(gen.__name__)
-        parts.append(hashlib.sha1(gen.__code__.co_code).hexdigest()[:8])
+    # and EVERY generator in this module, so editing one still invalidates.
+    #
+    # This list used to be written out by hand, and three generators added later were not in
+    # it -- so editing them left the cached maps in place and the next render used art that
+    # no longer matched its recipe. Silently: the picture is wrong and nothing says why,
+    # which is the exact failure the docstring below says this digest exists to prevent. A
+    # hand-maintained list of everything in a module is a list that will be out of date.
+    import sys as _sys
+    mod = _sys.modules[__name__]
+    for gname in sorted(n for n in dir(mod)
+                        if n.startswith("_") and not n.startswith("__")
+                        and callable(getattr(mod, n, None))
+                        and getattr(getattr(mod, n), "__module__", None) == __name__):
+        gen = getattr(mod, gname)
+        code = getattr(gen, "__code__", None)
+        if code is None:
+            continue
+        parts.append(gname)
+        parts.append(hashlib.sha1(code.co_code).hexdigest()[:8])
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
 
 
