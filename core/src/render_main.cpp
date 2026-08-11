@@ -83,6 +83,8 @@ int main(int argc, char** argv) {
         else if (a == "--sky-tint") s.sky_tint = next3(s.sky_tint);   // warm/cool the sky fill
         else if (a == "--sky-flat") s.sky_flat = next(s.sky_flat);
         else if (a == "--env-ground") s.env_ground = next(s.env_ground);  // dark lower hemisphere
+        else if (a == "--env-map" && i + 1 < argc) s.env_map = argv[++i];   // equirect PPM
+        else if (a == "--env-rot") s.env_rot = next(s.env_rot);
         else if (a == "--no-ground") s.ground = false;   // drop the implicit floor: a close-up
                                                          // of a part brings its own surroundings,
                                                          // and a floor plane through them is a

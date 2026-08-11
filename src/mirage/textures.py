@@ -528,6 +528,69 @@ def _beaded_water(res: int, seed: int, col, rough_base=0.66, count=190, r_lo=0.0
     return np.clip(albedo, 0, 1), np.clip(rough, 0.05, 0.95), \
         _normal_from_height(height * res, strength=1.0)
 
+
+def _outdoor_env(res: int, seed: int, sun_alt=0.34, sun_az=0.55, warmth=1.0):
+    """An equirectangular outdoor environment: sky, cloud, horizon, ground, and skyline.
+
+    Not scenery -- a LIGHT SOURCE with structure. A clearcoat panel is close to a mirror, so
+    what a viewer reads as its paint is the world reflected in it. Reflect a two-colour
+    analytic gradient and the panel comes out as flat vector colour no matter what its
+    albedo, roughness or metallic value are; that is measurable, and it is why this repo's
+    car bodies have a tonal spread of 42 grey levels where the photograph's has 55.
+
+    What has to be in it, in order of how much it matters on a panel:
+
+    * a bright sky that gets brighter toward the horizon and carries broken cloud, because
+      that gradient IS the long soft highlight down a car's flank;
+    * a hard horizon, which is the line every polished surface shows;
+    * a dark ground, which is why the lower half of a body is darker than the upper;
+    * a low band of dark clutter -- buildings, trees, the person holding the camera -- which
+      is what breaks a reflection up and stops it reading as a gradient.
+
+    Returned as a plain RGB image; the tracer samples it with atan2/acos, z up.
+    """
+    rng = np.random.default_rng(seed)
+    w, h = res * 2, res
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    v = yy / (h - 1.0)                       # 0 = zenith, 1 = nadir
+    u = xx / (w - 1.0)
+    alt = (0.5 - v) * np.pi                  # +pi/2 zenith, -pi/2 nadir
+    az = (u - 0.5) * 2 * np.pi
+
+    # sky: brighter and warmer toward the horizon
+    t = np.clip((alt / (np.pi / 2)), 0, 1)
+    zen = np.array([0.16, 0.28, 0.52])
+    hor = np.array([0.62, 0.70, 0.82])
+    sky = hor[None, None] * (1 - t[..., None]) + zen[None, None] * t[..., None]
+
+    # broken cloud, only above the horizon, elongated horizontally as cloud is
+    cl = _fbm(res, 7, 4, seed + 3)
+    cl = np.repeat(cl, 2, axis=1)[:h, :w]
+    cloud = np.clip((cl - 0.46) * 3.4, 0, 1) * np.clip(t * 2.2, 0, 1)
+    sky = sky * (1 - 0.55 * cloud[..., None]) + np.array([0.86, 0.88, 0.92])[None, None] * (0.55 * cloud[..., None])
+
+    # the sun: a small, very bright disc. This is what puts a pinpoint in a water bead and a
+    # hard glint on a rim; a uniform dome cannot make either.
+    d = np.arccos(np.clip(np.sin(alt) * np.sin(sun_alt) +
+                          np.cos(alt) * np.cos(sun_alt) * np.cos(az - sun_az), -1, 1))
+    sun = np.exp(-(d / 0.045) ** 2) * 28.0 + np.exp(-(d / 0.30) ** 2) * 0.9
+    sky += sun[..., None] * np.array([1.0, 0.95, 0.86])[None, None]
+
+    # ground below the horizon, and a soft transition through it
+    ground = np.array([0.075, 0.070, 0.062])
+    below = np.clip(-alt / 0.25, 0, 1)[..., None]
+    img = sky * (1 - below) + ground[None, None] * below
+
+    # a low band of dark clutter around the horizon -- buildings, trees, the photographer
+    band = np.exp(-((alt - 0.02) / 0.16) ** 2)
+    clutter = _fbm(res, 26, 3, seed + 11)
+    clutter = np.repeat(clutter, 2, axis=1)[:h, :w]
+    mask = (clutter > 0.54).astype(np.float32) * band
+    img = img * (1 - 0.72 * mask[..., None]) + np.array([0.045, 0.048, 0.042])[None, None] * (0.72 * mask[..., None])
+
+    img *= np.array([warmth, 1.0, 2.0 - warmth])[None, None]
+    return np.clip(img, 0, 1).astype(np.float32)
+
 def _wall_tile(res: int, seed: int, col, grout, tiles=10, grout_w=0.055):
     """A tiled shop front: a real grout GRID, per-tile tone variation, and dirt in the
     joints. A tiled wall's signature is the grid — no amount of noise substitutes for it."""
@@ -616,6 +679,12 @@ _LIBRARY = {
     # competes with the ones that are modelled. One bead system, at the size beads are.
     # What the cap's map should carry is the CASTING GRAIN: fine directional texture
     # under a coarse mottle, no droplets.
+    # The environment, as a library entry so a render host regenerates it from the
+    # recipe like any other map -- assets/textures is gitignored and never copied.
+    # It uses the albedo slot; the roughness and normal outputs are unused.
+    "outdoor_env":        lambda: (_outdoor_env(1024, 7),
+                                   np.full((1024, 2048), 0.5, np.float32),
+                                   np.zeros((1024, 2048, 3), np.float32) + [0.5, 0.5, 1.0]),
     "fuelcap_cast_cap":   lambda: _moulded_plastic(RES, 241, (0.058, 0.059, 0.062),
                                                    rough_base=0.44, wear=0.22),
     "fuelcap_wet_liner":  lambda: _beaded_water(RES, 211, (0.024, 0.025, 0.027),

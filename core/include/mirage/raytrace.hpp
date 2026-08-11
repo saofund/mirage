@@ -56,6 +56,12 @@ struct RenderSettings {
     // floor plane out of a close-up is normal, making the world glow from underneath
     // is not, and the two used to be the same switch.
     double env_ground = 0.0;
+    // An equirectangular environment map (PPM). A clearcoat or a polished metal is
+    // close to a mirror: what a viewer reads as its "paint" is mostly the world
+    // reflected in it, and with an analytic two-colour sky there is no world to
+    // reflect. Empty = the analytic sky.
+    std::string env_map;
+    double env_rot = 0.0;   // turn it about the vertical axis, radians
     // AERIAL PERSPECTIVE. Air is not empty: over tens of metres it scatters sky light into
     // the view and washes distance out, which is why a photograph's far objects are lower
     // in contrast and LIFTED in the blacks while its far whites barely move. Without it a

@@ -13,6 +13,11 @@ from fuelcap.dataset import _read_ppm, _render_bin
 from . import polo
 
 HERE = Path(__file__).resolve().parent
+
+
+def _env_map():
+    from mirage.textures import ensure_textures
+    return ensure_textures(["outdoor_env"])["outdoor_env"]["albedo"]
 OUT = HERE / "_out"
 REF = (HERE.parent / "fuelcap" / "_ref" / "bycar" / "Polo" /
        "粗筛done2_Polo_2007款劲情14自动风尚版_38.png")
@@ -45,6 +50,13 @@ def _render_view(oplog, out_ppm, pose, size, spp, extra=()):
             # upper half in the reference. Without it this render lit the bottom of
             # the car as hard as the top and came out four times too bright there.
             "--env-ground", "0.85",
+            # THE WORLD, so there is something for the paint to reflect. A clearcoat
+            # panel is close to a mirror; against a two-colour analytic sky it renders
+            # as flat vector colour whatever its albedo. Measured: the photograph's
+            # body spans 55 grey levels, this render's spanned 42 while carrying MORE
+            # local noise -- flat where it should be broad, busy where it should be
+            # smooth.
+            "--env-map", str(_env_map()), "--env-rot", "2.1",
             "--exposure", "1.13", "--smooth-angle", "34", "--bounce", "7", "--no-ground",
             *extra]
     subprocess.run(args, check=True)
@@ -103,6 +115,13 @@ def render(size=1000, spp=160):
             # upper half in the reference. Without it this render lit the bottom of
             # the car as hard as the top and came out four times too bright there.
             "--env-ground", "0.85",
+            # THE WORLD, so there is something for the paint to reflect. A clearcoat
+            # panel is close to a mirror; against a two-colour analytic sky it renders
+            # as flat vector colour whatever its albedo. Measured: the photograph's
+            # body spans 55 grey levels, this render's spanned 42 while carrying MORE
+            # local noise -- flat where it should be broad, busy where it should be
+            # smooth.
+            "--env-map", str(_env_map()), "--env-rot", "2.1",
             "--exposure", "1.13", "--smooth-angle", "34", "--bounce", "7", "--no-ground"]
     subprocess.run(args, check=True)
     import cv2

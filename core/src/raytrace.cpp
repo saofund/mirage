@@ -278,6 +278,8 @@ struct Scene {
     V3 sky_tint{1, 1, 1};           // per-channel multiplier on the sky gradient
     double sky_flat = 0.0;
     double env_ground = 0.0;      // how dark the lower hemisphere is (the ground you cannot see)
+    int env_tex = -1;             // equirectangular environment map, or -1 for the analytic sky
+    double env_rot = 0.0;         // turn it about the vertical axis, radians
     double haze_dist = 0.0;         // aerial perspective: 1/e distance (0 = off)
     double sun_intensity = 1.0;     // scales the NEE directional key
     V3 sun_dir{0.4, 0.5, 0.8};      // the sun's direction (normalized in path_trace)
@@ -286,6 +288,32 @@ struct Scene {
     std::vector<Texture> textures;                    // loaded image maps (shared by index)
     std::unordered_map<std::string, int> tex_cache;   // path -> index (load each map once)
 };
+
+// THE ENVIRONMENT a ray sees when it hits nothing.
+//
+// Until now this was `sky()`: a two-colour analytic gradient. That is fine behind an
+// object and quite wrong ON one, because a car body -- or any clearcoat, any polished
+// metal -- is close to a mirror, and what a viewer reads as "paint" is mostly the WORLD
+// reflected in it. With nothing in the world to reflect, no albedo, roughness or metallic
+// value makes such a surface look like anything but flat vector colour, which is exactly
+// how this repo's car-body renders have looked. Measured against a photograph of the same
+// panel: the photograph's body carries a tonal spread of 55 grey levels, the render's 42,
+// while the render has MORE local high-frequency energy -- flat where it should have broad
+// structure, busy where it should be smooth.
+//
+// An equirectangular map fixes the cause rather than the symptom. `env_rot` turns it about
+// the vertical so the reflection can be aimed without re-shooting anything.
+V3 env(const Scene& sc, const V3& d) {
+    if (sc.env_tex >= 0 && sc.env_tex < int(sc.textures.size()) && sc.textures[sc.env_tex].ok()) {
+        const Texture& t = sc.textures[sc.env_tex];
+        const double u = 0.5 + (std::atan2(d[1], d[0]) + sc.env_rot) / (2.0 * PI);
+        const double v = std::acos(std::clamp(d[2], -1.0, 1.0)) / PI;   // z up
+        const V3 c = t.sample(u - std::floor(u), v);
+        return {c[0] * sc.sky_tint[0], c[1] * sc.sky_tint[1], c[2] * sc.sky_tint[2]};
+    }
+    return sky(d, sc.sky_tint, sc.sky_flat, sc.env_ground);
+}
+
 
 // Recursive median-split BVH build. Returns the node index of the built subtree.
 int build_bvh(Scene& sc, int start, int count) {
@@ -474,7 +502,7 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
     for (int bounce = 0; bounce < max_bounce; ++bounce) {
         Hit h = intersect(sc, o, d);
         if (bounce == 0) first_t = h.t;
-        if (h.t > 1e29) { add(mulv(beta, sky(d, sc.sky_tint, sc.sky_flat, sc.env_ground) * sc.env_intensity), bounce); break; }  // sky fill
+        if (h.t > 1e29) { add(mulv(beta, env(sc, d) * sc.env_intensity), bounce); break; }  // environment
         if (luminance(h.emission) > 0.0 && (bounce == 0 || spec_bounce))
             add(mulv(beta, h.emission), bounce);                                          // a lamp seen directly
         const V3 wp = o + d * h.t;   // world hit position (texture lookups + offsets)
@@ -596,7 +624,7 @@ V3 radiance(const Scene& sc, V3 o, V3 d, int max_bounce, Rng& rng) {
     // an exponential mix toward the sky the camera would have seen through that surface.
     if (sc.haze_dist > 0.0 && first_t > 0.0 && first_t < 1e29) {
         const double f = 1.0 - std::exp(-first_t / sc.haze_dist);
-        const V3 air = sky(cam_d, sc.sky_tint, sc.sky_flat, sc.env_ground) * sc.env_intensity;
+        const V3 air = env(sc, cam_d) * sc.env_intensity;
         L = L * (1.0 - f) + air * f;
     }
     return L;
@@ -719,6 +747,9 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
         sc.tex_cache[path] = idx;
         return idx;
     };
+    // after load_tex, because the environment map goes through the same texture cache
+    sc.env_rot = settings.env_rot;
+    if (!settings.env_map.empty()) sc.env_tex = load_tex(settings.env_map);
     // --- Smooth shading, by angle (RenderSettings::smooth_angle) ---
     // A face corner's shading normal is the area-weighted average of the normals of the faces
     // meeting at that vertex whose own normal is within `smooth_angle` of this face's. Faces
