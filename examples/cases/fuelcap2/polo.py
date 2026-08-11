@@ -53,10 +53,16 @@ CAP_TILT = 12.0
 # A parameter search cannot find a fault outside its parameter. Each sweep returned a
 # confident number; none of them could express "the hinge is in the wrong place". Looking at
 # the picture found it.
-# With the hinge finally outside the aperture, the angle means what it should, and
-# the arithmetic from before applies: n = (-sin, 0, cos) against a view direction of
-# (-0.175, -0.012, -0.984) is edge-on at 79.9 degrees.
-DOOR_OPEN_DEG = 80.0
+# 105, measured. With the hinge finally outside the aperture the angle means what it should,
+# and a sweep against the photograph gives a clean minimum: door-region |diff| of 96 at 85,
+# 70 at 95, 56.9 at 105, 62.7 at 115, rising steadily to 79 at 145.
+#
+# I derived 80 from n.d = 0 against the view direction and it is the WORST of the set. That
+# arithmetic assumed the door's normal is (-sin, 0, cos), which is what `fuel_door`'s
+# composition looked like on paper; the render says otherwise. Three derivations of this
+# angle have now been wrong and one sweep has been right. When a part owns a layered
+# transform, measure the result -- do not model the transform.
+DOOR_OPEN_DEG = 105.0
 CAP_SPIN = 84.0
 
 TEX = ensure_textures(["fuelcap_polo_blue_paint", "fuelcap_plastic",
