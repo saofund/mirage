@@ -44,16 +44,15 @@ CAP_TILT = 12.0
 # It was two literals in two places -- the door and the ribs that ride on it -- which is
 # why a sweep had to rewrite the source to move it, and why the two could silently
 # disagree. A parameter the loop is meant to estimate has to be reachable.
-# The door's angle was never the problem: it was hinged on the WRONG SIDE and has been
-# sweeping ACROSS the aperture from the left instead of opening away from it on the right.
-# `fuel_door` applies `az + 180`, so az=0 puts the hinge at -x, and every angle I tried --
-# 70, 80, 101, 134, 145 -- was a different amount of door lying over the pocket. Three
-# separate sweeps (depth residual, silhouette, and finally solving n.d against the camera)
-# all measured that wrong family carefully and returned confident, useless answers, because
-# none of them could express "the hinge is on the other side".
+# The door's ANGLE was never the problem, and neither was the side. `hinge_r` was 82 mm
+# while the aperture's own radius is 142.7 -- the hinge was INSIDE the hole. A door pivoting
+# from inside its own opening sweeps across it at every angle, which is exactly what every
+# render showed and what three separate parameter sweeps (depth residual, silhouette, and
+# solving n.d against the camera) each measured carefully within the wrong family.
 #
-# A parameter search cannot find a fault outside its parameter. Looking at the picture found
-# it in one glance, which is the whole lesson of this case.
+# A parameter search cannot find a fault outside its parameter. Each sweep returned a
+# confident number; none of them could express "the hinge is in the wrong place". Looking at
+# the picture found it.
 DOOR_OPEN_DEG = 100.0
 CAP_SPIN = 84.0
 
@@ -475,7 +474,7 @@ def _door(prog):
     # 265 mm p95 in that region against 26 mm inside the pocket, and the map is a single
     # bright blob exactly the door's shape. The reference door is nearly edge-on.
     door = P.fuel_door(w=door_w, h=door_h, flange=9 * MM, face=5 * MM,
-                       rim=8 * MM, open_deg=DOOR_OPEN_DEG, az=180.0, hinge_r=82 * MM,
+                       rim=8 * MM, open_deg=DOOR_OPEN_DEG, az=0.0, hinge_r=OPEN_R * 1.06,
                        gap=3 * MM, steps=96, skin=HINGE_BLUE, liner=DOOR_INNER, strap=False,
                        latch=False, plan=door_plan, inside_material=DOOR_INNER,
                        inner_details=False, inner_parts=inner)
