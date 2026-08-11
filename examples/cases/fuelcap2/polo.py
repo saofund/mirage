@@ -505,7 +505,16 @@ def build():
     radii = _ellipse_plan(OPEN_RX, OPEN_RY, steps)
     plan = [r / OPEN_R for r in radii]
     prog = P.panel(size=2.20, hole_d=OPEN_R * 2, thick=10 * MM, ring=steps,
-                   crown=34 * MM, crown_ax=math.radians(6.0),
+                   # A car's flank curves, and the curvature is what makes its lower
+                   # half darker than its upper half once the environment has a
+                   # ground. At 34 mm over a 1.1 m half-panel this was flat, so the
+                   # render had no vertical falloff at all where the photograph has
+                   # threefold. Sweeping it: 34 mm gives a lower-body |diff| of 91,
+                   # 280 gives 78, and it keeps falling to 66 at 620 -- but 620 mm of
+                   # sag is half a barrel, not a car. The metric goes on improving for
+                   # a reason that stops being physical, so this stops at a curvature
+                   # a Polo actually has and takes the 3/4 of the gain that is real.
+                   crown=280 * MM, crown_ax=math.radians(6.0),
                    hole_plan=radii, material=PAINT)
     prog = _panel_details(prog)
 
