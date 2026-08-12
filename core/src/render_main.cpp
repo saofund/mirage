@@ -55,7 +55,7 @@ static std::string read_file(const std::string& path) {
 }
 
 int main(int argc, char** argv) {
-    std::string oplog, out = "render.ppm", ids_out, depth_out, normal_out;
+    std::string oplog, out = "render.ppm", ids_out, depth_out, normal_out, fids_out;
     RenderSettings s;
     Camera cam;  // default 3/4 exterior view; any field overridable via --cam-* below
     for (int i = 1; i < argc; ++i) {
@@ -112,6 +112,7 @@ int main(int argc, char** argv) {
         else if (a == "--flat") s.smooth_angle = 0.0;                           // faceted (geometric normals)
         else if (a == "--ids" && i + 1 < argc) ids_out = argv[++i];        // object-id AOV (PGM)
         else if (a == "--depth" && i + 1 < argc) { depth_out = argv[++i]; s.want_depth = true; }
+        else if (a == "--face-ids" && i + 1 < argc) { fids_out = argv[++i]; s.want_face_ids = true; }
         else if (a == "--normal" && i + 1 < argc) { normal_out = argv[++i]; s.want_normal = true; }
         else if (a == "--id-tags" && i + 1 < argc) {   // comma-separated face tags, IN ORDER
             std::string t = argv[++i], cur;
@@ -161,6 +162,21 @@ int main(int argc, char** argv) {
             f.write(b, 2);
         }
         std::printf("wrote %s (object ids: %zu tags)\n", ids_out.c_str(), s.id_tags.size());
+    }
+    if (!fids_out.empty()) {
+        // One-channel float PFM, same container as depth. Float rather than 16-bit because
+        // a mesh outgrows 65535 faces long before it stops being interesting, and float32
+        // holds every integer to 2^24 exactly. -1 where the ray hit nothing.
+        std::ofstream f(fids_out, std::ios::binary);
+        f << "Pf\n" << img.w << " " << img.h << "\n-1.0\n";
+        std::vector<float> row(std::size_t(img.w));
+        for (int y = img.h - 1; y >= 0; --y) {
+            for (int x = 0; x < img.w; ++x)
+                row[std::size_t(x)] = float(img.face_ids[std::size_t(y) * img.w + x]);
+            f.write(reinterpret_cast<const char*>(row.data()),
+                    std::streamsize(sizeof(float) * img.w));
+        }
+        std::printf("wrote %s (face ids, float)\n", fids_out.c_str());
     }
     if (!depth_out.empty()) {
         // 32-bit float PFM ("Pf" = one channel). Metric, in the op-log's own world units,

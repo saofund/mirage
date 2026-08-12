@@ -48,7 +48,8 @@ struct Tri { V3 a, b, c, n; V3 na, nb, nc; V3 albedo; double metallic; double ro
              double transmission = 0.0, ior = 1.5; V3 emission{0, 0, 0};
              int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
              int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; MapFrame map;  // image-map indices + layout
-             int oid = 0; };   // 1-based index into RenderSettings::id_tags, 0 = untagged
+             int oid = 0;      // 1-based index into RenderSettings::id_tags, 0 = untagged
+             int fid = -1; };  // the mesh's own face id, so a pixel maps back to an op-log face
 
 // Axis-aligned bounding box + a binary BVH so intersection is O(log n), not O(n)
 // per ray — the difference between seconds and minutes on a subdivided mesh.
@@ -101,6 +102,7 @@ struct Hit {
     V3 ns{0, 0, 1};   // shading normal (interpolated; == n when flat-shaded)
     V3 albedo{0, 0, 0};
     double metallic = 0.0, rough = 0.5, transmission = 0.0, ior = 1.5;
+    int fid = -1;
     V3 emission{0, 0, 0};
     int tex = 0; double tex_scale = 4.0; V3 tex2{0, 0, 0};
     int alb_tex = -1, rgh_tex = -1, nrm_tex = -1; MapFrame map;
@@ -380,6 +382,7 @@ Hit intersect(const Scene& sc, const V3& o, const V3& d) {
                     h.emission = t.emission; h.tex = t.tex; h.tex_scale = t.tex_scale; h.tex2 = t.tex2;
                     h.alb_tex = t.alb_tex; h.rgh_tex = t.rgh_tex; h.nrm_tex = t.nrm_tex; h.map = t.map;
                     h.oid = t.oid;
+                    h.fid = t.fid;
                     h.is_ground = false;
                 }
             }
@@ -842,6 +845,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
             t.tex = tex; t.tex_scale = fm.tex_scale; t.tex2 = tc2;
             t.alb_tex = at; t.rgh_tex = rt; t.nrm_tex = nt; t.map = mf;
             t.oid = oid;
+            t.fid = f->id;
             sc.tris.push_back(t);
         }
         ++fidx;
@@ -902,15 +906,17 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
     // hundreds — free — and it must be the CENTRE ray, not a jittered one, or an object's
     // id would dither along its own silhouette.
     const bool want_ids = !settings.id_tags.empty();
+    const bool want_fids = settings.want_face_ids;
     const bool want_depth = settings.want_depth;
     const bool want_normal = settings.want_normal;
-    const bool want_gbuf = settings.denoise > 0 || want_ids || want_depth || want_normal;
+    const bool want_gbuf = settings.denoise > 0 || want_ids || want_fids || want_depth || want_normal;
     const bool want_guide = settings.denoise > 0;
     std::vector<V3> gAlb(want_guide ? NP : 0, V3{1, 1, 1});
     std::vector<V3> gNrm(want_guide ? NP : 0, V3{0, 0, 1});
     std::vector<double> gDep(want_guide ? NP : 0, 1e30);
     std::vector<char> gMask(want_guide ? NP : 0, 0);
     if (want_ids) img.ids.assign(NP, 0);
+    if (want_fids) img.face_ids.assign(NP, -1);
     if (want_depth) img.depth.assign(NP, 0.0f);
     if (want_normal) img.normal.assign(NP * 3, 0.0f);
 
@@ -945,6 +951,7 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                     const V3 gd = primary(cx0 + x + 0.5, cy0 + y + 0.5);
                     const Hit gh = intersect(sc, eye, gd);
                     if (want_ids && gh.t < 1e29) img.ids[p] = gh.oid;
+                    if (want_fids && gh.t < 1e29) img.face_ids[p] = gh.fid;
                     // Project the ray distance onto the view axis: fwd is the unit view
                     // direction and gd is a unit ray, so dot(gd, fwd) is the cosine that
                     // turns "how far along this ray" into "how far in front of the camera".

@@ -100,6 +100,13 @@ struct RenderSettings {
     // to it would come out curved.
     bool want_depth = false;
     bool want_normal = false;
+    // Per-pixel FACE id, which the object-id AOV cannot give: `ids` answers "which tagged
+    // object is here", and a tag covers thousands of faces. Face ids answer "which faces
+    // does this camera actually SEE", and therefore the questions that matter after an
+    // edit -- did the faces I just made render a single pixel, and if not, what is in
+    // front of them. A large geometric change that barely moves any pixels has almost
+    // always been occluded, and without this the only way to find that out is to notice.
+    bool want_face_ids = false;
 
     // CROP: render only this sub-rectangle of the frame, at the same camera. Not a zoom --
     // the rays are the rays the full frame would have cast, so a crop is a true sub-image
@@ -168,6 +175,10 @@ struct Image {
     // Metric depth per pixel from the CENTRE ray: distance along the view axis in world
     // units, 0 where nothing was hit. Empty unless RenderSettings::want_depth was set.
     std::vector<float> depth;
+    // Mesh face id per pixel from the CENTRE ray, -1 where nothing was hit. Empty unless
+    // RenderSettings::want_face_ids was set. Ids are the mesh's own, the same ones
+    // selectors and the marked render use, so a pixel maps back to an op-log face.
+    std::vector<int> face_ids;
     // World-space shading normal per pixel from the CENTRE ray, xyz interleaved, all zero
     // where nothing was hit. Empty unless RenderSettings::want_normal was set. The G-buffer
     // already computes this to steer the denoiser; writing it out costs nothing and is what
