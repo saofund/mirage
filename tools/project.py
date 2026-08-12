@@ -37,31 +37,13 @@ import math
 
 import numpy as np
 
-
-def basis(pose):
-    eye = np.asarray(pose["eye"], float)
-    target = np.asarray(pose["target"], float)
-    up = np.asarray(pose["up"], float)
-    fwd = target - eye
-    fwd /= np.linalg.norm(fwd)
-    right = np.cross(fwd, up)
-    right /= np.linalg.norm(right)
-    up2 = np.cross(right, fwd)
-    return eye, fwd, right, up2
-
-
-def project(points, pose):
-    """Camera-space (u, v, depth) for world points; v is DOWNWARD, u is RIGHT.
-
-    u and v are tangents of angles off the axis -- multiply by any focal length to get
-    pixels.  Ratios and positions relative to another projected feature need no focal
-    length at all, which is the point.
-    """
-    eye, fwd, right, up2 = basis(pose)
-    p = np.asarray(points, float) - eye
-    d = p @ fwd
-    d = np.where(np.abs(d) < 1e-9, 1e-9, d)
-    return np.stack([(p @ right) / d, -(p @ up2) / d, d], axis=1)
+# The projection itself now lives in `mirage.probe`, as a first-party part of the library
+# rather than a copy inside a script. There were two implementations of the tracer's
+# camera and this file was one of them; a tool that re-derives the engine's own projection
+# is a tool that will disagree with it on some frame nobody renders twice. What stays here
+# is the reverse-modelling vocabulary built on top of it -- silhouettes in units of a
+# reference ring, and how far a part is from edge-on AT ITS OWN CENTROID.
+from mirage.probe import basis, project, to_pixels  # noqa: F401  (re-exported)
 
 
 def verts(prog, offset=(0.0, 0.0, 0.0)):
@@ -93,7 +75,7 @@ def relative_to(points, pose, ref_radius, ref_centre=(0.0, 0.0, 0.0)):
 
     Returns width/height/edge positions as multiples of that radius, measured from the
     ring's projected centre -- exactly the numbers a photograph gives up when the same
-    ring is visible in it.
+    ring is visible in it, so neither side has to be calibrated.
     """
     r = project(ring(ref_radius, ref_centre), pose)
     cu, cv = r[:, 0].mean(), r[:, 1].mean()
@@ -118,30 +100,14 @@ def plane_normal(points):
 def off_edge_on(points, pose):
     """Degrees the part's own plane is away from containing the view ray THROUGH IT.
 
-    0 means edge-on.  Evaluated at the part's centroid, never at the origin -- that is
-    the whole reason this module exists.
+    0 means edge-on. Evaluated at the part's centroid, never at the origin -- that is the
+    whole reason this module exists.
     """
     c, n = plane_normal(points)
     eye = np.asarray(pose["eye"], float)
     v = eye - c
     v /= np.linalg.norm(v)
     return 90.0 - math.degrees(math.acos(min(1.0, abs(float(n @ v)))))
-
-
-def to_pixels(points, pose, w, h):
-    """Projected points as (px, py) for a `mirage_render` frame of that size.
-
-    Matching `core/src/raytrace.cpp`: `th = tan(fov_y / 2)`, `aspect = w / h`, image y
-    downward.  Keeping this next to the tangent-space projection means an overlay drawn on
-    a render lands where the tracer put the geometry, so "did this part end up where I
-    think" stops being a question answered by staring at the picture.
-    """
-    q = project(points, pose)
-    th = math.tan(pose["fov"] * 0.5)
-    aspect = float(w) / float(h)
-    px = (q[:, 0] / (th * aspect) + 1.0) * 0.5 * w
-    py = (q[:, 1] / th + 1.0) * 0.5 * h
-    return np.stack([px, py], axis=1)
 
 
 def outline(points, pose, w, h):
