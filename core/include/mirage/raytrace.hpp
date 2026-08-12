@@ -107,6 +107,12 @@ struct RenderSettings {
     // front of them. A large geometric change that barely moves any pixels has almost
     // always been occluded, and without this the only way to find that out is to notice.
     bool want_face_ids = false;
+    // Skip light transport entirely: one primary ray per pixel, the AOVs, and a plain
+    // normal-shaded preview. Modelling feedback does not need radiance -- it needs to know
+    // what shape is there and where -- and the path tracer costs spp x bounces more per
+    // pixel to answer a question it was not asked. A marked render at 800x620 was taking
+    // over two minutes, which is not a loop anyone can sculpt in.
+    bool aov_only = false;
 
     // CROP: render only this sub-rectangle of the frame, at the same camera. Not a zoom --
     // the rays are the rays the full frame would have cast, so a crop is a true sub-image

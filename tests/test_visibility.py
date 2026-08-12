@@ -134,3 +134,22 @@ def test_a_disc_in_front_makes_the_box_invisible(tmp_path):
     rep = occlusion_report(fa, fb, changed_faces=box_ids)
     assert rep.verdict in ("hidden", "mostly hidden"), str(rep)
     assert len(rep.hidden) >= len(box_ids) - 1
+
+
+@needs_render
+def test_aov_only_matches_the_traced_geometry(tmp_path):
+    """The fast preview must describe the SAME geometry as a full render.
+
+    `--aov-only` skips light transport, so its picture is different by design. Its AOVs
+    are not allowed to be: they come from the same primary ray, and a preview that
+    disagreed with the render about which face is where would be worse than no preview.
+    """
+    prog = MeshProgram().cube(size=1.0).subdivide(levels=1)
+    slow, fast = tmp_path / "slow", tmp_path / "fast"
+    _render(prog, slow, ["--face-ids", str(slow) + ".pfm", "--depth", str(slow) + ".d"])
+    _render(prog, fast, ["--face-ids", str(fast) + ".pfm", "--depth", str(fast) + ".d",
+                         "--aov-only"])
+    a, b = face_ids(str(slow) + ".pfm"), face_ids(str(fast) + ".pfm")
+    assert np.array_equal(a, b), "the preview and the render disagree about the faces"
+    da, db = read_pfm(str(slow) + ".d"), read_pfm(str(fast) + ".d")
+    assert np.allclose(da, db, atol=1e-9)

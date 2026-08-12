@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
         else if (a == "--ids" && i + 1 < argc) ids_out = argv[++i];        // object-id AOV (PGM)
         else if (a == "--depth" && i + 1 < argc) { depth_out = argv[++i]; s.want_depth = true; }
         else if (a == "--face-ids" && i + 1 < argc) { fids_out = argv[++i]; s.want_face_ids = true; }
+        else if (a == "--aov-only") { s.aov_only = true; s.spp = 1; s.denoise = 0; }
         else if (a == "--normal" && i + 1 < argc) { normal_out = argv[++i]; s.want_normal = true; }
         else if (a == "--id-tags" && i + 1 < argc) {   // comma-separated face tags, IN ORDER
             std::string t = argv[++i], cur;

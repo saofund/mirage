@@ -975,6 +975,19 @@ Image path_trace(const Mesh& mesh, const Camera& cam, const RenderSettings& sett
                                          : gh.albedo;
                     }
                 }
+                if (settings.aov_only) {
+                    // A preview, not a render: Lambert against the view direction plus a
+                    // little ambient, so shape reads and nothing is claimed about light.
+                    const V3 gd = primary(cx0 + x + 0.5, cy0 + y + 0.5);
+                    const Hit gh = intersect(sc, eye, gd);
+                    if (gh.t < 1e29) {
+                        const double k = 0.20 + 0.80 * std::abs(dot(gh.ns, gd));
+                        hdr[p] = gh.albedo * k;
+                    } else {
+                        hdr[p] = V3{0.05, 0.06, 0.09};
+                    }
+                    continue;
+                }
                 V3 acc{0, 0, 0};
                 for (int s = 0; s < settings.spp; ++s) {
                     // Seeded from the FULL-FRAME pixel, so a crop is not merely the same
